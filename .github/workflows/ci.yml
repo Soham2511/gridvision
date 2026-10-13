@@ -1,0 +1,13 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  scaffold_notice:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Report current validation scope
+        run: echo "Scaffold-only workflow: application, data, and model quality gates are not implemented yet."

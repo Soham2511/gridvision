@@ -1,0 +1,40 @@
+models:
+  residential:
+    artifact_path: artifacts/models/residential/gridvision_month_end_model.pkl
+    metadata_path: artifacts/models/residential/metadata.json
+    target_name: target_remaining_kwh
+    target_unit: kWh
+    feature_schema_version: residential-v1
+    entity_field: household_id
+    status: evaluation_required
+  commercial:
+    artifact_path: artifacts/models/commercial/building_model.pkl
+    metadata_path: artifacts/models/commercial/metadata.json
+    target_name: hourly_demand_kwh
+    target_unit: kWh per hourly record
+    feature_schema_version: commercial-v1
+    entity_field: building_id
+    categorical_features:
+      - building_id
+      - site_id
+      - primaryspaceusage
+      - sub_primaryspaceusage
+      - season
+    categorical_value_source: model_artifact_pandas_categorical
+    status: evaluation_required
+  government:
+    artifact_path: artifacts/models/government/regional_model.pkl
+    metadata_path: artifacts/models/government/metadata.json
+    target_name: total_demand_kwh
+    target_unit: kWh per hourly record
+    feature_schema_version: government-v1
+    entity_field: site_id
+    encoded_features:
+      season:
+        Fall: 0
+        Spring: 1
+        Summer: 2
+        Winter: 3
+      site_id_code:
+        source: artifacts/models/government/metadata.json
+    status: evaluation_required

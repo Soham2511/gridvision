@@ -1,0 +1,43 @@
+[build-system]
+requires = ["setuptools==80.9.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gridvision"
+version = "0.1.0"
+description = "Smart-energy forecasting API and dashboards"
+requires-python = ">=3.10,<3.12"
+dependencies = [
+    "fastapi==0.115.12",
+    "lightgbm==4.6.0",
+    "numpy==2.2.6",
+    "pandas==2.3.3",
+    "plotly==6.1.2",
+    "pyarrow==20.0.0",
+    "pydantic==2.11.5",
+    "pydantic-settings==2.9.1",
+    "python-dotenv==1.1.0",
+    "PyYAML==6.0.3",
+    "requests==2.32.5",
+    "scikit-learn==1.7.2",
+    "streamlit==1.45.1",
+    "uvicorn==0.34.2",
+    "xgboost==3.2.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "integration: tests that exercise multiple application components",
+    "release: slower artifact and release smoke tests",
+]
+
+[tool.ruff]
+line-length = 88
+src = ["app", "dashboard", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

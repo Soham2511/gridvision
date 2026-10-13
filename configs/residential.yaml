@@ -1,0 +1,3 @@
+tariff_inr_per_kwh: 10
+minimum_reading_days_before_prediction: 7
+estimate_disclaimer: "Prototype estimate; not a guaranteed utility bill."

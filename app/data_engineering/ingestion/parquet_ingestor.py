@@ -1,0 +1,1 @@
+"""Parquet source ingestion adapter."""

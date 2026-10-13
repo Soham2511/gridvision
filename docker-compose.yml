@@ -1,0 +1,2 @@
+# Local multi-service configuration is deferred until the API and dashboard
+# entry points are implemented and their runtime dependencies are pinned.

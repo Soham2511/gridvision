@@ -1,0 +1,11 @@
+{
+  "status": "not_evaluated",
+  "dataset_split": null,
+  "time_range": null,
+  "model_version": null,
+  "metrics": {},
+  "baseline": {},
+  "acceptance_decision": null,
+  "reviewer": null,
+  "review_date": null
+}

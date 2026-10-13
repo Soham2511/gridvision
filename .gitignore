@@ -1,0 +1,48 @@
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+
+# Test/tool output
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+.pre-commit-cache/
+
+# Local runtime output
+logs/*
+!logs/.gitkeep
+
+# Private/large data and model files; keep only explicit safe samples in Git.
+data/raw/*
+data/bronze/*
+data/silver/*
+data/gold/*
+data/external/*
+!data/raw/.gitkeep
+!data/bronze/.gitkeep
+!data/silver/.gitkeep
+!data/gold/.gitkeep
+!data/external/.gitkeep
+artifacts/models/**/*.pkl
+*.joblib
+
+# Generated reports
+reports/evaluation/*
+reports/release/*
+reports/quality_gates/*
+!reports/evaluation/.gitkeep
+!reports/release/.gitkeep
+!reports/quality_gates/.gitkeep
+data/reports/data_profile/*
+data/reports/data_quality/*
+data/reports/lineage/*
+!data/reports/data_profile/.gitkeep
+!data/reports/data_quality/.gitkeep
+!data/reports/lineage/.gitkeep

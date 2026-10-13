@@ -1,0 +1,1 @@
+"""Reusable dashboard table components."""

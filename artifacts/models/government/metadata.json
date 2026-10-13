@@ -1,0 +1,86 @@
+{
+  "model_name": "government",
+  "model_version": "unversioned",
+  "artifact_filename": "regional_model.pkl",
+  "sha256": "514a32520ec871e4ca5fa5f4903e834897dacdc2738456a4d6e2f22878192ee2",
+  "artifact_size_bytes": 768685,
+  "artifact_type": "LightGBM LGBMRegressor",
+  "target_name": "total_demand_kwh",
+  "target_units": "kWh per hourly record",
+  "feature_schema_version": "government-v1",
+  "features": [
+    "building_count",
+    "airTemperature",
+    "relative_humidity_pct",
+    "cloudCoverage",
+    "windSpeed",
+    "is_weekend",
+    "season",
+    "hour_sin",
+    "hour_cos",
+    "dayofweek_sin",
+    "dayofweek_cos",
+    "month_sin",
+    "month_cos",
+    "is_business_hours",
+    "cooling_degree_hours",
+    "heating_degree_hours",
+    "demand_lag_1h",
+    "demand_lag_24h",
+    "demand_lag_48h",
+    "demand_lag_168h",
+    "demand_rolling_mean_6h",
+    "demand_rolling_std_6h",
+    "demand_rolling_mean_24h",
+    "demand_rolling_std_24h",
+    "demand_rolling_mean_168h",
+    "demand_rolling_std_168h",
+    "site_id_code"
+  ],
+  "categorical_encodings": {
+    "site_id_code": {
+      "Bear": 0,
+      "Bobcat": 1,
+      "Bull": 2,
+      "Cockatoo": 3,
+      "Crow": 4,
+      "Eagle": 5,
+      "Fox": 6,
+      "Gator": 7,
+      "Hog": 8,
+      "Lamb": 9,
+      "Moose": 10,
+      "Mouse": 11,
+      "Panther": 12,
+      "Peacock": 13,
+      "Rat": 14,
+      "Robin": 15,
+      "Wolf": 16
+    },
+    "season": {
+      "Fall": 0,
+      "Spring": 1,
+      "Summer": 2,
+      "Winter": 3
+    }
+  },
+  "training_data_version": "training table not serialized with model artifact",
+  "training_date_range": {
+    "start": null,
+    "end": null
+  },
+  "split_identifiers": {
+    "method": "see notebooks/06_government_model_review.ipynb",
+    "exact_validation_and_test_ranges": null
+  },
+  "python_version": "3.10.11",
+  "package_versions": {
+    "lightgbm": "4.6.0",
+    "numpy": "2.2.6",
+    "pandas": "2.3.3",
+    "scikit-learn": "1.7.2"
+  },
+  "metrics_report": "metrics.json",
+  "code_revision": null,
+  "status": "loaded; independent evaluation review required"
+}

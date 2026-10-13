@@ -1,0 +1,988 @@
+GRIDVISION — END-TO-END FASTAPI + STREAMLIT IMPLEMENTATION PLAN
+Project architecture, directory structure, engineering standards, and build sequence
+Prepared: 13 October 2026
+
+====================================================================
+1. PURPOSE AND CURRENT SCOPE
+====================================================================
+
+GridVision is a smart-energy analytics platform with three customer-facing dashboard experiences:
+
+1. Residential — customer/household month-end electricity bill prediction.
+2. Commercial — factory-level energy-demand prediction and related operational metrics.
+3. Government — region-level demand prediction to support grid planning and energy redistribution.
+
+CURRENT IMPLEMENTATION GOAL
+Build a working, end-to-end Python application in which:
+- Three existing trained model artifacts (currently available as .pkl files) are loaded by a backend.
+- FastAPI exposes validated prediction endpoints for the three models.
+- Streamlit provides three dashboards and calls the FastAPI endpoints.
+- Inputs, outputs, errors, model versions, latency, and relevant data/model parameters are logged in structured form.
+- The project has repeatable data engineering, model evaluation, tests, quality gates, documentation, and a release process.
+
+This is the initial application/integration phase. Do not assume the existing pickle files are production-ready until their training features, preprocessing, dependencies, target definitions, and evaluation reports have been checked. The plan is to package preprocessing and the estimator together into one versioned pipeline artifact wherever feasible.
+
+The attached demo dashboard image and the three whiteboard sketches are design references. Keep the original uploaded images unchanged as reference assets. Suggested repository locations:
+- docs/assets/dashboard_demo.png
+- docs/assets/whiteboard_residential.png
+- docs/assets/whiteboard_overview.png
+- docs/assets/whiteboard_region_map.png
+
+Use the original image files as supplied; these names are suggested destination names, not claims that the files have already been copied or converted. The demo dashboard is a visual guide, not a source of validated model outputs. Any figures shown in the mockup are illustrative.
+
+====================================================================
+2. ARCHITECTURAL PRINCIPLES
+====================================================================
+
+A. Separation of concerns
+- Streamlit: presentation, navigation, user input, charts, and API calls only.
+- FastAPI: HTTP endpoints, request/response validation, authentication/authorization hooks if needed, and API error handling.
+- Application/service layer: orchestrates prediction use cases.
+- Model layer: loads model artifacts and performs inference.
+- Data layer: raw data ingestion, validation, transformation, storage, and reporting.
+- Core/domain layer: shared schemas, domain rules, calculations, and exceptions.
+- Observability layer: structured logs, request IDs, timings, model versions, and health checks.
+
+B. Object-oriented design
+Use small classes with one clear responsibility. Prefer dependency injection over global model objects. Define interfaces/protocols where multiple implementations are likely. Avoid putting model logic directly inside FastAPI route functions or Streamlit pages.
+
+C. Validation at boundaries
+Use Pydantic models for API requests/responses and configuration. Use explicit data contracts (for example, Pandera or Pydantic-based validation) for ingestion and transformed datasets where appropriate. Validate:
+- Required columns and data types
+- Null/missing values and acceptable ranges
+- Timestamp format, ordering, duplicates, and expected frequency where relevant
+- Feature names/order expected by each model
+- Finite numeric values and sensible business constraints
+- Prediction response fields and units
+
+D. Reproducibility
+Pin dependencies, define configuration through environment variables, track data/model versions, and provide repeatable commands for data validation, tests, training/evaluation, and local startup.
+
+E. Safe artifact handling
+Only load trusted pickle files. Pickle/joblib artifacts can execute code when loaded; never load an artifact from an untrusted source. Record artifact checksum, creation date, model version, training data version, feature schema, and compatible package versions.
+
+F. No unsupported performance claims
+Do not claim a model is accurate simply because it returns a prediction or has a high training R². Each model needs a documented evaluation on an appropriate held-out dataset. Use time-based splits for time-series prediction; prevent leakage.
+
+====================================================================
+3. TENTATIVE REPOSITORY DIRECTORY STRUCTURE
+====================================================================
+
+GridVision/
+|
+|-- README.md
+|-- pyproject.toml                 # package metadata, tooling and dependency configuration
+|-- requirements.txt               # optional pinned deployment/runtime dependencies
+|-- requirements-dev.txt           # testing, linting, typing and quality tools
+|-- .python-version                # selected Python version, if using pyenv
+|-- .env.example                   # variable names and safe sample values; no secrets
+|-- .gitignore
+|-- Makefile                       # convenient commands for tests, lint, run, reports
+|-- Dockerfile                     # container image for API/UI, or separate Dockerfiles
+|-- docker-compose.yml             # optional local multi-service startup
+|-- .pre-commit-config.yaml
+|-- pytest.ini                     # pytest defaults/markers
+|
+|-- configs/
+|   |-- app.yaml                   # non-secret application defaults
+|   |-- logging.yaml               # structured logging configuration
+|   |-- data_quality.yaml          # dataset checks and thresholds
+|   |-- model_registry.yaml        # artifact paths, model names and versions
+|   |-- residential.yaml           # tariff and residential rules
+|   |-- commercial.yaml            # factory-specific configuration
+|   |-- government.yaml            # region-level configuration
+|   |-- environments/
+|       |-- local.yaml
+|       |-- test.yaml
+|       |-- production.yaml
+|
+|-- app/
+|   |-- __init__.py
+|   |-- main.py                    # FastAPI entry point; create app and lifespan
+|   |
+|   |-- api/
+|   |   |-- __init__.py
+|   |   |-- router.py              # combines versioned endpoint routers
+|   |   |-- dependencies.py        # dependency injection: services, settings, request context
+|   |   |-- exception_handlers.py  # consistent HTTP error responses
+|   |   |-- middleware.py          # request ID, timing, access logging
+|   |   |-- v1/
+|   |       |-- __init__.py
+|   |       |-- health.py          # liveness/readiness endpoints
+|   |       |-- residential.py     # household bill prediction endpoint
+|   |       |-- commercial.py      # factory prediction endpoint
+|   |       |-- government.py      # region prediction endpoint
+|   |       |-- schemas.py         # API request/response Pydantic schemas
+|   |
+|   |-- core/
+|   |   |-- __init__.py
+|   |   |-- config.py              # typed settings loaded from environment/config
+|   |   |-- logging.py             # JSON/structured logging setup
+|   |   |-- exceptions.py          # domain/application exceptions
+|   |   |-- security.py            # future auth/access-control integration
+|   |   |-- constants.py
+|   |
+|   |-- schemas/
+|   |   |-- __init__.py
+|   |   |-- common.py              # shared identifiers, timestamps, metadata
+|   |   |-- residential.py         # input/output data contracts
+|   |   |-- commercial.py
+|   |   |-- government.py
+|   |   |-- data_quality.py        # validation report schemas
+|   |
+|   |-- services/
+|   |   |-- __init__.py
+|   |   |-- prediction_service.py  # shared prediction orchestration where appropriate
+|   |   |-- residential_service.py
+|   |   |-- commercial_service.py
+|   |   |-- government_service.py
+|   |   |-- model_service.py       # model loading/metadata/inference abstraction
+|   |   |-- data_service.py        # access to prepared data or persisted predictions
+|   |
+|   |-- models/
+|   |   |-- __init__.py
+|   |   |-- base.py                # model adapter/interface
+|   |   |-- registry.py            # safe controlled mapping of model name to artifact
+|   |   |-- loader.py              # artifact loading and validation
+|   |   |-- metadata.py            # version, feature schema, checksum, metrics
+|   |   |-- residential_model.py   # adapter around residential pipeline artifact
+|   |   |-- commercial_model.py    # adapter around commercial pipeline artifact
+|   |   |-- government_model.py    # adapter around government pipeline artifact
+|   |
+|   |-- domain/
+|   |   |-- __init__.py
+|   |   |-- billing.py              # bill formula and billing-cycle rules
+|   |   |-- forecasting.py          # forecast domain calculations
+|   |   |-- redistribution.py       # future allocation/redistribution rules
+|   |   |-- units.py                # unit definitions and conversions
+|   |
+|   |-- data_engineering/
+|   |   |-- __init__.py
+|   |   |-- ingestion/
+|   |   |   |-- base.py
+|   |   |   |-- csv_ingestor.py
+|   |   |   |-- parquet_ingestor.py
+|   |   |   |-- api_ingestor.py     # future/optional
+|   |   |-- validation/
+|   |   |   |-- schemas.py
+|   |   |   |-- validators.py
+|   |   |   |-- quality_rules.py
+|   |   |   |-- duplicate_checks.py
+|   |   |   |-- time_series_checks.py
+|   |   |-- transformations/
+|   |   |   |-- bronze_to_silver.py
+|   |   |   |-- silver_to_gold.py
+|   |   |   |-- feature_engineering.py
+|   |   |   |-- aggregation.py
+|   |   |-- reports/
+|   |   |   |-- data_report.py
+|   |   |   |-- profiling_report.py
+|   |   |   |-- quality_report.py
+|   |   |-- pipeline.py             # orchestrates ingestion -> validation -> layers
+|   |
+|   |-- evaluation/
+|   |   |-- __init__.py
+|   |   |-- metrics.py              # MAE, RMSE, R², WAPE and task-specific metrics
+|   |   |-- temporal_split.py       # chronological splits for time-series use cases
+|   |   |-- evaluate_residential.py
+|   |   |-- evaluate_commercial.py
+|   |   |-- evaluate_government.py
+|   |   |-- reports.py              # model comparison and error breakdown reports
+|   |
+|   |-- observability/
+|   |   |-- __init__.py
+|   |   |-- log_context.py           # request/model/data context
+|   |   |-- metrics.py               # latency, request counts, error counts
+|   |   |-- audit.py                 # prediction audit metadata; avoid sensitive raw inputs
+|   |
+|   |-- storage/
+|       |-- __init__.py
+|       |-- interfaces.py
+|       |-- local_store.py           # initial local storage implementation
+|       |-- prediction_repository.py  # optional persisted prediction snapshots
+|
+|-- dashboard/
+|   |-- Home.py                      # Streamlit entry point and landing page
+|   |-- pages/
+|   |   |-- 1_Residential.py
+|   |   |-- 2_Commercial.py
+|   |   |-- 3_Government.py
+|   |   |-- 4_Historical_Analysis.py
+|   |   |-- 5_Data_and_Model_Health.py
+|   |-- components/
+|   |   |-- sidebar.py
+|   |   |-- metric_cards.py
+|   |   |-- forecast_charts.py
+|   |   |-- regional_map.py
+|   |   |-- tables.py
+|   |   |-- status_banner.py
+|   |-- clients/
+|   |   |-- api_client.py             # typed HTTP client for FastAPI
+|   |   |-- errors.py
+|   |-- utils/
+|       |-- formatting.py
+|       |-- session_state.py
+|       |-- config.py
+|
+|-- artifacts/
+|   |-- models/
+|   |   |-- residential/
+|   |   |   |-- current_pipeline.pkl  # replace with verified full pipeline
+|   |   |   |-- metadata.json
+|   |   |   |-- metrics.json
+|   |   |-- commercial/
+|   |   |   |-- current_pipeline.pkl
+|   |   |   |-- metadata.json
+|   |   |   |-- metrics.json
+|   |   |-- government/
+|   |       |-- current_pipeline.pkl
+|   |       |-- metadata.json
+|   |       |-- metrics.json
+|   |-- manifests/
+|       |-- artifact_checksums.json
+|
+|-- data/
+|   |-- README.md                    # data inventory, ownership and handling rules
+|   |-- raw/                         # Bronze: immutable source data
+|   |-- bronze/                      # ingested, source-faithful records + ingestion metadata
+|   |-- silver/                      # cleaned, typed, deduplicated and quality-flagged data
+|   |-- gold/                        # business-ready aggregates/features/model-ready datasets
+|   |-- external/                    # approved external inputs, if applicable
+|   |-- sample/                      # small synthetic/sanitised examples for tests and demos
+|   |-- reports/
+|       |-- data_profile/
+|       |-- data_quality/
+|       |-- lineage/
+|
+|-- notebooks/
+|   |-- README.md
+|   |-- 01_data_understanding.ipynb
+|   |-- 02_data_quality_and_profiling.ipynb
+|   |-- 03_feature_engineering.ipynb
+|   |-- 04_residential_model_review.ipynb
+|   |-- 05_commercial_model_review.ipynb
+|   |-- 06_government_model_review.ipynb
+|   |-- 07_error_analysis.ipynb
+|   # Notebooks are for exploration; reusable production logic belongs in app/ modules.
+|
+|-- tests/
+|   |-- conftest.py
+|   |-- unit/
+|   |   |-- test_schemas.py
+|   |   |-- test_validators.py
+|   |   |-- test_feature_engineering.py
+|   |   |-- test_billing.py
+|   |   |-- test_metrics.py
+|   |   |-- test_model_loader.py
+|   |   |-- test_model_adapters.py
+|   |   |-- test_services.py
+|   |-- api/
+|   |   |-- test_health_endpoints.py
+|   |   |-- test_residential_endpoint.py
+|   |   |-- test_commercial_endpoint.py
+|   |   |-- test_government_endpoint.py
+|   |   |-- test_validation_errors.py
+|   |-- integration/
+|   |   |-- test_prediction_flow.py
+|   |   |-- test_data_pipeline.py
+|   |   |-- test_dashboard_api_client.py
+|   |-- contract/
+|   |   |-- test_model_feature_contracts.py
+|   |   |-- test_api_response_contracts.py
+|   |-- release/
+|       |-- test_artifact_loadability.py
+|       |-- test_smoke_prediction.py
+|       |-- test_release_metadata.py
+|
+|-- scripts/
+|   |-- validate_data.py
+|   |-- generate_data_report.py
+|   |-- evaluate_models.py
+|   |-- inspect_artifacts.py
+|   |-- run_quality_gates.py
+|   |-- export_model_metadata.py
+|
+|-- logs/                           # local development only; normally gitignored
+|-- reports/
+|   |-- evaluation/
+|   |-- release/
+|   |-- quality_gates/
+|
+|-- docs/
+|   |-- README.md
+|   |-- architecture.md
+|   |-- api_contracts.md
+|   |-- data_dictionary.md
+|   |-- data_pipeline.md
+|   |-- model_cards/
+|   |   |-- residential.md
+|   |   |-- commercial.md
+|   |   |-- government.md
+|   |-- dashboard_specification.md
+|   |-- testing_and_quality_gates.md
+|   |-- release_runbook.md
+|   |-- assumptions_and_risks.md
+|   |-- assets/
+|       |-- dashboard_demo.png
+|       |-- whiteboard_residential.png
+|       |-- whiteboard_overview.png
+|       |-- whiteboard_region_map.png
+|
+|-- .github/
+    |-- workflows/
+        |-- ci.yml                  # tests, lint, typing, security/dependency checks
+        |-- release.yml             # release validation/build workflow
+
+Notes:
+- Do not commit large or sensitive production datasets to Git. Use an approved data store or Git LFS/DVC if needed.
+- Keep secrets out of source control. Use environment variables or a secret manager.
+- If the project is initially small, some modules may be combined, but preserve the logical boundaries.
+- Avoid duplicate model artifacts. Keep one explicit, versioned artifact per model version and use a registry/config mapping to select it.
+
+====================================================================
+4. THE THREE MODEL CONTRACTS
+====================================================================
+
+MODEL A — RESIDENTIAL CUSTOMER-LEVEL BILL PREDICTION
+Purpose:
+Estimate the customer's end-of-month bill from actual consumption so far plus forecast consumption for the remainder of the billing cycle.
+
+Reference product rule from the project documentation:
+- Prototype tariff: flat ₹10 per kWh, unless configuration changes it.
+- Collect the first seven days of readings before displaying the first prediction.
+- Starting on Day 8, forecast remaining consumption and add actual consumption in the current billing cycle.
+- Refresh the estimate daily.
+- Label the output as an estimate, not a guaranteed utility bill.
+- The dataset has been described as roughly four years of 15-minute interval kWh readings and approximately 370 customer/meter columns; confirm the actual schema, coverage, units, and customer/meter meaning before implementation.
+- A 15-minute reading already represents interval energy in kWh. Sum intervals; do not multiply each interval reading by 0.25 again.
+
+Core calculation, when applicable:
+actual_kwh_so_far = sum(valid interval consumption in current billing cycle)
+predicted_remaining_kwh = model prediction for remaining cycle
+estimated_month_end_kwh = actual_kwh_so_far + predicted_remaining_kwh
+estimated_bill_inr = estimated_month_end_kwh * configured_tariff
+
+Suggested endpoint:
+POST /api/v1/residential/predict
+
+Suggested request fields (finalise from the existing model's actual feature schema):
+- customer_id (or anonymised household ID)
+- forecast_timestamp
+- billing_cycle_start and billing_cycle_end
+- actual_kwh_so_far
+- validated recent/history features required by the model
+- data coverage/quality metadata
+
+Suggested response fields:
+- customer_id
+- predicted_remaining_kwh
+- actual_kwh_so_far
+- estimated_month_end_kwh
+- estimated_month_end_bill_inr
+- tariff_inr_per_kwh
+- prediction_timestamp
+- model_version
+- data_quality/coverage status
+- explanatory caveats
+
+Residential dashboard should show:
+- Estimated month-end bill
+- Actual consumption so far
+- Forecast consumption for the remaining period
+- Current monthly usage and estimated monthly usage
+- Historical versus forecast usage chart
+- Last-updated time and data coverage
+- Trend in estimates over time, if prediction snapshots are persisted
+- Clear prototype-tariff disclaimer
+
+MODEL B — COMMERCIAL FACTORY-LEVEL PREDICTION
+Purpose:
+Provide factory-level energy-demand predictions for commercial operations. The exact target, horizon, granularity, input columns, and units must be taken from the current model and training documentation, not guessed.
+
+Suggested endpoint:
+POST /api/v1/commercial/predict
+
+Request/response schemas must explicitly define:
+- factory/site identifier
+- forecast timestamp and horizon, if applicable
+- required model features and their units
+- predicted demand/usage target and unit
+- model version and data-quality status
+- any validated peak-period or cost fields, only if supported by the model/business rules
+
+Commercial dashboard may include:
+- Actual versus predicted factory load/demand
+- Forecast horizon and peak-period indicators, if supported
+- Factory/site selector
+- Key demand metrics
+- Model/data status and update timestamp
+- Cost or load-shifting estimates only after their formulas and required tariff inputs are explicitly defined and tested
+
+MODEL C — GOVERNMENT REGION-LEVEL PREDICTION
+Purpose:
+Provide region-level demand predictions to support grid planning and energy redistribution. Confirm the actual model target and output semantics before designing calculations or presenting results as operational recommendations.
+
+Suggested endpoint:
+POST /api/v1/government/predict
+
+Request/response schemas must explicitly define:
+- region identifier
+- forecast timestamp and horizon
+- required model features and units
+- predicted demand/consumption and unit
+- model version and data-quality status
+- redistribution recommendations only if a separate, defined and validated optimisation layer exists
+
+Government dashboard may include:
+- Region-wise demand metrics
+- Map or region selector
+- Historical versus forecast demand
+- Regional comparison table
+- Peak-demand indicators, if supported
+- Data freshness, model version, and quality status
+- Redistribution outputs only when backed by a defined algorithm, constraints, and validation
+
+IMPORTANT: The three endpoints are prediction endpoints. A prediction model does not, by itself, implement redistribution optimisation, tariff calculation, anomaly detection, or business recommendations. Those require separate logic and tests.
+
+====================================================================
+5. PIPELINE PACKAGING — ONE PKL PER MODEL
+====================================================================
+
+Target design:
+Each artifact should be a fitted scikit-learn Pipeline (or compatible pipeline object) containing all learned preprocessing and the estimator. Use ColumnTransformer for column-specific preprocessing when appropriate.
+
+Illustrative pattern:
+- numeric pipeline: imputation and scaling if required
+- categorical pipeline: imputation and one-hot encoding or another appropriate encoder
+- ColumnTransformer: applies transformations to declared feature columns
+- final estimator: trained model
+- optional custom transformers: only if they are serialisable, deterministic, and covered by tests
+
+Package the preprocessing and estimator together so inference receives raw, schema-valid model inputs and applies the exact training transformations. Do not independently refit imputers/encoders in FastAPI or Streamlit.
+
+Critical compatibility checks:
+1. Inspect each current .pkl: object type, required feature names/order, preprocessing included, target, library versions, and expected input shape.
+2. If the current .pkl contains only an estimator, recover the exact preprocessing used during training and rebuild/retrain the full pipeline from training data.
+3. Do not fabricate missing preprocessing steps or assume that a model can accept arbitrary raw columns.
+4. Use the same feature engineering implementation for training and inference. Where possible, implement it as a tested transformer in the pipeline.
+5. Fit all learned transformations only on training data, inside the training pipeline, to prevent leakage.
+6. Validate incoming feature names, types, ranges, null policy, and ordering before inference.
+7. Save the full pipeline with a metadata manifest containing:
+   - model name and semantic version
+   - artifact filename and SHA-256 checksum
+   - target definition and target units
+   - ordered feature list/schema version
+   - training data version/date range
+   - train/validation/test split dates or identifiers
+   - package/Python versions
+   - evaluation metrics and baseline comparison
+   - training timestamp and code revision
+8. Load artifacts only from a controlled, configured path. Fail readiness checks if an artifact is missing or invalid.
+9. Never silently fall back to a different model version after a loading failure.
+
+====================================================================
+6. DATA ENGINEERING — BRONZE / SILVER / GOLD
+====================================================================
+
+BRONZE LAYER — RAW/INGESTED
+Purpose: preserve source data and ingestion traceability.
+Steps:
+- Ingest from existing files or an explicitly configured feed.
+- Store source-faithful data without silently overwriting the original.
+- Record ingestion timestamp, source filename/system, batch ID, row count, and checksum where practical.
+- Keep schema/column names and source values intact; add ingestion metadata separately where possible.
+- Store data in an appropriate format such as CSV/Parquet.
+- Make ingestion repeatable and handle duplicate batch submissions safely.
+
+SILVER LAYER — CLEANED/VALIDATED
+Purpose: make data typed, standardised, deduplicated, and quality-flagged.
+Steps:
+- Parse timestamps and define timezone handling.
+- Validate column names and data types.
+- Check missingness, duplicate keys/timestamps, invalid numeric values, impossible values, and unexpected frequencies.
+- For interval time series, inspect gaps, duplicates, zero readings, negative readings, and extreme spikes.
+- Do not automatically treat zero as missing; it may represent genuine zero consumption.
+- Do not automatically delete or impute anomalies without a documented rule.
+- Add quality flags and retain lineage to source records.
+- Write a quality report with counts, rates, examples, and decisions.
+- Keep cleaning transformations deterministic and tested.
+
+GOLD LAYER — BUSINESS-READY DATA
+Purpose: create curated tables for reporting, model inputs, and evaluation.
+Steps:
+- Generate the aggregations and features required by each model.
+- Create documented hourly/daily/monthly or regional/factory summaries where relevant.
+- Ensure every feature was available at the forecast timestamp.
+- Keep target definitions separate from input features.
+- Prevent future data leakage in time-series features and historical aggregates.
+- Store schema/version, source lineage, row counts, and quality results.
+- Do not force all three use cases into one common table if their grains and schemas differ.
+
+DATA REPORT FOR EVERY DATASET
+Generate a report for every raw/bronze/silver/gold dataset, including:
+- Dataset name, version, source, generation time, and owner/context
+- File/table format, dimensions, date range, and data grain
+- Column names, inferred/declared types, and units
+- Missing count and percentage per column
+- Duplicate count and key uniqueness
+- Numeric summary statistics and categorical value counts
+- Timestamp cadence, gaps, and timezone where relevant
+- Invalid/out-of-range values and quality-rule results
+- Target distribution for labelled training datasets
+- Row counts before and after transformations
+- Excluded/imputed records and reasons
+- Data lineage and transformation version
+- A machine-readable JSON report plus a human-readable HTML/Markdown report
+
+The report must distinguish a warning from a hard failure. Thresholds should be configured and justified; do not invent universal acceptable thresholds before inspecting the data.
+
+====================================================================
+7. MODEL EVALUATION AND METRICS
+====================================================================
+
+Every model needs a repeatable evaluation script and a saved report. Report performance on a held-out dataset that was not used for fitting or model selection.
+
+Regression metrics, where applicable:
+- MAE: average absolute error in the target's units.
+- RMSE: penalises larger errors more strongly.
+- R²: comparison against a mean-target baseline; interpret with the other metrics.
+- WAPE or carefully defined percentage error when meaningful; guard against zero/near-zero denominators.
+- Bias/mean error: reveals systematic over- or under-prediction.
+- Error breakdowns by date, horizon, customer/factory/region, and relevant operating segment.
+- Baseline comparison: report whether the model beats a simple, credible baseline.
+
+Residential-specific evaluation, following the product specification:
+- MAE in kWh for estimated month-end consumption.
+- MAE in rupees for the estimated bill under the configured tariff.
+- RMSE.
+- WAPE/percentage error with low-denominator handling.
+- Error by forecast day, household, and month.
+- Chronological train/validation/test split.
+- Reproduce the product rule: no displayed prediction during the first seven days; prediction starts on Day 8.
+- Prevent leakage from current-month future consumption.
+- Where feasible, evaluate generalisation to households not represented in training.
+
+Commercial-specific evaluation:
+- Use the target's true units and forecast horizon.
+- Report MAE/RMSE and R² if regression is appropriate.
+- Break down error by factory, forecast horizon, and peak/non-peak period where supported.
+- Compare with a baseline such as a recent-period or seasonal-naive forecast, where appropriate.
+
+Government-specific evaluation:
+- Use the target's true units and forecast horizon.
+- Report MAE/RMSE and suitable percentage metrics.
+- Break down error by region and horizon.
+- If the product later includes redistribution, evaluate that optimisation separately against explicit constraints and operational objectives; predictive accuracy alone does not validate a redistribution decision.
+
+Evaluation reports should include:
+- Dataset/split identifier and time range
+- Model/artifact version
+- Metric definitions and values
+- Baseline results
+- Error plots/tables and segment analysis
+- Known weaknesses and failure cases
+- Acceptance decision and reviewer/date
+
+Do not set arbitrary numeric acceptance thresholds before measuring baselines and understanding business impact. Establish thresholds after the first reproducible evaluation.
+
+====================================================================
+8. PYDANTIC VALIDATION AND API DESIGN
+====================================================================
+
+Use Pydantic schemas at API boundaries and typed settings for configuration. Prefer separate request and response models for each use case.
+
+For each endpoint:
+1. Validate request structure, required fields, types, identifiers, timestamps, units, and constraints.
+2. Validate cross-field/business rules in the service/domain layer where needed.
+3. Validate model feature schema and reject missing/extra features according to a documented policy.
+4. Run the model pipeline.
+5. Validate that outputs are finite and within documented constraints where such constraints are meaningful.
+6. Return a typed response with prediction, units, timestamp, model version, and data-quality status.
+7. Use consistent error response structures and appropriate HTTP status codes.
+8. Log request ID, endpoint, latency, model version, status, and safe metadata. Avoid logging sensitive raw consumption records or secrets.
+
+Suggested endpoints:
+- GET /health/live — process is alive.
+- GET /health/ready — application and required model artifacts are ready.
+- GET /api/v1/models — available model names and versions, without exposing private filesystem details.
+- POST /api/v1/residential/predict
+- POST /api/v1/commercial/predict
+- POST /api/v1/government/predict
+
+FastAPI should be the sole serving interface for inference. Streamlit must call the API through a shared API client; it must not load .pkl files or duplicate prediction logic.
+
+Use dependency injection for model services and settings. Load models once during application startup/lifespan, validate them, and manage readiness if a model fails to load. For a small initial app, a local file-based data source is acceptable, but use clear interfaces so storage can change later.
+
+====================================================================
+9. STREAMLIT DASHBOARD IMPLEMENTATION
+====================================================================
+
+Create one Streamlit application with three clearly separated pages and shared components.
+
+SHARED LAYOUT
+- GridVision branding/logo and sidebar navigation.
+- Customer segment selection: Residential, Commercial, Government.
+- Region/site/customer selectors as appropriate.
+- Consistent metric cards, charts, tables, loading states, empty states, and error banners.
+- Display last updated time, API status, model version, and data quality.
+- Use the supplied demo dashboard image as the visual design reference: dark navy sidebar, teal/green accents, clean white cards, forecast chart, compact metric cards, and region context. Treat exact numbers in the image as mock data only.
+- Preserve the supplied whiteboard sketches as references for layout ideas, not as precise specifications.
+
+RESIDENTIAL PAGE
+- Inputs/selectors required by the actual model/API schema.
+- Actual usage, predicted remaining usage, estimated month-end usage, and estimated bill.
+- Historical versus predicted trend chart with the forecast boundary visually clear.
+- Current monthly usage and predicted monthly usage metric cards.
+- Configured tariff and estimate disclaimer.
+- Suppress prediction UI when the seven-day onboarding rule is not satisfied, if that rule is implemented by the backend.
+
+COMMERCIAL PAGE
+- Factory/site selector.
+- Historical load and forecast chart.
+- Predicted target metric and units.
+- Peak-period or cost metrics only if the model/business logic supports them.
+- Clear timestamp, model version, and data-quality status.
+
+GOVERNMENT PAGE
+- Region selector and region-level metrics.
+- Historical versus predicted regional demand.
+- Region comparison table and map if reliable geographic data is available.
+- Redistribution decisions only when a separately defined optimisation layer exists.
+- Clear timestamp, model version, and data-quality status.
+
+STREAMLIT ENGINEERING RULES
+- Put API calls in dashboard/clients/api_client.py.
+- Put reusable charts/cards/sidebar in dashboard/components/.
+- Use timeouts and handle connection failures, HTTP errors, invalid responses, and API-not-ready status.
+- Do not hardcode API URLs in multiple pages; read a validated setting/environment variable.
+- Keep presentation separate from calculations and inference.
+- Do not use illustrative demo numbers as actual predictions.
+- Include a visible error or retry state instead of silently showing stale or fake predictions.
+- Test pure formatting and API-client behaviour where practical.
+
+====================================================================
+10. OBJECT-ORIENTED CODE, DOCSTRINGS, AND COMMENTS
+====================================================================
+
+Each production Python module should have a module docstring describing its purpose.
+
+Each class should have a class docstring describing its responsibility. Each function/method should have a docstring describing:
+- Purpose
+- Important arguments and their meaning
+- Return value
+- Relevant exceptions or validation behaviour
+
+Add comments to explain non-obvious decisions, domain rules, or tricky transformations. Do not add comments that merely repeat the next line of code. Keep comments and docstrings accurate as code evolves.
+
+Suggested class responsibilities:
+- Settings: validated runtime configuration.
+- DataIngestor: loads source data and ingestion metadata.
+- DataValidator: applies schema and quality rules.
+- BronzeSilverTransformer: cleans and standardises data.
+- SilverGoldTransformer: creates curated aggregates/features.
+- DataReportGenerator: emits dataset profile and quality reports.
+- ModelArtifactLoader: loads trusted artifacts and verifies metadata/checksum.
+- ModelRegistry: maps approved model IDs to configured artifacts.
+- ModelAdapter: exposes a common predict interface around a fitted pipeline.
+- ResidentialPredictionService, CommercialPredictionService, GovernmentPredictionService: implement use-case orchestration.
+- PredictionRepository: optionally persists prediction snapshots.
+- APIClient: calls FastAPI from Streamlit and validates responses.
+
+Use type hints consistently. Keep functions short and deterministic where possible. Avoid a large class hierarchy or unnecessary abstractions; use OOP where it improves testability and clear ownership.
+
+====================================================================
+11. STRUCTURED LOGGING AND OBSERVABILITY
+====================================================================
+
+Use structured JSON logs in production and readable logs locally. Include suitable fields such as:
+- timestamp and log level
+- service/environment
+- request ID/correlation ID
+- endpoint and operation
+- model name and model version
+- artifact checksum or short artifact ID
+- data batch ID/schema version where relevant
+- duration/latency
+- status, error code, and exception type
+- row counts and quality-check summaries for data jobs
+- prediction outcome status, not necessarily all raw input values
+
+For model/data parameters, log safe, useful metadata such as input feature count, schema version, missingness summary, data coverage, forecast horizon, and model version. Avoid logging secrets, personal identifiers, complete raw payloads, or sensitive household consumption histories.
+
+Log key events:
+- API startup/shutdown and artifact load success/failure
+- readiness status changes
+- data ingestion start/end and row counts
+- data-quality failures and warnings
+- feature pipeline execution
+- prediction request completion and latency
+- validation errors and model exceptions
+- evaluation/release results
+
+Add counters/timers for request counts, errors, prediction latency, and data pipeline failures when practical. Prometheus/Grafana can be added later; structured logs are required from the beginning.
+
+====================================================================
+12. PYTEST STRATEGY
+====================================================================
+
+Use pytest throughout. Tests should be fast, deterministic, isolated, and independent of production data/services.
+
+UNIT TESTS
+- Pydantic valid/invalid request and response schemas.
+- Missing columns, unexpected columns, invalid types, NaN/inf, invalid ranges, timestamp errors.
+- Data quality checks, duplicate handling, missing intervals, and zero-value policy.
+- Feature engineering and aggregation correctness.
+- Billing calculation and tariff configuration.
+- Model loader behaviour for missing, corrupt, incompatible, or wrong-type artifacts.
+- Model adapter input shape, feature ordering, and output validation.
+- Evaluation metric calculations and edge cases.
+- Service-layer orchestration and exception handling.
+
+API TESTS
+- Health and readiness endpoint behaviour.
+- Each prediction endpoint with valid input.
+- Each endpoint with invalid/missing inputs.
+- Model unavailable, inference error, and malformed output scenarios.
+- Response schema and status codes.
+- Use FastAPI TestClient and dependency overrides/mocked models so API tests do not depend on large real artifacts.
+
+INTEGRATION TESTS
+- A small synthetic data file flows through ingestion, validation, Bronze/Silver/Gold transformations, and report generation.
+- API request -> service -> model adapter -> validated response.
+- Streamlit API client handles valid responses, timeouts, HTTP errors, and invalid JSON/schema.
+- Prediction snapshots, if persistence is included.
+
+CONTRACT TESTS
+- Model input columns match the artifact's declared feature schema.
+- Pipeline accepts representative raw inputs and returns the expected output shape.
+- API schemas remain consistent with the Streamlit client.
+- Artifact metadata matches actual model metadata.
+
+RELEASE/SMOKE TESTS
+- All three configured artifacts exist and load.
+- One known-good sample input can be predicted by each model.
+- Outputs are finite and match expected schema/units.
+- Model metadata/checksum can be verified.
+- Health/readiness checks pass.
+- A local end-to-end smoke test can call each endpoint.
+
+Use synthetic or anonymised fixtures; never require confidential production data for ordinary unit tests. Mark slower integration/release tests separately, for example with pytest markers.
+
+====================================================================
+13. QUALITY GATES AND RELEASE TESTING
+====================================================================
+
+Run gates locally and in CI before merge/release. Suggested sequence:
+
+Gate 1 — Repository hygiene
+- Formatting: Ruff formatter or Black.
+- Linting: Ruff.
+- Type checking: mypy or pyright for critical modules.
+- No committed secrets or environment files.
+- Dependency/security checks as appropriate.
+
+Gate 2 — Data quality
+- Dataset schema matches its declared contract.
+- Required columns and types exist.
+- Data-quality report generated.
+- Configured critical rules pass; warnings are surfaced.
+- Row-count changes and data drift are reviewed rather than silently accepted.
+
+Gate 3 — Model quality
+- Artifacts load in the target environment.
+- Feature schema and dependency versions match.
+- Evaluation report exists for every model.
+- Held-out metrics and baseline comparisons are available.
+- Leakage checks and time-based split checks pass for time-series models.
+- No arbitrary claim of success without measured results.
+
+Gate 4 — Automated tests
+- Unit tests pass.
+- API tests pass.
+- Integration/contract tests pass as required for the release.
+- Coverage is reported; define a practical threshold after baseline coverage is measured.
+- Critical business rules must have direct tests even if overall coverage is high.
+
+Gate 5 — API/UI smoke test
+- FastAPI starts.
+- Readiness reports the expected models.
+- All three prediction endpoints return schema-valid responses on sample inputs.
+- Streamlit starts and can reach the API.
+- Error states work when the API is unavailable.
+- No fake/demo values are mistaken for live predictions.
+
+Gate 6 — Release validation
+- Artifact checksums and metadata verified.
+- Model/data/code versions recorded.
+- Release notes and known limitations written.
+- Configuration and secrets supplied via the target environment.
+- Rollback path to the last known-good artifacts/code is documented.
+- Run a post-release health and prediction smoke test.
+
+A release should be blocked by critical schema failures, missing artifacts, failing tests, invalid model outputs, missing required evaluation reports, or unexplained degradation against the agreed baseline.
+
+====================================================================
+14. BUILD SEQUENCE — FROM CURRENT PKL FILES TO WORKING APP
+====================================================================
+
+PHASE 0 — INVENTORY AND CONTRACT DISCOVERY
+1. Place the three current .pkl files in a temporary, controlled location; do not rename or overwrite originals until inspected.
+2. Record the exact filename, file size, checksum, creation date, and source for each.
+3. Load only trusted artifacts in an isolated development environment.
+4. Inspect object type, feature names, expected input shape, preprocessing included, estimator type, target definition, and dependency versions.
+5. Find the training code/notebooks and identify all preprocessing and feature engineering.
+6. Confirm each model's request inputs, target output, units, prediction horizon, and supported entities.
+7. Identify gaps. If training preprocessing is missing, rebuild a complete pipeline using the original training procedure/data; do not guess.
+Deliverables: model inventory, model contracts, dependency list, initial risks/gaps.
+
+PHASE 1 — REPOSITORY AND ENVIRONMENT
+1. Create the directory structure above.
+2. Create pyproject.toml and pinned runtime/development dependencies.
+3. Configure pytest, Ruff, type checking, pre-commit, and environment configuration.
+4. Add .env.example and .gitignore.
+5. Add README with setup, commands, and data/artifact handling rules.
+6. Add structured logging and validated Settings class.
+Deliverables: reproducible environment and clean project skeleton.
+
+PHASE 2 — DATA ENGINEERING FOUNDATION
+1. Inventory every available dataset and define its grain and schema.
+2. Preserve source files as immutable raw/Bronze inputs.
+3. Implement ingestion adapters and schema validation.
+4. Implement Silver cleaning and quality flags with documented rules.
+5. Implement Gold aggregates/features separately for residential, commercial, and government models.
+6. Generate data reports for every dataset and each transformation stage.
+7. Add lineage metadata and automated tests.
+Deliverables: reproducible pipeline and data reports; no model retraining is required merely to wire up inference, but data contracts must still be understood.
+
+PHASE 3 — MODEL PIPELINE AND EVALUATION
+1. For each model, confirm the exact training/inference feature schema.
+2. Move reusable feature engineering into tested Python modules/transformers.
+3. Build a ColumnTransformer + estimator pipeline where appropriate.
+4. Fit preprocessing only on training data and save the entire fitted pipeline as one artifact per model.
+5. If a current model cannot be safely repackaged without training data/code, document the blocker rather than inventing preprocessing.
+6. Evaluate using appropriate held-out data and time-based splits for time-series use cases.
+7. Compare with simple baselines and save metrics.json plus a human-readable report.
+8. Write model metadata and checksum manifests.
+9. Add tests that load each artifact and run a representative sample.
+Deliverables: three validated pipeline artifacts, metadata, metrics, and model cards.
+
+PHASE 4 — FASTAPI BACKEND
+1. Implement the Pydantic request/response schemas for each model.
+2. Implement model loader/registry and dependency injection.
+3. Implement one service class per prediction use case.
+4. Implement the three POST prediction endpoints.
+5. Implement liveness/readiness and model information endpoints.
+6. Add consistent exceptions, HTTP status codes, request IDs, structured logs, and timing.
+7. Add unit, API, and contract tests.
+8. Verify the API does not expose local file paths, secrets, or sensitive input records.
+Deliverables: tested API serving all three models.
+
+PHASE 5 — STREAMLIT DASHBOARDS
+1. Create Home.py and shared navigation/components.
+2. Implement a reusable typed API client with timeouts and error handling.
+3. Build the Residential page based on the supplied dashboard mockup and the agreed month-end bill goal.
+4. Build the Commercial factory dashboard based on the confirmed factory model contract.
+5. Build the Government regional dashboard based on the confirmed region model contract.
+6. Add historical/forecast charts only when the required historical and prediction data are available.
+7. Show units, last-updated time, model version, data-quality status, and disclaimers.
+8. Never load model pickle files directly in Streamlit.
+9. Test API client behaviour and run manual end-to-end checks.
+Deliverables: one Streamlit app with three customer dashboards connected to FastAPI.
+
+PHASE 6 — END-TO-END TESTING
+1. Start FastAPI and wait for readiness.
+2. Start Streamlit with the configured API base URL.
+3. Send one valid test request to each prediction endpoint.
+4. Verify schema, units, finite outputs, model version, and error handling.
+5. Test missing/invalid fields, unavailable model, API timeout, and bad data.
+6. Test with synthetic/sample data before any pilot with real customer data.
+7. Confirm the dashboard never presents demo figures as live output.
+Deliverables: end-to-end smoke-test report and known-issues list.
+
+PHASE 7 — QUALITY GATES AND RELEASE
+1. Run formatting, lint, typing, tests, dependency/security checks, data gates, and model gates.
+2. Generate data and evaluation reports.
+3. Verify artifact checksums and metadata.
+4. Build the deployment image/configuration if using Docker.
+5. Document environment variables, startup, health checks, and rollback.
+6. Run release smoke tests.
+7. Tag the release and record code/model/data versions.
+Deliverables: reproducible release candidate and release checklist.
+
+====================================================================
+15. SUGGESTED DEVELOPER COMMANDS
+====================================================================
+
+Exact commands depend on the chosen package manager and final pyproject configuration. A typical workflow may include:
+
+- Create environment and install dependencies.
+- Run data validation/report generation scripts.
+- Run model artifact inspection.
+- Run pytest unit/API tests.
+- Run integration/release tests separately.
+- Run Ruff formatting/linting and type checks.
+- Start FastAPI with Uvicorn using app.main:app.
+- Start Streamlit using dashboard/Home.py.
+- Use Docker Compose only when it improves reproducibility or deployment needs.
+
+Document the final exact commands in README.md after the repository is created. Do not leave placeholder commands in the final project documentation.
+
+====================================================================
+16. KEY CONFIGURATION VARIABLES
+====================================================================
+
+Examples of settings to define and validate:
+- APP_ENV
+- LOG_LEVEL
+- API_HOST and API_PORT
+- API_BASE_URL for the Streamlit client
+- MODEL_REGISTRY_CONFIG
+- RESIDENTIAL_MODEL_PATH
+- COMMERCIAL_MODEL_PATH
+- GOVERNMENT_MODEL_PATH
+- DATA_ROOT
+- ARTIFACT_ROOT
+- RESIDENTIAL_TARIFF_INR_PER_KWH (prototype default may be 10, but configurable)
+- REQUEST_TIMEOUT_SECONDS
+- ENABLE_PREDICTION_PERSISTENCE
+- ALLOWED_ORIGINS if browser-based access is added
+
+Use Pydantic Settings (or an equivalent typed settings mechanism) to validate values. Do not store secrets in these example files. Production secrets should be supplied through a secure environment/secret manager.
+
+====================================================================
+17. RISKS, ASSUMPTIONS, AND OPEN QUESTIONS
+====================================================================
+
+1. The exact input/output schemas of the three existing .pkl files are not specified in the request. They must be inspected before endpoint schemas are finalised.
+2. It is unknown whether each pickle contains preprocessing or only a fitted estimator.
+3. The commercial model's target and forecast horizon must be confirmed.
+4. The government model's target, spatial grain, forecast horizon, and units must be confirmed.
+5. Region redistribution is a product capability, but it is not automatically delivered by a region-demand prediction model.
+6. Data sources and refresh frequency for the commercial and government models must be confirmed.
+7. Residential documentation specifies a seven-day onboarding window, daily refresh, and a prototype ₹10/kWh tariff. Confirm whether these rules are part of the current model integration release.
+8. The residential data description (about four years, 15-minute readings, around 370 meter/customer columns) is provisional until the dataset is profiled.
+9. Real tariffs may include slabs, fixed charges, taxes, subsidies, and billing-cycle differences. The flat-rate estimate should be clearly labelled as a prototype.
+10. Household energy data is sensitive. Use access controls, data minimisation, secure transport/storage, and a retention policy before production deployment.
+11. Exact numeric quality gates and model acceptance thresholds should be set after profiling the data and measuring baselines.
+12. Avoid adding Kafka, Kubernetes, automated retraining, or complex MLOps before the basic validated API/dashboard workflow proves useful.
+
+====================================================================
+18. DEFINITION OF DONE FOR THE FIRST END-TO-END VERSION
+====================================================================
+
+The first version is complete when:
+- The repository has the agreed logical structure and reproducible setup.
+- The three model artifacts have been inspected and their input/output contracts documented.
+- Each serving artifact includes the required preprocessing and estimator in one tested pipeline, or a documented technical blocker explains why not.
+- Each model has a data report and an evaluation report with metrics and a baseline comparison, where training/evaluation data is available.
+- FastAPI exposes three validated prediction endpoints plus health/readiness endpoints.
+- Streamlit has Residential, Commercial, and Government pages that call FastAPI.
+- No prediction logic or pickle loading is duplicated in Streamlit.
+- Structured logs include request/model/data context without leaking sensitive payloads.
+- Unit, API, contract, and smoke tests cover the critical paths.
+- Quality gates run consistently and release checks verify model artifacts.
+- Demo dashboard and whiteboard images are preserved as design references.
+- README and docs explain setup, API schemas, data lineage, model assumptions, metrics, limitations, and release/rollback steps.
+- The UI clearly distinguishes actual data, model predictions, and illustrative mock data.
+
+END OF DOCUMENT

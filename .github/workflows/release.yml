@@ -1,0 +1,14 @@
+name: Release validation
+
+on:
+  workflow_dispatch:
+
+jobs:
+  pending:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Explain release gates are not implemented yet
+        run: |
+          echo "Release validation is pending model artifacts, contracts, tests, and quality gates."
+          test -f README.md

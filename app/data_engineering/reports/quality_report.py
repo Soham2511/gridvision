@@ -1,0 +1,1 @@
+"""Data-quality report generation."""
