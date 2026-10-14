@@ -94,20 +94,42 @@ def build_dashboard_snapshots(
         raise ValueError(f"Government Gold has unsupported seasons: {unsupported}")
 
     outputs = {
-        "commercial": commercial_frame,
-        "government": government_frame,
+        "commercial_latest_test": commercial_frame,
+        "government_latest_test": government_frame,
     }
+
+    # Extract historical series for supported commercial buildings
+    bldg_dataset = ds.dataset(project_root / "data" / "gold" / "building_demand.parquet", format="parquet")
+    bldg_filter = ds.field("building_id").isin(sorted(supported_buildings))
+    bldg_table = bldg_dataset.to_table(
+        columns=["building_id", "site_id", "timestamp", "hourly_demand_kwh", "split_set", "airTemperature"],
+        filter=bldg_filter,
+    )
+    outputs["commercial_building_history"] = bldg_table.to_pandas()
+
+    # Aggregate system demand across all 17 government sites
+    gov_site_df = pd.read_parquet(
+        project_root / "data" / "gold" / "site_demand_cp2.parquet",
+        columns=["site_id", "timestamp", "total_demand_kwh", "building_count"],
+    )
+    gov_agg = gov_site_df.groupby("timestamp").agg(
+        total_aggregate_demand_kwh=("total_demand_kwh", "sum"),
+        site_count=("site_id", "nunique"),
+        total_buildings=("building_count", "sum"),
+    ).reset_index()
+    outputs["government_aggregate_history"] = gov_agg
+
     base = project_root / "data" / "gold" / "dashboard"
     base.mkdir(parents=True, exist_ok=True)
     counts: dict[str, int] = {}
-    for name, frame in outputs.items():
-        destination = base / f"{name}_latest_test.parquet"
+    for filename, frame in outputs.items():
+        destination = base / f"{filename}.parquet"
         if destination.exists() and not overwrite:
             raise FileExistsError(
                 f"Dashboard snapshot exists: {destination}. Use --overwrite."
             )
         if frame.empty:
-            raise ValueError(f"No supported test rows found for {name}.")
+            raise ValueError(f"No supported rows found for {filename}.")
         temporary = destination.with_suffix(destination.suffix + ".tmp")
         try:
             frame.to_parquet(
@@ -120,7 +142,7 @@ def build_dashboard_snapshots(
             temporary.replace(destination)
         finally:
             temporary.unlink(missing_ok=True)
-        counts[name] = len(frame)
+        counts[filename] = len(frame)
     return counts
 
 

@@ -18,7 +18,9 @@ class PredictionRequest(BaseModel):
     entity_id: str = Field(min_length=1, max_length=200)
     forecast_timestamp: datetime
     features: dict[str, FeatureValue]
-    context: Literal["unspecified", "retrospective_gold_replay"] = "unspecified"
+    context: Literal["unspecified", "retrospective_gold_replay", "future_forecast"] = (
+        "unspecified"
+    )
     actual_kwh_so_far: float | None = Field(default=None, ge=0)
 
 

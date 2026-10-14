@@ -77,6 +77,17 @@ def load_commercial_latest() -> pd.DataFrame:
     )
 
 
+@st.cache_data
+def load_commercial_history() -> pd.DataFrame:
+    """Read historical series for the 29 model-supported commercial buildings."""
+    path = PROJECT_ROOT / "data" / "gold" / "dashboard" / "commercial_building_history.parquet"
+    if not path.is_file():
+        raise FileNotFoundError(
+            f"Dashboard snapshot missing: {path}. Run build_dashboard_snapshots."
+        )
+    return pd.read_parquet(path)
+
+
 def load_government_latest() -> pd.DataFrame:
     """Load one latest test-split row per Government site."""
     return _read_parquet(
@@ -88,3 +99,40 @@ def load_government_latest() -> pd.DataFrame:
             / "government_latest_test.parquet"
         )
     )
+
+
+@st.cache_data
+def load_government_history() -> pd.DataFrame:
+    """Read historical series for all 17 government sites."""
+    path = PROJECT_ROOT / "data" / "gold" / "site_demand_cp2.parquet"
+    if not path.is_file():
+        raise FileNotFoundError(
+            f"Government gold data missing: {path}."
+        )
+    return pd.read_parquet(
+        path,
+        columns=[
+            "site_id",
+            "timestamp",
+            "total_demand_kwh",
+            "building_count",
+            "split_set",
+            "airTemperature",
+        ],
+    )
+
+
+@st.cache_data
+def load_government_aggregate_history() -> pd.DataFrame:
+    """Read pre-aggregated system demand across all 17 mutually exclusive sites."""
+    path = PROJECT_ROOT / "data" / "gold" / "dashboard" / "government_aggregate_history.parquet"
+    if not path.is_file():
+        # Fall back to on-the-fly aggregation if file missing
+        gov_df = load_government_history()
+        agg = gov_df.groupby("timestamp").agg(
+            total_aggregate_demand_kwh=("total_demand_kwh", "sum"),
+            site_count=("site_id", "nunique"),
+            total_buildings=("building_count", "sum"),
+        ).reset_index()
+        return agg
+    return pd.read_parquet(path)
