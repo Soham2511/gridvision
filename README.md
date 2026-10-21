@@ -296,3 +296,184 @@ When your teammates finish training models and provide the MLflow tracking servi
    - If the MLflow server is unreachable or unconfigured, it will explicitly report an error rather than silently returning mock predictions in production.
    - The React frontend automatically receives real inference outputs with the exact same JSON schema.
 
+---
+
+## Podman Containerization Guide
+
+GridVision is fully containerized using **Podman** and **Podman Compose** with production-grade WSGI (Gunicorn) and reverse proxying (Nginx).
+
+### Container Architecture & Same-Origin Routing
+
+```text
+  Browser / Phone / Client
+            │
+            │ HTTP Port 3000 (or 80)
+            ▼
+┌────────────────────────────────────────────────────────┐
+│ gridvision-frontend (Nginx Alpine)                     │
+│  ├── /                → Serves React SPA (HTML/JS/CSS) │
+│  ├── /assets/         → Static asset cache (1y)        │
+│  ├── /nginx-health    → Container liveness (200 OK)    │
+│  └── /api/            → Reverse Proxy Pass ────────────┼──┐
+└────────────────────────────────────────────────────────┘  │
+                                                            │ (Internal Bridge Network:
+                                                            │  gridvision-net)
+                                                            ▼
+┌────────────────────────────────────────────────────────┐
+│ gridvision-backend (Python 3.11-slim + Gunicorn)       │
+│  ├── /api/v1/health   → API liveness check             │
+│  ├── /api/v1/ready    → Readiness check                │
+│  ├── /api/v1/...      → Forecast, Peak, Anomalies      │
+│  └── Port 5000        → Kept private inside network    │
+└────────────────────────────────────────────────────────┘
+```
+
+**Why Same-Origin Routing?**
+- Eliminates CORS errors completely.
+- Avoids leaking internal container hostnames (`backend`) to the client browser.
+- Universal routing: the application works seamlessly on `localhost`, across local LANs (e.g. `http://192.168.0.x:3000`), or on AWS EC2 without rebuilding or hardcoding IP addresses.
+
+---
+
+### Prerequisites & Podman Setup on Windows
+
+Ensure Podman Engine and the Podman WSL machine are installed and running:
+
+```powershell
+podman version
+podman machine list
+```
+
+#### Windows WSL2 Netavark Configuration (Important)
+Microsoft's WSL2 kernel uses a standard firewall stack that does not include full nftables NAT tables. To ensure Podman container port publishing works reliably:
+
+```powershell
+# Restore nft binary and configure netavark firewall driver to none
+podman machine ssh "if [ -f /usr/sbin/nft.real ]; then sudo mv -f /usr/sbin/nft.real /usr/sbin/nft; fi"
+podman machine ssh "sudo mkdir -p /etc/containers/containers.conf.d && echo -e '[network]\nfirewall_driver = \"none\"' | sudo tee /etc/containers/containers.conf.d/99-firewall.conf"
+```
+
+---
+
+### Container Commands (Podman & Podman Compose)
+
+#### 1. Configuration Setup
+Copy the environment template:
+```powershell
+Copy-Item .env.example .env
+```
+
+#### 2. Build Container Images
+Build both images using Podman Compose:
+```powershell
+podman compose build
+```
+Or build individually:
+```powershell
+podman build -t gridvision-backend:latest ./backend
+podman build -t gridvision-frontend:latest --build-arg VITE_API_BASE_URL=/api/v1 ./frontend
+```
+
+#### 3. Start Containers
+Run both containers in detached mode:
+```powershell
+podman compose up -d
+```
+
+#### 4. Monitor Health & Status
+```powershell
+podman ps
+podman compose ps
+```
+
+#### 5. View Logs
+View combined or service-specific logs:
+```powershell
+podman compose logs -f
+podman logs -f gridvision-backend
+podman logs -f gridvision-frontend
+```
+
+#### 6. Stop and Clean Up
+```powershell
+podman compose down
+```
+
+---
+
+### End-to-End API Verification
+
+With containers running on port 3000, run the automated verification script:
+
+```powershell
+python tests/verify_container_api.py http://localhost:3000
+```
+
+This verifies:
+- Frontend SPA routing and static assets
+- Health and readiness probes (`/api/v1/health`, `/api/v1/ready`, `/api/v1/platform/health`)
+- All 15+ data endpoints (commercial, residential, government, forecast, anomalies, peak demand, customer matrix, AI chat)
+- Error handling (404, 405, 422 validation failure)
+
+---
+
+### Accessing From Other Devices on the LAN
+
+To access GridVision from your smartphone, tablet, or another computer on the same Wi-Fi network:
+
+1. **Find your Windows LAN IP**:
+   ```powershell
+   ipconfig
+   # Note the IPv4 Address under Wireless LAN adapter Wi-Fi (e.g. 192.168.0.102)
+   ```
+2. **Open Windows Defender Firewall for Port 3000**:
+   ```powershell
+   New-NetFirewallRule -DisplayName "GridVision Web" -Direction Inbound -LocalPort 3000 -Protocol TCP -Action Allow
+   ```
+3. **Open browser on phone or client device**:
+   ```text
+   http://192.168.0.102:3000
+   ```
+   All API calls will automatically resolve to `http://192.168.0.102:3000/api/v1/...` through the reverse proxy!
+
+---
+
+### AWS EC2 Deployment Guide
+
+To deploy GridVision on a clean AWS EC2 instance:
+
+1. **Launch EC2 Instance**:
+   - AMI: Ubuntu 24.04 LTS or Amazon Linux 2023 (t3.small or t3.medium recommended)
+   - Security Group Inbound Rules:
+     - SSH (Port 22) from your IP
+     - HTTP (Port 80) from `0.0.0.0/0`
+     - HTTPS (Port 443) from `0.0.0.0/0` (if terminating SSL)
+
+2. **Install Podman**:
+   ```bash
+   sudo apt-get update && sudo apt-get install -y podman podman-compose
+   ```
+
+3. **Clone Repository & Configure Environment**:
+   ```bash
+   git clone <your-repo-url> gridvision-app
+   cd gridvision-app
+   cp .env.example .env
+   # Set FRONTEND_PORT=80 and a secure random SECRET_KEY in .env
+   ```
+
+4. **Build and Launch**:
+   ```bash
+   podman compose up -d --build
+   ```
+
+5. **Verify**:
+   ```bash
+   curl -I http://localhost/nginx-health
+   curl http://localhost/api/v1/health
+   python3 tests/verify_container_api.py http://localhost
+   ```
+
+6. **Production HTTPS Recommendation**:
+   For production public deployments, place an AWS Application Load Balancer (ALB) or Caddy/Certbot in front of port 80 to terminate TLS/HTTPS.
+

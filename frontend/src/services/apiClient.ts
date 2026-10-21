@@ -33,9 +33,10 @@ class ApiClient {
 
   constructor() {
     const rawUrl =
+      (typeof window !== 'undefined' && (window as unknown as { __GRIDVISION_CONFIG__?: { API_BASE_URL?: string } }).__GRIDVISION_CONFIG__?.API_BASE_URL) ||
       import.meta.env.VITE_API_BASE_URL ||
       import.meta.env.VITE_API_URL ||
-      'http://127.0.0.1:5000/api/v1';
+      '/api/v1';
 
     // Normalize URL (strip trailing slash)
     this.baseUrl = rawUrl.endsWith('/') ? rawUrl.slice(0, -1) : rawUrl;
@@ -47,7 +48,9 @@ class ApiClient {
 
   private buildUrl(path: string, params?: Record<string, string | number | boolean | undefined | null>): string {
     const cleanPath = path.startsWith('/') ? path : `/${path}`;
-    const url = new URL(`${this.baseUrl}${cleanPath}`);
+    const base = typeof window !== 'undefined' ? window.location.origin : 'http://localhost';
+    const combined = `${this.baseUrl}${cleanPath}`;
+    const url = new URL(combined, base);
 
     if (params) {
       Object.entries(params).forEach(([key, val]) => {
