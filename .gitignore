@@ -1,0 +1,66 @@
+# Python & Virtual Environments
+.venv/
+venv/
+ENV/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+*.pytest_cache/
+.coverage
+htmlcov/
+
+# Local datasets, generated manifests, and runtime stores
+/data/
+/mlruns/
+/notebooks/.tmp/
+/notebooks/artifacts/
+/models/*.pkl
+/models/*.metadata.json
+*.duckdb
+*.sqlite
+*.sqlite3
+*.db
+*.stage
+*.tmp
+
+# Generated GridVision runtime and test logs
+/logs/**
+!/logs/
+!/logs/README.md
+!/logs/airflow/
+!/logs/airflow/.gitkeep
+!/logs/data/
+!/logs/data/quality_reports/
+!/logs/data/quality_reports/.gitkeep
+!/logs/endpoints/
+!/logs/endpoints/.gitkeep
+!/logs/model_cards/
+!/logs/model_cards/.gitkeep
+!/logs/model_metrics/
+!/logs/model_metrics/.gitkeep
+!/logs/testing/
+!/logs/testing/.gitkeep
+!/logs/training/
+!/logs/training/.gitkeep
+
+# Node & Frontend Build
+node_modules/
+frontend/node_modules/
+dist/
+frontend/dist/
+.eslintcache
+
+# Environment variables & secrets
+.env
+.env.*
+!.env.example
+!**/.env.example
+frontend/.env
+*.local
+
+# IDE & OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

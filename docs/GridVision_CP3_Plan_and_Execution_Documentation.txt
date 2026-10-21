@@ -1,0 +1,280 @@
+GRIDVISION — CP3 PLAN AND EXECUTION DOCUMENTATION
+Detailed working plan | Prepared 21 October 2026
+====================================================================
+
+DOCUMENT PURPOSE
+----------------
+This document consolidates the CP3 plan discussed so far: the end-to-end demonstration, Soham’s proposed execution sequence, data engineering, one complete ML model, MLflow tracking, Flask + React integration, containerization, extension points for four additional model artifacts, testing, and deployment considerations.
+Scope note: this is a working plan based on the GridVision product documentation and our discussion. The exact CP3 team-allocation image was not available in the retrieved materials, so this document does not claim to reproduce an official task allocation. Implementation details beyond agreed decisions are recommendations.
+
+1. CP3 GOAL AND SUCCESS CRITERIA
+--------------------------------
+Primary goal: demonstrate at least one GridVision ML model through the complete workflow: raw data → data engineering → feature generation → model training/evaluation → MLflow tracking → packaged model artifact → Flask API → React UI → Dockerized deployment.
+In parallel, prepare the other four model artifacts so they can be integrated into the same backend/UI pattern without redesigning the application.
+Minimum successful demonstration:
+1. A repeatable data pipeline produces validated and documented outputs.
+2. One ML model is evaluated on a chronological held-out test period and beats a sensible baseline.
+3. MLflow records the training run, parameters, metrics, artifacts and model identity/version.
+4. The selected model is saved as a versioned, trusted artifact with preprocessing included where appropriate.
+5. The existing Flask backend exposes a validated prediction endpoint.
+6. The existing React UI displays real API responses rather than hard-coded mock results.
+7. Docker Compose starts the required services reproducibly.
+8. Tests cover the pipeline, model interface, API contract and end-to-end smoke path.
+9. The other four model artifacts have documented schemas and can be added through a common model-service interface.
+10. The demo distinguishes measured evaluation results from illustrative/sample values.
+
+2. MODEL SCOPE AND PRIORITY
+---------------------------
+Recommended first end-to-end model: Residential Month-End Electricity Bill Prediction.
+Customer-facing question: “How much will my electricity bill be at the end of this month?”
+Agreed V1 behavior from the product documentation:
+• Readings are 15-minute interval energy values in kWh.
+• The initial seven-day onboarding period collects data without showing a bill prediction.
+• Starting on Day 8, predict remaining billing-cycle consumption and add actual consumption already recorded.
+• Refresh the estimate daily after new readings are ingested and quality-checked.
+• Initial prototype tariff assumption: ₹10/kWh.
+• This is an energy-charge estimate under a simplified tariff, not a guaranteed final utility bill.
+• Verify billing-cycle definition, data semantics, household/meter mapping and completeness assumptions.
+Core calculation:
+actual_kwh_so_far = sum(valid interval_kwh in the current billing cycle up to prediction time)
+predicted_remaining_kwh = model.predict(features available at that prediction time)
+estimated_month_end_kwh = actual_kwh_so_far + predicted_remaining_kwh
+estimated_bill_inr = estimated_month_end_kwh * 10
+Do not multiply each interval reading by 0.25 if each supplied value is already interval energy in kWh. Sum interval-energy values after confirming dataset semantics.
+Suggested candidate sequence: recent-rate extrapolation, comparable-period profile and previous-week pattern baselines; then Ridge as a simple ML benchmark and LightGBM and/or XGBoost as nonlinear candidates. Select using chronological held-out performance and stability, not R² alone. Do not claim a specific model is best before results support it.
+The four additional model areas described in the product documentation are: Commercial 30-Day Demand Forecast; Customer Segmentation; Government/Grid Demand Forecasting; and Anomaly Detection (theft, asset health, grid quality). Confirm these against the current team plan and available datasets. Their schemas and outputs differ and should not be forced into one identical feature schema.
+
+3. SOHAM’S PROPOSED RESPONSIBILITY AND ORDER OF WORK
+----------------------------------------------------
+Proposed responsibility: deliver the reusable end-to-end ML integration pattern, using the residential model as the first implementation.
+Phase 0 — Inspect existing repository
+• Start from the existing Flask + React code; do not rebuild without a clear reason.
+• Identify entry points, routes, environment variables, frontend API configuration, existing model code and assets.
+• Run the application locally and record prerequisites and commands.
+• Document frontend, backend, model, data and deployment boundaries.
+• Preserve the current UI and dashboard images.
+Phase 1 — Data audit and engineering
+• Confirm dataset location, shape, schema, timestamp range/timezone, units, cadence, meter/household meaning and completeness.
+• Check duplicates, missing timestamps/values, invalid values, constant series, outliers and coverage by meter.
+• Produce machine-readable and human-readable data-quality reports.
+• Bronze: preserve immutable raw inputs.
+• Silver: normalize timestamps/types, handle duplicates and retain quality flags.
+• Gold: create daily household consumption aggregates and model-ready features.
+• Make each stage reproducible; log input/output row counts and quality statistics.
+• Use Parquet for analytical outputs where practical and S3 for durable datasets/artifacts where appropriate.
+• Do not add Kafka or Airflow before the basic batch pipeline is proven.
+Phase 2 — Leakage-safe training data
+• Build historical training examples at multiple forecast origins within billing cycles.
+• Features must use only information available at each forecast origin.
+• Target the consumption remaining to the end of that billing cycle.
+• Reproduce the product rule during evaluation: no predictions Days 1–7; predictions from Day 8.
+• Use chronological train/validation/final-test periods; avoid random splits of overlapping windows.
+• If feasible, evaluate generalization to households unseen during training.
+• Prevent leakage from full-month totals, future readings or future-derived features.
+Phase 3 — Train, evaluate and package one model
+• Establish baseline metrics before selecting a complex model.
+• Compare Ridge with boosted-tree candidates if time and data quality permit.
+• Evaluate MAE in kWh and INR, RMSE, WAPE where appropriate, error by forecast day/household/month, and systematic over/under-prediction.
+• Compare against a sensible baseline on held-out chronological data.
+• Record assumptions, metric definitions and failure modes.
+• Package preprocessing and estimator together in one fitted pipeline/artifact where feasible. Inspect existing PKLs before assuming preprocessing is included.
+• Load only trusted pickle/joblib artifacts.
+• Store metadata: model name/version, training timestamp, feature schema, dependencies, data version, split definitions, metrics and checksum.
+Phase 4 — MLflow
+• Track training runs, parameters, metrics, plots/reports and model artifacts.
+• Record dataset/pipeline version and source revision where available.
+• Identify the deployment candidate and document why it passed the quality gate.
+• Keep MLflow private; do not expose it directly to the public internet.
+• A local tracking store is acceptable for the first reproducible demo, but configure persistent storage or a remote artifact store before relying on it across ephemeral environments.
+• Avoid a full registry workflow unless needed for CP3; model version and approval metadata are still required.
+Phase 5 — Shared Flask integration
+• Create a shared model-loading/registry module mapping model identifiers to services and artifacts.
+• Define input/output schemas for every model.
+• Validate payloads, required columns, types, ranges and missing fields.
+• Keep preprocessing/inference inside the model service or packaged pipeline, not duplicated in route handlers.
+• Return structured errors for invalid input, unavailable model, schema mismatch and inference failure.
+• Add health/readiness endpoints and structured logs with request IDs, latency and model version. Avoid logging sensitive raw consumption payloads unnecessarily.
+• Make the residential route the first fully working route; use the same API conventions for other models but preserve their own schemas.
+Suggested endpoints, to adapt to the existing Flask code:
+GET  /health
+GET  /ready
+GET  /api/v1/models
+POST /api/v1/residential/predict
+POST /api/v1/commercial/predict
+POST /api/v1/segmentation/predict
+POST /api/v1/government/predict
+POST /api/v1/anomaly-detection/predict
+Residential response should ideally include estimated_month_end_kwh, estimated_bill_inr, actual_kwh_so_far, predicted_remaining_kwh, tariff assumption, prediction timestamp, data coverage, model name/version and caveat.
+Phase 6 — React UI
+• Reuse the existing React UI and design system.
+• Centralize API URLs and HTTP handling in a frontend API client.
+• Configure backend base URL through environment configuration, not a hard-coded EC2 IP.
+• Show loading, empty, validation-error and API-error states.
+• Display real Flask predictions, last-updated time, coverage and tariff caveat.
+• Clearly label mock/sample data; do not present placeholders as model results.
+• Restrict CORS appropriately and preserve existing dashboard visuals.
+Phase 7 — Containerization
+• Create a production Docker image for Flask and a production React build served by Nginx or the chosen web-serving layer.
+• Use Docker Compose for the demo’s required services.
+• Run Flask behind Gunicorn or another production WSGI server, not the development server.
+• Pin dependencies and make builds repeatable.
+• Keep secrets out of source code/images; use environment variables or a suitable secret mechanism.
+• Add health checks, persistent volumes where needed, restart policies and logs to stdout/stderr.
+• Ensure artifacts/configuration are included or securely fetched at runtime.
+• Document start, stop, logs, rebuild and health-check commands; test a clean start.
+Phase 8 — Deployment and demo
+• Validate the complete workflow locally with Docker Compose before deployment.
+• Current EC2 recommendation: m7i-flex.large (2 vCPU, 8 GiB RAM) as the safer mixed-workload starting point; c7i-flex.large (2 vCPU, 4 GiB) may suit a lighter demo. Confirm current regional pricing and account credits.
+• Suggested OS: Amazon Linux 2023; proposed starting disk: 30 GiB encrypted gp3 EBS.
+• Serve React via Nginx and Flask behind Gunicorn.
+• Keep internal ports private; expose only required web ports. Restrict SSH to a known IP or use Systems Manager if configured.
+• Use least-privilege IAM for S3; never commit credentials.
+• Stop EC2 when not demonstrating. Stopping does not remove EBS storage charges or every associated charge.
+• Use S3 for durable datasets/artifacts/backups where appropriate. Do not expose raw household data or MLflow administration publicly.
+• Domain and HTTPS are recommended for a polished external demo but should not block local validation.
+
+4. MAKING THE OTHER FOUR MODELS ADDITIVE
+----------------------------------------
+Use one integration contract, not one identical model implementation.
+Recommended common service capabilities: model_name/model_version; input_schema; load_artifact(); validate_input(payload); predict(payload); output_schema; health/readiness information; metadata and evaluation status.
+Each model should have its own training/evaluation code, artifact(s), input schema, version/dependency metadata, evaluation report, approval status, thin service adapter and API contract tests with example payloads.
+Model-specific caution:
+• Residential bill estimation predicts remaining-cycle energy and derives a bill.
+• Commercial demand forecasting may be hourly/daily time-series forecasting with its own horizon and covariates.
+• Segmentation returns cluster labels/profiles and needs a mapping from numeric cluster IDs to interpretable names.
+• Government forecasting may operate on aggregated regional time series.
+• Anomaly detection returns scores/flags and may require threshold calibration.
+Share service lifecycle and operational conventions, but keep model-specific schemas.
+An additional artifact is integration-ready only when it loads in the target environment, has a documented input schema, produces a sample prediction, records dependencies/preprocessing requirements, passes a smoke test, and discloses evaluation status/limitations. Do not label a merely saved PKL as validated or production-ready.
+
+5. TESTING AND QUALITY GATES
+----------------------------
+Unit tests: timestamp normalization, interval aggregation, feature calculations, missing/duplicate handling, seven-day eligibility, billing-cycle boundaries, input validation and response formatting.
+Model tests: artifact loads, schema matches, inference returns finite values and correct shape, invalid inputs are handled, outputs have plausible bounds, and evaluation uses chronological held-out data compared with a baseline.
+API/integration tests: health/readiness routes, valid/invalid requests, missing artifacts, schema mismatch, exception handling, frontend API contract, container networking and clean Compose startup.
+Release gate:
+• Pipeline is reproducible and data-quality report is generated.
+• Chronological evaluation report is available.
+• Candidate beats the chosen baseline, or any exception is explicitly documented.
+• Artifact metadata/checksum exists.
+• Tests pass and Docker Compose health checks pass.
+• React displays actual API output.
+• No secrets are committed.
+• Logs contain request ID, model version, status and latency without unnecessary sensitive data.
+Use pytest. Add linting/formatting and type checking if already used by the repository or achievable without blocking core delivery.
+
+6. PROPOSED REPOSITORY SHAPE
+----------------------------
+Adapt this to the current codebase; do not move files simply to match the example.
+GridVision/
+  data/bronze/
+  data/silver/
+  data/gold/
+  data_pipeline/ingest.py
+  data_pipeline/validate.py
+  data_pipeline/transform.py
+  data_pipeline/aggregate.py
+  data_pipeline/report.py
+  models/residential/{train.py,evaluate.py,predict.py,schemas.py,artifacts/,reports/}
+  models/commercial/
+  models/segmentation/
+  models/government/
+  models/anomaly_detection/
+  model_services/base.py
+  model_services/residential_service.py
+  model_services/commercial_service.py
+  model_services/segmentation_service.py
+  model_services/government_service.py
+  model_services/anomaly_service.py
+  backend/app.py
+  backend/routes/
+  backend/schemas/
+  backend/services/
+  backend/config.py
+  frontend/ [existing React application]
+  mlflow/ [tracking configuration and instructions]
+  tests/unit/
+  tests/integration/
+  tests/api/
+  tests/smoke/
+  reports/data_quality/
+  reports/evaluation/
+  docs/architecture.md
+  docs/model_cards/
+  docs/runbook.md
+  docs/assets/
+  Dockerfile.backend
+  Dockerfile.frontend
+  docker-compose.yml
+  .env.example
+  requirements.txt or project dependency files
+  README.md
+
+7. DATA REPORTS AND DOCUMENTATION
+---------------------------------
+For every dataset, generate a report with source/version/path identifier; row/column count and schema; data types and units; timestamp range/timezone/cadence; missingness, duplicates and invalid-value counts; distributions and unusual values; coverage by meter/customer/region; transformations and row counts; unresolved quality issues; Bronze-to-Silver-to-Gold lineage; recommended use and limitations.
+Maintain: README setup/run commands; architecture overview/data-flow diagram; model card for each model with objective, target, features, split strategy, metrics, limitations and artifact version; API schemas and examples; MLflow notes; container/deployment runbook; release checklist/troubleshooting; comments/docstrings for functions/methods, especially non-obvious business logic.
+
+8. DEMONSTRATION SCRIPT
+-----------------------
+1. Open the GridVision React dashboard.
+2. Explain the residential customer question and ₹10/kWh prototype tariff.
+3. Show Bronze → Silver → Gold processing and its data-quality report.
+4. Show chronological evaluation and baseline comparison.
+5. Open MLflow and show the run, metrics and artifact.
+6. Start services with Docker Compose and show health checks.
+7. Submit a valid sample request to Flask.
+8. Show the same API result rendered in React.
+9. Explain Days 1–7 onboarding and Day 8 onward forecasts.
+10. Show how a second model can be registered with its own schema, artifact and adapter.
+11. Show test results, logs, model version and limitations.
+Use synthetic/anonymized demo requests. Do not expose household data, credentials, API keys or public MLflow administration pages.
+
+9. PRIORITIZED CHECKLIST FOR SOHAM
+----------------------------------
+P0 — Start immediately
+☐ Run the existing Flask + React application locally.
+☐ Map routes, API calls, environment configuration and model loading.
+☐ Locate datasets and PKLs; inspect artifacts rather than assuming their contents.
+☐ Select residential bill estimation as the first complete model unless team ownership/data availability requires another.
+☐ Validate dataset semantics and generate a data-quality report.
+P1 — Core data engineering and ML
+☐ Implement Bronze/Silver/Gold processing.
+☐ Generate daily aggregates and leakage-safe forecast-origin examples.
+☐ Implement baselines and chronological evaluation.
+☐ Train/select the first model using held-out metrics.
+☐ Package preprocessing and estimator together where appropriate.
+☐ Record metrics and artifacts in MLflow.
+P2 — Application integration
+☐ Implement common model-service contract and residential service.
+☐ Implement/confirm Flask prediction route and response schema.
+☐ Connect existing React dashboard to the endpoint.
+☐ Add pipeline, model, API and frontend-contract tests.
+☐ Containerize frontend and backend.
+☐ Validate clean Docker Compose startup and full prediction flow.
+P3 — Extensibility and deployment
+☐ Inspect remaining four artifacts and document schemas.
+☐ Add adapters and sample payloads for remaining models.
+☐ Smoke-test every artifact in the target environment.
+☐ Deploy to EC2 after local end-to-end acceptance.
+☐ Configure restricted network access, logs, storage and basic monitoring.
+☐ Rehearse demo and prepare a concise architecture explanation.
+
+10. RISKS AND DECISIONS TO CONFIRM
+----------------------------------
+• Confirm official CP3 plan and exact assignments against the team-allocation image/source.
+• Confirm whether repository already has a specific structure, dependency manager, API naming scheme or container configuration.
+• Confirm datasets and which four additional PKLs exist, including whether preprocessing is included.
+• Confirm billing-cycle definition and whether 15-minute values are interval kWh.
+• Confirm evaluation results before claiming accuracy or production readiness.
+• Confirm current AWS price, account plan and available credits before launching EC2.
+• Decide whether MLflow tracking is local or remote and how artifacts persist.
+• Keep scope realistic: one fully validated end-to-end model first; four additional artifacts made easy to plug in, with validation status stated honestly.
+
+11. FINAL DELIVERY DEFINITION
+-----------------------------
+The CP3 deliverable should be a working, explainable and reproducible vertical slice, not just five PKL files and a dashboard screenshot.
+Primary proof: data in → quality checks and transformations → validated model → MLflow run → artifact → Flask API → React UI → Dockerized execution → tests and documented limitations.
+The four additional models should follow the same operational pattern while retaining their own schemas, targets and evaluation criteria.
+
+END OF DOCUMENT

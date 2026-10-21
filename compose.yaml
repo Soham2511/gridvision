@@ -1,0 +1,82 @@
+services:
+  mlflow:
+    image: gridvision-backend:local
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    command:
+      - python
+      - -m
+      - mlflow
+      - server
+      - --backend-store-uri
+      - sqlite:////mlflow/mlflow.db
+      - --default-artifact-root
+      - file:///mlflow/artifacts
+      - --host
+      - 0.0.0.0
+      - --port
+      - "5001"
+    volumes:
+      - ${GRIDVISION_DATA_DIR:?Set GRIDVISION_DATA_DIR}/mlflow:/mlflow
+    ports:
+      - "127.0.0.1:${GRIDVISION_MLFLOW_HOST_PORT:-15001}:5001"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5001/health', timeout=3)"
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  backend:
+    image: gridvision-backend:local
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    environment:
+      FLASK_ENV: production
+      SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in your environment}
+      GRIDVISION_LOG_DIR: /logs
+      MODEL_PROVIDER: ${MODEL_PROVIDER:-mlflow}
+      MLFLOW_TRACKING_URI: http://mlflow:5001
+      MLFLOW_MODEL_NAME: ${MLFLOW_MODEL_NAME:-customer-bill-prediction}
+      MLFLOW_MODEL_ALIAS: ${MLFLOW_MODEL_ALIAS:-champion}
+      CUSTOMER_TARIFF_INR_PER_KWH: ${CUSTOMER_TARIFF_INR_PER_KWH:-10.0}
+      CORS_ORIGINS: http://localhost:8080,http://127.0.0.1:8080
+    volumes:
+      - ${GRIDVISION_DATA_DIR:?Set GRIDVISION_DATA_DIR}/mlflow:/mlflow:ro
+      - ${GRIDVISION_LOG_DIR:-./logs}:/logs
+    ports:
+      - "127.0.0.1:5000:5000"
+    depends_on:
+      mlflow:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/api/v1/health', timeout=3)"
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  frontend:
+    restart: unless-stopped
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8080/api/v1}
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "8080:80"
