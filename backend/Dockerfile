@@ -18,6 +18,7 @@ RUN useradd -m -u 1001 -s /bin/bash appuser
 
 # Copy application source
 COPY app/ ./app/
+COPY customer_bill/ ./customer_bill/
 COPY run.py .
 
 # Set ownership to non-root user
