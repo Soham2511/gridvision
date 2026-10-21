@@ -51,7 +51,7 @@ services:
       - MLFLOW_MODEL_ALIAS=${MLFLOW_MODEL_ALIAS:-champion}
       - DATA_PROVIDER=${DATA_PROVIDER:-sample}
     volumes:
-      - ./data/mlflow:/mlflow:ro
+      - ./data/mlflow:/mlflow
     depends_on:
       mlflow:
         condition: service_healthy
