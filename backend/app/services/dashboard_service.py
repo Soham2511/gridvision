@@ -25,8 +25,15 @@ class DashboardService:
             building_id=building_id,
         )
 
-    def get_household_overview(self, household_id: str | None = None) -> dict[str, Any]:
-        return self.data_provider.get_household_overview(household_id=household_id)
+    def get_household_overview(
+        self,
+        household_id: str | None = None,
+        time_range: str = "1D",
+    ) -> dict[str, Any]:
+        return self.data_provider.get_household_overview(
+            household_id=household_id,
+            time_range=time_range,
+        )
 
     def get_government_regions(self) -> list[dict[str, Any]]:
         return self.data_provider.get_government_regions()

@@ -133,6 +133,35 @@ export const CommonEnergyChart: React.FC<CommonEnergyChartProps> = ({
     );
   };
 
+  // Dynamic Y-domain based on data values
+  const maxVal = React.useMemo(() => {
+    let max = 0;
+    if (data && data.length) {
+      for (const d of data) {
+        if (d.actualConsumption !== null && d.actualConsumption !== undefined) {
+          max = Math.max(max, d.actualConsumption);
+        }
+        if (d.predictedConsumption !== null && d.predictedConsumption !== undefined) {
+          max = Math.max(max, d.predictedConsumption);
+        }
+      }
+    }
+    return max;
+  }, [data]);
+
+  const yDomain: [number, number] = React.useMemo(() => {
+    if (timeRange === '1D') {
+      return [0, Math.max(3, Math.ceil(maxVal * 1.35))];
+    }
+    if (timeRange === '7D' || timeRange === '1M' || timeRange === '3M') {
+      return [0, Math.max(12, Math.ceil(maxVal * 1.25))];
+    }
+    return [0, Math.max(100, Math.ceil(maxVal * 1.2))];
+  }, [timeRange, maxVal]);
+
+  const hasActualCallout = Boolean(actualCallout && data && data.some((d) => d.time === actualCallout.time));
+  const hasPredictedCallout = Boolean(predictedCallout && data && data.some((d) => d.time === predictedCallout.time));
+
   return (
     <div
       style={{
@@ -225,15 +254,18 @@ export const CommonEnergyChart: React.FC<CommonEnergyChartProps> = ({
 
             <XAxis
               dataKey="time"
-              ticks={['00:00', '02:00', '04:00', '06:00', '08:00', '10:00', '12:00', '14:00', '16:00', '18:00', '20:00', '22:00']}
+              ticks={
+                timeRange === '1D'
+                  ? ['00:00', '02:00', '04:00', '06:00', '08:00', '10:00', '12:00', '14:00', '16:00', '18:00', '20:00', '22:00']
+                  : undefined
+              }
               tick={{ fontSize: 11, fill: '#64748B', fontWeight: 500 }}
               axisLine={{ stroke: '#E2E8F0' }}
               tickLine={false}
             />
 
             <YAxis
-              domain={[0, 5]}
-              ticks={[0, 1, 2, 3, 4, 5]}
+              domain={yDomain}
               width={54}
               tick={{ fontSize: 11, fill: '#64748B', fontWeight: 500 }}
               axisLine={false}
@@ -271,7 +303,7 @@ export const CommonEnergyChart: React.FC<CommonEnergyChartProps> = ({
             )}
 
             {/* Actual Peak Callout */}
-            {actualCallout && (
+            {hasActualCallout && actualCallout && (
               <ReferenceDot
                 x={actualCallout.time}
                 y={actualCallout.value}
@@ -284,7 +316,7 @@ export const CommonEnergyChart: React.FC<CommonEnergyChartProps> = ({
             )}
 
             {/* Predicted Peak Callout */}
-            {predictedCallout && (
+            {hasPredictedCallout && predictedCallout && (
               <ReferenceDot
                 x={predictedCallout.time}
                 y={predictedCallout.value}

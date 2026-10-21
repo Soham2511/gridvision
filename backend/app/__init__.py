@@ -42,8 +42,6 @@ def create_app(config_class: type[BaseConfig] | None = None) -> Flask:
     )
 
     # Instantiate providers based on configuration
-    data_provider = SampleDataProvider()
-
     model_provider_type = app.config.get("MODEL_PROVIDER", "development").lower()
     if model_provider_type == "mlflow":
         model_provider = MLflowModelAdapter(
@@ -54,6 +52,8 @@ def create_app(config_class: type[BaseConfig] | None = None) -> Flask:
         )
     else:
         model_provider = DevelopmentModelProvider()
+
+    data_provider = SampleDataProvider(model_provider=model_provider)
 
     # Instantiate business services
     health_svc = HealthService(data_provider, model_provider)

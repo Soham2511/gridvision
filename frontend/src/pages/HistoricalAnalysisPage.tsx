@@ -87,9 +87,13 @@ export const HistoricalAnalysisPage: React.FC = () => {
     if (persona === 'government') {
       return { yDomain: [250, 500] as [number, number], yTicks: [250, 300, 350, 400, 450, 500] };
     }
-    // Residential: 0 - 10 kWh with ticks 0, 2, 4, 6, 8, 10 matching screenshot
-    return { yDomain: [0, 10] as [number, number], yTicks: [0, 2, 4, 6, 8, 10] };
-  }, [persona]);
+    // Residential: Dynamic scale based on peak consumption point
+    const peak = peakPoint?.peakDemand || 8;
+    const maxVal = Math.max(8, Math.ceil(peak * 1.25));
+    const step = Math.max(2, Math.ceil(maxVal / 5));
+    const ticks = [0, step, step * 2, step * 3, step * 4, step * 5];
+    return { yDomain: [0, step * 5] as [number, number], yTicks: ticks };
+  }, [persona, peakPoint]);
 
   return (
     <div

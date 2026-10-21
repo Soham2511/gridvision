@@ -73,11 +73,13 @@ export interface HouseholdConsumptionPoint {
   predictedConsumption: number | null;
   actualNote?: string;
   predictedNote?: string;
+  fullDate?: string;
 }
 
 export interface HouseholdOverview {
   householdId: string;
   userName: string;
+  timeRange?: string;
   currentDailyUsageKwh: number;
   dailyAvgKwh: number;
   dailyAvgChangePct: number;
@@ -86,6 +88,23 @@ export interface HouseholdOverview {
   monthlyAvgChangePct: number;
   prevMonthKwh: number;
   predictedMonthEndKwh: number;
+  predictedMonthEndBillInr?: number;
+  tariffRate?: number;
+  demarcationTime?: string;
+  actualCallout?: {
+    time: string;
+    value: number;
+    dateText: string;
+    label: string;
+    color: string;
+  };
+  predictedCallout?: {
+    time: string;
+    value: number;
+    dateText: string;
+    label: string;
+    color: string;
+  };
   consumptionCurve: HouseholdConsumptionPoint[];
 }
 

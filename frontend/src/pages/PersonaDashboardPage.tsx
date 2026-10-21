@@ -72,13 +72,13 @@ export const PersonaDashboardPage: React.FC = () => {
 
   useEffect(() => {
     if (persona === 'household') {
-      analyticsService.getHouseholdOverview(activeEntity).then((res) => {
+      analyticsService.getHouseholdOverview(activeEntity, householdTimeRange).then((res) => {
         setHouseholdData(res);
       }).catch((err) => {
         console.error('Failed to load household telemetry from API:', err);
       });
     }
-  }, [persona, activeEntity]);
+  }, [persona, activeEntity, householdTimeRange]);
 
   // -------------------------------------------------------------
   // 2. Commercial View State
@@ -325,31 +325,34 @@ export const PersonaDashboardPage: React.FC = () => {
               unit={householdUnit}
               icon={<Target size={22} color="#7C3AED" />}
               iconBg="#F5F3FF"
+              subtext={
+                householdData.predictedMonthEndBillInr
+                  ? `Est. Bill: ₹${Math.round(householdData.predictedMonthEndBillInr).toLocaleString('en-IN')}`
+                  : undefined
+              }
               hoverBorderColor="rgba(124, 58, 237, 0.4)"
             />
           </div>
 
           <CommonEnergyChart
             title="Energy Consumption"
-            subtitle=""
+            subtitle={
+              householdTimeRange === '1D'
+                ? 'Hourly observed telemetry (00:00–16:00) with ML model forward diurnal prediction'
+                : householdTimeRange === '7D'
+                ? '7-Day observed daily energy with forward projection'
+                : householdTimeRange === '1M'
+                ? '30-Day observed energy trajectory to month-end'
+                : householdTimeRange === '1Y'
+                ? '12-Month historical profile from real customer dataset'
+                : 'Complete historical energy timeline'
+            }
             data={householdData.consumptionCurve}
             timeRange={householdTimeRange}
             onTimeRangeChange={setHouseholdTimeRange}
-            demarcationTime="12:00"
-            actualCallout={{
-              time: '09:00',
-              value: 3.2,
-              dateText: '19 Oct 2026, 09:00 AM',
-              label: 'Consumption',
-              color: '#00A396',
-            }}
-            predictedCallout={{
-              time: '20:30',
-              value: 3.8,
-              dateText: '19 Oct 2026, 08:00 PM',
-              label: 'Predicted Consumption',
-              color: '#8B5CF6',
-            }}
+            demarcationTime={householdData.demarcationTime || (householdTimeRange === '1D' ? '16:00' : undefined)}
+            actualCallout={householdData.actualCallout}
+            predictedCallout={householdData.predictedCallout}
           />
         </>
       ) : persona === 'commercial' ? (

@@ -98,9 +98,13 @@ class AnalyticsService {
     }>(`/forecast/residential/${encodeURIComponent(householdId)}`);
   }
 
-  async getHouseholdOverview(householdId?: string): Promise<HouseholdOverview> {
+  async getHouseholdOverview(
+    householdId?: string,
+    timeRange: '1D' | '7D' | '1M' | '3M' | '1Y' | 'ALL' = '1D'
+  ): Promise<HouseholdOverview> {
     return apiClient.get<HouseholdOverview>('/dashboard/household', {
       household_id: householdId,
+      time_range: timeRange,
     });
   }
 

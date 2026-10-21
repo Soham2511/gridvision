@@ -52,6 +52,7 @@ services:
       - DATA_PROVIDER=${DATA_PROVIDER:-sample}
     volumes:
       - ./data/mlflow:/mlflow
+      - ./data/gold:/app/data/gold:ro
     depends_on:
       mlflow:
         condition: service_healthy

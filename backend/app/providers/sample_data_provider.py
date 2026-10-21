@@ -8,12 +8,15 @@ from datetime import datetime
 from typing import Any
 
 from app.providers.data_provider import BaseDataProvider
+from app.providers.household_real_provider import RealHouseholdDataProvider
 
 
 class SampleDataProvider(BaseDataProvider):
     """Deterministic, production-free data provider grounded in reference schema."""
 
-    def __init__(self) -> None:
+    def __init__(self, model_provider: Any = None) -> None:
+        self.model_provider = model_provider
+        self.household_real = RealHouseholdDataProvider(model_provider=model_provider)
         self._commercial_buildings: list[dict[str, Any]] = [
             {
                 "buildingId": "Panther_office_1",
@@ -441,10 +444,23 @@ class SampleDataProvider(BaseDataProvider):
                 return copy.deepcopy(b)
         return None
 
+    def set_model_provider(self, model_provider: Any) -> None:
+        self.model_provider = model_provider
+        if hasattr(self, "household_real"):
+            self.household_real.model_provider = model_provider
+
     def get_residential_meters(self) -> list[dict[str, Any]]:
+        if hasattr(self, "household_real") and self.household_real.is_available():
+            real_meters = self.household_real.get_residential_meters()
+            if real_meters:
+                return real_meters
         return copy.deepcopy(self._residential_meters)
 
     def get_residential_meter(self, household_id: str) -> dict[str, Any] | None:
+        if hasattr(self, "household_real") and self.household_real.is_available():
+            meter = self.household_real.get_residential_meter(household_id)
+            if meter:
+                return meter
         for m in self._residential_meters:
             if m["householdId"] == household_id:
                 return copy.deepcopy(m)
@@ -598,7 +614,20 @@ class SampleDataProvider(BaseDataProvider):
             "curve": curve,
         }
 
-    def get_household_overview(self, household_id: str | None = None) -> dict[str, Any]:
+    def get_household_overview(
+        self,
+        household_id: str | None = None,
+        time_range: str = "1D",
+    ) -> dict[str, Any]:
+        if hasattr(self, "household_real") and self.household_real.is_available():
+            try:
+                return self.household_real.get_household_overview(
+                    household_id=household_id,
+                    time_range=time_range,
+                )
+            except Exception as exc:
+                import logging
+                logging.getLogger("gridvision.data").warning("Real household overview failed: %s", exc)
         data = copy.deepcopy(self._household_overview)
         if household_id:
             data["householdId"] = household_id
@@ -777,6 +806,15 @@ class SampleDataProvider(BaseDataProvider):
         time_range: str = "30D",
         entity_id: str | None = None,
     ) -> dict[str, Any]:
+        if persona == "household" and hasattr(self, "household_real") and self.household_real.is_available():
+            try:
+                return self.household_real.get_historical_insights(
+                    time_range=time_range,
+                    entity_id=entity_id,
+                )
+            except Exception as exc:
+                import logging
+                logging.getLogger("gridvision.data").warning("Real historical insights failed: %s", exc)
         # 30-day base template
         base_points = [
             {"date": f"{day:02d} Oct", "fullDate": f"{day:02d} Oct 2026", "peakDemand": round(3.5 + (day % 4) * 0.4, 1), "avgDemand": round(2.0 + (day % 3) * 0.3, 1), "totalConsumption": round(24.0 + (day % 5) * 2.2, 1), "peakTime": "07:00 PM"}

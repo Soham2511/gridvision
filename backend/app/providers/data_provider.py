@@ -47,7 +47,11 @@ class BaseDataProvider(ABC):
         """Return commercial dashboard telemetry and curves."""
 
     @abstractmethod
-    def get_household_overview(self, household_id: str | None = None) -> dict[str, Any]:
+    def get_household_overview(
+        self,
+        household_id: str | None = None,
+        time_range: str = "1D",
+    ) -> dict[str, Any]:
         """Return household consumption overview and curve."""
 
     @abstractmethod

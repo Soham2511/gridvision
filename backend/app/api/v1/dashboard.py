@@ -28,8 +28,9 @@ def commercial_dashboard():
 def household_dashboard():
     """Consumption overview and daily curve for Household / Residential."""
     household_id = request.args.get("household_id")
+    time_range = request.args.get("time_range", "1D")
     service = current_app.extensions["dashboard_service"]
-    data = service.get_household_overview(household_id=household_id)
+    data = service.get_household_overview(household_id=household_id, time_range=time_range)
     return success_response(data)
 
 
