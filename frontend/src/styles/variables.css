@@ -1,0 +1,73 @@
+/* GridVision Design System Tokens */
+:root {
+  /* Brand Core Colors */
+  --gv-color-midnight-navy: #0B1F33;
+  --gv-color-smart-teal: #00B8A9;
+  --gv-color-smart-teal-light: #E0F7F5;
+  --gv-color-smart-teal-hover: #009E91;
+  --gv-color-electric-cyan: #21C7D9;
+  --gv-color-electric-cyan-light: #E8FAFC;
+  --gv-color-grid-blue: #087EBD;
+  --gv-color-grid-blue-light: #E6F3FA;
+  --gv-color-energy-amber: #FFC247;
+  --gv-color-energy-amber-light: #FFF8E7;
+  --gv-color-pure-white: #FFFFFF;
+
+  /* Theme Surfaces & Backgrounds */
+  --gv-bg-app: #F8FAFC;
+  --gv-bg-surface: #FFFFFF;
+  --gv-bg-surface-elevated: #FFFFFF;
+  --gv-bg-surface-subtle: #F1F5F9;
+  --gv-bg-sidebar: #0B1F33;
+  --gv-bg-sidebar-hover: rgba(255, 255, 255, 0.08);
+  --gv-bg-sidebar-active: rgba(0, 184, 169, 0.16);
+
+  /* Borders & Dividers */
+  --gv-border-subtle: #E2E8F0;
+  --gv-border-medium: #CBD5E1;
+  --gv-border-accent: rgba(8, 126, 189, 0.25);
+  --gv-border-focus: #00B8A9;
+
+  /* Typography Colors */
+  --gv-text-primary: #0B1F33;
+  --gv-text-secondary: #475569;
+  --gv-text-muted: #64748B;
+  --gv-text-inverted: #FFFFFF;
+  --gv-text-inverted-muted: #94A3B8;
+
+  /* Status Colors */
+  --gv-status-success: #00B8A9;
+  --gv-status-success-bg: #E0F7F5;
+  --gv-status-warning: #F59E0B;
+  --gv-status-warning-bg: #FEF3C7;
+  --gv-status-danger: #EF4444;
+  --gv-status-danger-bg: #FEE2E2;
+  --gv-status-info: #087EBD;
+  --gv-status-info-bg: #E6F3FA;
+
+  /* Shadows */
+  --gv-shadow-sm: 0 1px 2px 0 rgba(11, 31, 51, 0.05);
+  --gv-shadow-md: 0 4px 6px -1px rgba(11, 31, 51, 0.07), 0 2px 4px -2px rgba(11, 31, 51, 0.05);
+  --gv-shadow-lg: 0 10px 15px -3px rgba(11, 31, 51, 0.08), 0 4px 6px -4px rgba(11, 31, 51, 0.04);
+  --gv-shadow-card-hover: 0 12px 24px -4px rgba(0, 184, 169, 0.12), 0 4px 8px -2px rgba(11, 31, 51, 0.04);
+
+  /* Radii */
+  --gv-radius-sm: 4px;
+  --gv-radius-md: 8px;
+  --gv-radius-lg: 12px;
+  --gv-radius-xl: 16px;
+  --gv-radius-full: 9999px;
+
+  /* Layout Proportions */
+  --gv-sidebar-width: 260px;
+  --gv-sidebar-collapsed-width: 72px;
+  --gv-header-height: 68px;
+
+  /* Fonts */
+  --gv-font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --gv-font-mono: 'JetBrains Mono', monospace;
+
+  /* Transitions */
+  --gv-transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --gv-transition-normal: 250ms cubic-bezier(0.4, 0, 0.2, 1);
+}
