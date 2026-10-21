@@ -17,6 +17,13 @@ dist/
 frontend/dist/
 .eslintcache
 
+# Data, models, and runtime stores
+data/
+!data/mlflow/
+!data/mlflow/.gitkeep
+models/*.pkl
+logs/*.log
+
 # Environment variables & secrets
 .env
 frontend/.env

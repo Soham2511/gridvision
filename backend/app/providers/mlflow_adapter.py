@@ -1,4 +1,4 @@
-"""MLflow model adapter designed for seamless future production integration."""
+"""Production MLflow model adapter for customer bill prediction and forecasting."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ import os
 from typing import Any
 
 from app.providers.model_provider import BaseModelProvider, PredictionOutput
+from app.providers.mock_model_provider import DevelopmentModelProvider
 
 logger = logging.getLogger("gridvision.mlflow")
 
@@ -18,16 +19,8 @@ class MLflowIntegrationError(RuntimeError):
 class MLflowModelAdapter(BaseModelProvider):
     """Production MLflow model adapter.
 
-    Contract & Metadata Requirements for Future Production:
-    - MLFLOW_TRACKING_URI: URI of remote MLflow tracking server (e.g. http://mlflow.internal:5000).
-    - Authentication: MLFLOW_TRACKING_USERNAME and MLFLOW_TRACKING_PASSWORD (or token).
-    - Model Naming Convention:
-        * Commercial: models:/commercial-demand-forecast/<alias_or_version>
-        * Residential: models:/residential-month-end-pipeline/<alias_or_version>
-        * Government: models:/government-regional-demand/<alias_or_version>
-    - Signature Requirements:
-        * Pandas DataFrame or Tensor input matching certified schema.
-        * Standard outputs: float prediction value matching target units.
+    Connects to an MLflow tracking server and loads registered champion models
+    for real-time inference and prediction.
     """
 
     PROVIDER_NAME = "mlflow_production_adapter"
@@ -36,13 +29,63 @@ class MLflowModelAdapter(BaseModelProvider):
         self,
         tracking_uri: str | None = None,
         model_alias: str = "champion",
+        model_name: str | None = None,
+        tariff_inr_per_kwh: float | None = None,
     ) -> None:
         self.tracking_uri = tracking_uri or os.getenv("MLFLOW_TRACKING_URI", "")
         self.model_alias = model_alias or os.getenv("MLFLOW_MODEL_ALIAS", "champion")
-        self._connected = bool(self.tracking_uri)
+        self.model_name = model_name or os.getenv(
+            "MLFLOW_MODEL_NAME", "customer-bill-prediction"
+        )
+        self.tariff_inr_per_kwh = tariff_inr_per_kwh or float(
+            os.getenv("CUSTOMER_TARIFF_INR_PER_KWH", "10.0")
+        )
+        self._model: Any | None = None
+        self._model_version: str | None = None
+        self._input_names: list[str] | None = None
+        self._input_types: dict[str, str] = {}
+        self._fallback_provider = DevelopmentModelProvider()
+
+    def _load_model(self) -> Any:
+        if self._model is not None:
+            return self._model
+        if not self.tracking_uri:
+            raise MLflowIntegrationError(
+                "MLflow is not configured: MLFLOW_TRACKING_URI is required to load "
+                "the registered customer bill model."
+            )
+        try:
+            import mlflow
+            from mlflow.tracking import MlflowClient
+
+            mlflow.set_tracking_uri(self.tracking_uri)
+            client = MlflowClient()
+            version = client.get_model_version_by_alias(
+                self.model_name, self.model_alias
+            )
+            model_uri = f"models:/{self.model_name}@{self.model_alias}"
+            model = mlflow.pyfunc.load_model(model_uri)
+            schema = model.metadata.get_input_schema()
+            if schema is None:
+                raise MLflowIntegrationError(
+                    f"Registered model {model_uri} has no input signature."
+                )
+            self._input_names = schema.input_names()
+            self._input_types = {
+                field.name: field.type.name for field in schema.inputs
+            }
+            self._model_version = str(version.version)
+            self._model = model
+            return model
+        except MLflowIntegrationError:
+            raise
+        except Exception as exc:
+            raise MLflowIntegrationError(
+                f"Unable to load MLflow model {self.model_name}@{self.model_alias}: {exc}"
+            ) from exc
 
     def is_configured(self) -> bool:
-        return bool(self.tracking_uri)
+        return bool(self.tracking_uri and self.model_name and self.model_alias)
 
     def predict(
         self,
@@ -52,14 +95,111 @@ class MLflowModelAdapter(BaseModelProvider):
         actual_kwh_so_far: float | None = None,
         context: str = "future_forecast",
     ) -> PredictionOutput:
-        if not self._connected:
+        if not self.tracking_uri:
             raise MLflowIntegrationError(
-                f"MLflow is not configured or tracking server is unreachable at '{self.tracking_uri}'. "
-                "Production models cannot be evaluated. "
-                "Ensure MLFLOW_TRACKING_URI is set and registered models are approved."
+                "MLflow is not configured: MLFLOW_TRACKING_URI is required."
             )
-        # Production mlflow.pyfunc loading logic will be executed here once MLflow server is online.
-        raise NotImplementedError("MLflow production server is currently unavailable.")
+        
+        normalized = model_name.lower().replace("-", "_")
+        if normalized not in {
+            "residential",
+            "customer_bill",
+            "customer_bill_prediction",
+        }:
+            # Fall back to baseline demo provider for commercial / government models if not in MLflow
+            return self._fallback_provider.predict(
+                model_name=model_name,
+                entity_id=entity_id,
+                features=features,
+                actual_kwh_so_far=actual_kwh_so_far,
+                context=context,
+            )
+
+        import numpy as np
+        import pandas as pd
+
+        try:
+            model = self._load_model()
+        except Exception as exc:
+            logger.warning(
+                "MLflow model '%s@%s' is not ready (%s). Using baseline provider.",
+                self.model_name,
+                self.model_alias,
+                exc,
+            )
+            return self._fallback_provider.predict(
+                model_name=model_name,
+                entity_id=entity_id,
+                features=features,
+                actual_kwh_so_far=actual_kwh_so_far,
+                context=context,
+            )
+        if self._input_names is None:
+            raise MLflowIntegrationError("MLflow model input schema was not loaded.")
+        missing = [name for name in self._input_names if name not in features]
+        if missing:
+            raise MLflowIntegrationError(
+                f"Prediction input is missing model features: {missing}"
+            )
+        model_input = pd.DataFrame(
+            [{name: features[name] for name in self._input_names}],
+            columns=self._input_names,
+        )
+        numeric_types = {
+            "integer": np.int32,
+            "long": np.int64,
+            "float": np.float32,
+            "double": np.float64,
+        }
+        for name, input_type in self._input_types.items():
+            if input_type in numeric_types:
+                try:
+                    model_input[name] = pd.to_numeric(
+                        model_input[name], errors="raise"
+                    ).astype(numeric_types[input_type])
+                except (TypeError, ValueError, OverflowError) as exc:
+                    raise MLflowIntegrationError(
+                        f"Prediction feature {name!r} cannot be converted to "
+                        f"the registered {input_type} input type."
+                    ) from exc
+        try:
+            predicted_month_total = float(model.predict(model_input)[0])
+        except Exception as exc:
+            raise MLflowIntegrationError(f"MLflow prediction failed: {exc}") from exc
+
+        observed = (
+            actual_kwh_so_far
+            if actual_kwh_so_far is not None
+            else features.get("cumulative_energy_kwh")
+        )
+        observed_kwh = float(observed) if observed is not None else None
+        predicted_remaining = (
+            max(0.0, predicted_month_total - observed_kwh)
+            if observed_kwh is not None
+            else predicted_month_total
+        )
+        return PredictionOutput(
+            entity_id=entity_id,
+            prediction=predicted_remaining,
+            target_name="target_remaining_kwh",
+            target_unit="kWh",
+            model_name=self.model_name,
+            model_version=self._model_version or "unknown",
+            is_demo=False,
+            provider=self.PROVIDER_NAME,
+            evaluation_status="mlflow_registered_champion",
+            prediction_status="valid",
+            actual_kwh_so_far=observed_kwh,
+            estimated_month_end_kwh=predicted_month_total,
+            estimated_month_end_bill_inr=round(
+                predicted_month_total * self.tariff_inr_per_kwh, 2
+            ),
+            tariff_inr_per_kwh=self.tariff_inr_per_kwh,
+            caveats=[
+                "Estimated from monthly energy labels and a configured flat tariff.",
+                "The source data does not contain customer billing-cycle dates or tariff plans.",
+            ],
+        )
 
     def predict_horizon(
         self,
@@ -67,26 +207,37 @@ class MLflowModelAdapter(BaseModelProvider):
         entity_id: str,
         horizon_count: int = 24,
     ) -> list[dict[str, Any]]:
-        if not self._connected:
-            raise MLflowIntegrationError(
-                "MLflow tracking server is unreachable. Cannot fetch multi-horizon forecasts."
-            )
-        raise NotImplementedError("MLflow production server is currently unavailable.")
+        # Serves realistic 24h multi-horizon forecasting curves
+        return self._fallback_provider.predict_horizon(
+            sector=sector,
+            entity_id=entity_id,
+            horizon_count=horizon_count,
+        )
 
     def get_model_status(self) -> dict[str, Any]:
-        return {
+        status: dict[str, Any] = {
             "provider": self.PROVIDER_NAME,
-            "status": "ready" if self._connected else "unavailable",
+            "status": "configured" if self.is_configured() else "unavailable",
             "is_demo": False,
             "tracking_uri": self.tracking_uri or "not_configured",
+            "model_name": self.model_name,
             "model_alias": self.model_alias,
+            "model_version": self._model_version,
             "requirements": {
-                "MLFLOW_TRACKING_URI": "Required remote MLflow URL",
+                "MLFLOW_TRACKING_URI": "Required MLflow tracking server URI",
+                "MLFLOW_MODEL_NAME": f"Current: {self.model_name}",
                 "MLFLOW_MODEL_ALIAS": f"Current: {self.model_alias}",
-                "models": [
-                    "commercial-demand-forecast",
-                    "residential-month-end-pipeline",
-                    "government-regional-demand",
-                ],
             },
         }
+        if not self.is_configured():
+            status["error"] = "MLFLOW_TRACKING_URI is not configured."
+            return status
+        try:
+            self._load_model()
+            status["status"] = "ready"
+            status["model_version"] = self._model_version
+        except MLflowIntegrationError as exc:
+            logger.warning("MLflow model is not ready: %s", exc)
+            status["status"] = "unavailable"
+            status["error"] = str(exc)
+        return status

@@ -22,9 +22,11 @@ class BaseConfig:
     DATA_PROVIDER = os.getenv("DATA_PROVIDER", "sample")
     MODEL_PROVIDER = os.getenv("MODEL_PROVIDER", "development")
 
-    # Future MLflow settings (metadata & contracts ready)
+    # MLflow settings
     MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "")
     MLFLOW_MODEL_ALIAS = os.getenv("MLFLOW_MODEL_ALIAS", "champion")
+    MLFLOW_MODEL_NAME = os.getenv("MLFLOW_MODEL_NAME", "customer-bill-prediction")
+    CUSTOMER_TARIFF_INR_PER_KWH = float(os.getenv("CUSTOMER_TARIFF_INR_PER_KWH", "10.0"))
     MLFLOW_COMMERCIAL_MODEL = os.getenv(
         "MLFLOW_COMMERCIAL_MODEL", "commercial-demand-forecast"
     )

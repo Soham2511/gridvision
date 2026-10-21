@@ -49,6 +49,8 @@ def create_app(config_class: type[BaseConfig] | None = None) -> Flask:
         model_provider = MLflowModelAdapter(
             tracking_uri=app.config.get("MLFLOW_TRACKING_URI"),
             model_alias=app.config.get("MLFLOW_MODEL_ALIAS", "champion"),
+            model_name=app.config.get("MLFLOW_MODEL_NAME", "customer-bill-prediction"),
+            tariff_inr_per_kwh=app.config.get("CUSTOMER_TARIFF_INR_PER_KWH", 10.0),
         )
     else:
         model_provider = DevelopmentModelProvider()

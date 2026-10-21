@@ -1,0 +1,19 @@
+{
+  "artifact_path": "D:\\Projects\\gridvision-app\\models\\customer_bill_prediction.pkl",
+  "dataset_version": "20261021T220657-5b464697",
+  "logged_at_utc": "2026-10-21T22:14:44.090095+00:00",
+  "metadata_path": "D:\\Projects\\gridvision-app\\models\\customer_bill_prediction.metadata.json",
+  "metrics_path": "D:\\Projects\\gridvision-app\\logs\\model_metrics\\customer-bill-prediction-v1.json",
+  "mlflow_run_id": "d976cacc47074ddf88d76535c22d63db",
+  "model_alias": "champion",
+  "model_card_path": "D:\\Projects\\gridvision-app\\logs\\model_cards\\customer-bill-prediction-v1.md",
+  "model_name": "customer-bill-prediction",
+  "model_version": "1",
+  "rows": {
+    "test": 6000,
+    "train": 24000,
+    "validation": 6000
+  },
+  "schema_version": 1,
+  "status": "completed"
+}
