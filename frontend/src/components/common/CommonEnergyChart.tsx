@@ -59,12 +59,14 @@ export const CommonEnergyChart: React.FC<CommonEnergyChartProps> = ({
   },
   tariffRate = 10.0,
 }) => {
-  // SVG Callout Renderer for Actual Peak
+  // SVG Callout Renderer for Actual Peak (auto-flips when near top of viewport)
   const renderActualCallout = (props: { cx?: number; cy?: number }) => {
     const { cx, cy } = props;
     if (cx === undefined || cy === undefined) return null;
+    const isTopClipped = cy < 95;
+    const translateY = isTopClipped ? cy + 12 : cy - 88;
     return (
-      <g transform={`translate(${cx - 75}, ${cy - 88})`}>
+      <g transform={`translate(${cx - 75}, ${translateY})`}>
         <rect
           width="150"
           height="66"
@@ -72,16 +74,23 @@ export const CommonEnergyChart: React.FC<CommonEnergyChartProps> = ({
           fill="#FFFFFF"
           stroke="#E2E8F0"
           strokeWidth="1.2"
-          style={{ filter: 'drop-shadow(0 6px 18px rgba(11, 31, 51, 0.10))' }}
+          style={{ filter: 'drop-shadow(0 6px 18px rgba(11, 31, 51, 0.12))' }}
         />
-        <polygon
-          points="67,66 83,66 75,74"
-          fill="#FFFFFF"
-          stroke="#E2E8F0"
-          strokeWidth="1.2"
-        />
-        <line x1="68" y1="65" x2="82" y2="65" stroke="#FFFFFF" strokeWidth="2" />
-
+        {isTopClipped ? (
+          <polygon
+            points="67,0 83,0 75,-8"
+            fill="#FFFFFF"
+            stroke="#E2E8F0"
+            strokeWidth="1.2"
+          />
+        ) : (
+          <polygon
+            points="67,66 83,66 75,74"
+            fill="#FFFFFF"
+            stroke="#E2E8F0"
+            strokeWidth="1.2"
+          />
+        )}
         <text x="14" y="20" fontSize="10" fill="#64748B" fontWeight="600">
           {actualCallout.dateText}
         </text>
@@ -96,12 +105,14 @@ export const CommonEnergyChart: React.FC<CommonEnergyChartProps> = ({
     );
   };
 
-  // SVG Callout Renderer for Predicted Peak
+  // SVG Callout Renderer for Predicted Peak (auto-flips when near top of viewport)
   const renderPredictedCallout = (props: { cx?: number; cy?: number }) => {
     const { cx, cy } = props;
     if (cx === undefined || cy === undefined) return null;
+    const isTopClipped = cy < 95;
+    const translateY = isTopClipped ? cy + 12 : cy - 88;
     return (
-      <g transform={`translate(${cx - 80}, ${cy - 88})`}>
+      <g transform={`translate(${cx - 80}, ${translateY})`}>
         <rect
           width="160"
           height="66"
@@ -109,16 +120,23 @@ export const CommonEnergyChart: React.FC<CommonEnergyChartProps> = ({
           fill="#FFFFFF"
           stroke="#E2E8F0"
           strokeWidth="1.2"
-          style={{ filter: 'drop-shadow(0 6px 18px rgba(11, 31, 51, 0.10))' }}
+          style={{ filter: 'drop-shadow(0 6px 18px rgba(11, 31, 51, 0.12))' }}
         />
-        <polygon
-          points="72,66 88,66 80,74"
-          fill="#FFFFFF"
-          stroke="#E2E8F0"
-          strokeWidth="1.2"
-        />
-        <line x1="73" y1="65" x2="87" y2="65" stroke="#FFFFFF" strokeWidth="2" />
-
+        {isTopClipped ? (
+          <polygon
+            points="72,0 88,0 80,-8"
+            fill="#FFFFFF"
+            stroke="#E2E8F0"
+            strokeWidth="1.2"
+          />
+        ) : (
+          <polygon
+            points="72,66 88,66 80,74"
+            fill="#FFFFFF"
+            stroke="#E2E8F0"
+            strokeWidth="1.2"
+          />
+        )}
         <text x="14" y="20" fontSize="10" fill="#64748B" fontWeight="600">
           {predictedCallout.dateText}
         </text>
@@ -235,7 +253,7 @@ export const CommonEnergyChart: React.FC<CommonEnergyChartProps> = ({
       {/* Time Series Area/Line Chart */}
       <div style={{ width: '100%', height: '375px' }}>
         <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart data={data} margin={{ top: 40, right: 20, left: 10, bottom: 5 }}>
+          <ComposedChart data={data} margin={{ top: 48, right: 24, left: 10, bottom: 5 }}>
             <defs>
               <linearGradient id="actualGradientCommon" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="5%" stopColor="#00A396" stopOpacity={0.22} />
@@ -259,6 +277,7 @@ export const CommonEnergyChart: React.FC<CommonEnergyChartProps> = ({
                   ? ['00:00', '02:00', '04:00', '06:00', '08:00', '10:00', '12:00', '14:00', '16:00', '18:00', '20:00', '22:00']
                   : undefined
               }
+              minTickGap={16}
               tick={{ fontSize: 11, fill: '#64748B', fontWeight: 500 }}
               axisLine={{ stroke: '#E2E8F0' }}
               tickLine={false}

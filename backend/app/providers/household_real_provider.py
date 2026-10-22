@@ -296,16 +296,17 @@ class RealHouseholdDataProvider:
                 is_actual = idx <= 6
                 is_overlap = idx == 6
                 sub = e_hourly[e_hourly["timestamp"].dt.date == pd.to_datetime(dt_str).date()]
-                val = round(float(sub["kwh"].sum()), 1) if len(sub) > 0 else round(daily_avg_kwh * (1.1 if idx == 8 else 1.0), 1)
+                actual_val = round(float(sub["kwh"].sum()), 1) if len(sub) > 0 else 9.5
+                pred_val = actual_val if is_overlap else (actual_val if idx > 6 else None)
 
-                if is_actual and val > peak_actual_val:
-                    peak_actual_val = val
+                if is_actual and actual_val > peak_actual_val:
+                    peak_actual_val = actual_val
                     peak_actual_day = day_lbl
 
                 curve.append({
                     "time": day_lbl,
-                    "actualConsumption": val if is_actual else None,
-                    "predictedConsumption": val if is_overlap else (val if idx > 6 else None),
+                    "actualConsumption": actual_val if is_actual else None,
+                    "predictedConsumption": pred_val,
                     "fullDate": f"{day_lbl} 2026",
                 })
 
@@ -313,19 +314,22 @@ class RealHouseholdDataProvider:
                 "time": peak_actual_day,
                 "value": peak_actual_val,
                 "dateText": f"{peak_actual_day} 2026",
-                "label": "Peak Day",
+                "label": "Observed Peak",
                 "color": "#00A396",
             }
+            # Predicted callout matches the peak predicted point exactly
+            pred_pts = [p for p in curve if p["predictedConsumption"] is not None and p["time"] != demarcation_time]
+            peak_pred_pt = max(pred_pts, key=lambda p: p["predictedConsumption"]) if pred_pts else curve[-1]
             predicted_callout = {
-                "time": "23 Oct",
-                "value": round(daily_avg_kwh * 1.05, 1),
-                "dateText": "23 Oct 2026",
+                "time": peak_pred_pt["time"],
+                "value": peak_pred_pt["predictedConsumption"],
+                "dateText": peak_pred_pt["fullDate"],
                 "label": "Forecasted Demand",
                 "color": "#8B5CF6",
             }
 
-        elif norm_range in {"1M", "3M"}:
-            # 30-day daily profile from 22 Sep 2018 to 21 Oct 2018
+        elif norm_range == "1M":
+            # 30-day daily profile from 22 Sep 2018 to 21 Oct 2018 with forward prediction to month-end
             demarcation_time = "21 Oct"
             d_start = pd.to_datetime("2018-09-22")
             peak_actual_val = -1.0
@@ -336,6 +340,7 @@ class RealHouseholdDataProvider:
                 day_lbl = dt.strftime("%d %b")
                 sub = e_hourly[e_hourly["timestamp"].dt.date == dt.date()]
                 val = round(float(sub["kwh"].sum()), 1) if len(sub) > 0 else round(daily_avg_kwh, 1)
+                is_overlap = (d == 29)  # 21 Oct demarcation point
 
                 if val > peak_actual_val:
                     peak_actual_val = val
@@ -344,20 +349,20 @@ class RealHouseholdDataProvider:
                 curve.append({
                     "time": day_lbl,
                     "actualConsumption": val,
-                    "predictedConsumption": None,
-                    "fullDate": dt.strftime("%d %b %Y"),
+                    "predictedConsumption": val if is_overlap else None,
+                    "fullDate": f"{day_lbl} 2026",
                 })
 
-            # Add forward prediction points to month-end
-            for p_day in range(1, 10):
+            # Add forward prediction points through 31 Oct
+            for p_day in range(1, 11):
                 f_dt = pd.to_datetime("2018-10-21") + timedelta(days=p_day)
                 f_lbl = f_dt.strftime("%d %b")
-                f_val = round(daily_avg_kwh * (1.0 + 0.05 * math.sin(p_day)), 1)
+                f_val = round(daily_avg_kwh * (1.0 + 0.06 * math.sin(p_day * 0.7)), 1)
                 curve.append({
                     "time": f_lbl,
                     "actualConsumption": None,
                     "predictedConsumption": f_val,
-                    "fullDate": f_dt.strftime("%d %b %Y"),
+                    "fullDate": f"{f_lbl} 2026",
                 })
 
             actual_callout = {
@@ -367,11 +372,66 @@ class RealHouseholdDataProvider:
                 "label": "Observed Peak",
                 "color": "#00A396",
             }
+            # Predicted callout anchored directly on highest forecast point
+            pred_pts = [p for p in curve if p["predictedConsumption"] is not None and p["time"] != demarcation_time]
+            peak_pred_pt = max(pred_pts, key=lambda p: p["predictedConsumption"]) if pred_pts else curve[-1]
             predicted_callout = {
-                "time": "28 Oct",
-                "value": round(daily_avg_kwh * 1.08, 1),
-                "dateText": "28 Oct 2026",
+                "time": peak_pred_pt["time"],
+                "value": peak_pred_pt["predictedConsumption"],
+                "dateText": peak_pred_pt["fullDate"],
                 "label": "Projected Peak",
+                "color": "#8B5CF6",
+            }
+
+        elif norm_range == "3M":
+            # 90-day seasonal profile (sampled every 6 days over 15 points)
+            demarcation_time = "21 Oct"
+            d_start = pd.to_datetime("2018-07-29")
+            peak_actual_val = -1.0
+            peak_actual_day = "16 Aug"
+
+            for step in range(15):
+                dt = d_start + timedelta(days=step * 6)
+                day_lbl = dt.strftime("%d %b")
+                sub = e_hourly[e_hourly["timestamp"].dt.date == dt.date()]
+                val = round(float(sub["kwh"].sum()), 1) if len(sub) > 0 else round(daily_avg_kwh * 1.1, 1)
+                is_overlap = (step == 14)
+
+                if val > peak_actual_val:
+                    peak_actual_val = val
+                    peak_actual_day = day_lbl
+
+                curve.append({
+                    "time": day_lbl,
+                    "actualConsumption": val,
+                    "predictedConsumption": val if is_overlap else None,
+                    "fullDate": f"{day_lbl} 2026",
+                })
+
+            # Add forward prediction points
+            for f_idx, f_lbl in enumerate(["27 Oct", "02 Nov", "08 Nov"], start=1):
+                f_val = round(daily_avg_kwh * (0.95 + 0.04 * f_idx), 1)
+                curve.append({
+                    "time": f_lbl,
+                    "actualConsumption": None,
+                    "predictedConsumption": f_val,
+                    "fullDate": f"{f_lbl} 2026",
+                })
+
+            actual_callout = {
+                "time": peak_actual_day,
+                "value": peak_actual_val,
+                "dateText": f"{peak_actual_day} 2026 (Summer High)",
+                "label": "Quarter Peak",
+                "color": "#00A396",
+            }
+            pred_pts = [p for p in curve if p["predictedConsumption"] is not None and p["time"] != demarcation_time]
+            peak_pred_pt = max(pred_pts, key=lambda p: p["predictedConsumption"]) if pred_pts else curve[-1]
+            predicted_callout = {
+                "time": peak_pred_pt["time"],
+                "value": peak_pred_pt["predictedConsumption"],
+                "dateText": peak_pred_pt["fullDate"],
+                "label": "Projected Trend",
                 "color": "#8B5CF6",
             }
 
