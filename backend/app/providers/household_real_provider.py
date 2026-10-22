@@ -85,18 +85,15 @@ class RealHouseholdDataProvider:
 
     def _get_mlflow_prediction(self, entity_id: int, cutoff_row: pd.Series) -> tuple[float, float]:
         """Query MLflow model adapter or fall back to naive projection from gold dataset."""
-        features = {
-            "cumulative_energy_kwh": float(cutoff_row["cumulative_energy_kwh"]),
-            "observed_hours_to_cutoff": int(cutoff_row["observed_hours_to_cutoff"]),
-            "days_in_month": int(cutoff_row["days_in_month"]),
-        }
+        features = {k: v for k, v in cutoff_row.to_dict().items() if not pd.isna(v)}
+        actual_so_far = float(cutoff_row.get("cumulative_energy_kwh", 194.0))
         if self.model_provider and hasattr(self.model_provider, "predict"):
             try:
                 out = self.model_provider.predict(
                     model_name="residential",
                     entity_id=f"METER-{entity_id}",
                     features=features,
-                    actual_kwh_so_far=features["cumulative_energy_kwh"],
+                    actual_kwh_so_far=actual_so_far,
                 )
                 if out and out.estimated_month_end_kwh:
                     return round(float(out.estimated_month_end_kwh), 1), round(float(out.estimated_month_end_bill_inr), 1)
@@ -199,6 +196,7 @@ class RealHouseholdDataProvider:
         gold_cutoffs_21 = e_gold[e_gold["cutoff_day"] == 21].sort_values("month_of_year")
         monthly_avg_kwh = round(float(gold_cutoffs_21["target_month_kwh"].mean()), 1)
         sept_row = gold_cutoffs_21[gold_cutoffs_21["month_of_year"] == 9]
+        prev_month_kwh = round(float(sept_row["target_month_kwh"].iloc[0]), 1) if len(sept_row) > 0 else monthly_avg_kwh
         # Card compares displayed monthly average against last month (September)
         monthly_avg_change_pct = round(((monthly_avg_kwh - prev_month_kwh) / max(prev_month_kwh, 0.1)) * 100.0, 1)
 
