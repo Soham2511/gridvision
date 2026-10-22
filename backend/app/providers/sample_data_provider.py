@@ -488,8 +488,8 @@ class SampleDataProvider(BaseDataProvider):
         scale = 4.25 if is_regional else 1.0
 
         avg_demand = 320.0 * scale
-        avg_demand_delta_pct = 6.5 if is_regional else -12.0
-        prev_period_avg_demand = 1333.0 if is_regional else 365.0
+        prev_period_avg_demand = 1277.0 if is_regional else 365.0
+        avg_demand_delta_pct = round(((avg_demand - prev_period_avg_demand) / prev_period_avg_demand) * 100.0, 1)
         peak_demand = 820.0 * scale
         peak_timestamp = "19 Oct 2026, 02:30 PM"
         predicted_peak = 910.0 * scale
@@ -724,7 +724,7 @@ class SampleDataProvider(BaseDataProvider):
         scale = (selected_region["baseAvg"] / 5420.0) if is_region and selected_region else 1.0
 
         avg_demand = selected_region["baseAvg"] if is_region and selected_region else 5420
-        avg_demand_delta_pct = selected_region["delta"] if is_region and selected_region else -12.0
+        avg_demand_delta_pct = selected_region["delta"] if is_region and selected_region else round(((5420 - 6180) / 6180.0) * 100.0, 1)
         prev_period_avg_demand = selected_region["prevAvg"] if is_region and selected_region else 6180
         peak_demand = selected_region["basePeak"] if is_region and selected_region else 8930
         peak_timestamp = "19 Oct 2026, 02:30 PM"

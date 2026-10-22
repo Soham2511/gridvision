@@ -199,9 +199,8 @@ class RealHouseholdDataProvider:
         gold_cutoffs_21 = e_gold[e_gold["cutoff_day"] == 21].sort_values("month_of_year")
         monthly_avg_kwh = round(float(gold_cutoffs_21["target_month_kwh"].mean()), 1)
         sept_row = gold_cutoffs_21[gold_cutoffs_21["month_of_year"] == 9]
-        prev_month_kwh = round(float(sept_row["target_month_kwh"].iloc[0]), 1) if len(sept_row) > 0 else monthly_avg_kwh
-        oct_actual_kwh = round(float(cutoff_row["target_month_kwh"]), 1)
-        monthly_avg_change_pct = round(((oct_actual_kwh - prev_month_kwh) / max(prev_month_kwh, 0.1)) * 100.0, 1)
+        # Card compares displayed monthly average against last month (September)
+        monthly_avg_change_pct = round(((monthly_avg_kwh - prev_month_kwh) / max(prev_month_kwh, 0.1)) * 100.0, 1)
 
         # Build dynamic consumption curves based on scale
         curve: list[dict[str, Any]] = []

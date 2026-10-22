@@ -298,8 +298,8 @@ export const PersonaDashboardPage: React.FC = () => {
               icon={<Calendar size={22} color="#D97706" />}
               iconBg="#FFF7ED"
               trend={{
-                value: householdData.dailyAvgChangePct,
-                direction: 'up',
+                value: Math.abs(householdData.dailyAvgChangePct),
+                direction: householdData.dailyAvgChangePct >= 0 ? 'up' : 'down',
                 isIncreaseNegative: true,
                 comparisonText: `vs previous 7 days (${formatHouseholdVal(householdData.prev7DaysAvgKwh)} ${householdUnit})`,
               }}
@@ -313,7 +313,7 @@ export const PersonaDashboardPage: React.FC = () => {
               iconBg="#EFF6FF"
               trend={{
                 value: Math.abs(householdData.monthlyAvgChangePct),
-                direction: 'down',
+                direction: householdData.monthlyAvgChangePct >= 0 ? 'up' : 'down',
                 isIncreaseNegative: true,
                 comparisonText: `vs last month (${formatHouseholdVal(householdData.prevMonthKwh)} ${householdUnit})`,
               }}

@@ -51,10 +51,16 @@ export const CommonMetricCard: React.FC<CommonMetricCardProps> = ({
   hoverBorderColor = 'rgba(0, 163, 150, 0.35)',
   onClick,
 }) => {
-  const isUp = trend?.direction === 'up' || (typeof trend?.value === 'number' && trend.value > 0);
-  const isDown = trend?.direction === 'down' || (typeof trend?.value === 'number' && trend.value < 0);
+  // Priority: if trend.direction is explicitly specified ('up', 'down', 'neutral'), respect it.
+  // Otherwise, derive direction from the numeric sign of trend.value.
+  const isUp = trend?.direction
+    ? trend.direction === 'up'
+    : typeof trend?.value === 'number' && trend.value > 0;
+  const isDown = trend?.direction
+    ? trend.direction === 'down'
+    : typeof trend?.value === 'number' && trend.value < 0;
 
-  // In energy consumption, increased demand is flagged in red, decreased in green
+  // In energy consumption, increased demand is flagged in red (up = warning), decreased in green (down = good/savings)
   const trendColor = trend?.isIncreaseNegative
     ? isUp
       ? '#EF4444'
@@ -197,7 +203,7 @@ export const CommonMetricCard: React.FC<CommonMetricCardProps> = ({
                 <span style={{ fontSize: '1.18rem', fontWeight: 800 }}>
                   {isUp ? '↑' : isDown ? '↓' : ''}
                 </span>
-                <span>{trend.value}%</span>
+                <span>{typeof trend.value === 'number' ? Math.abs(trend.value) : trend.value}%</span>
               </div>
               {trend.comparisonText && (
                 <span
