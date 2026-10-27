@@ -12,38 +12,46 @@ bp = Blueprint("overview", __name__)
 def get_overview():
     """Returns aggregated executive summary metrics for OverviewPage."""
     data_provider = current_app.extensions["data_provider"]
-    peak_service = current_app.extensions["peak_service"]
     anomaly_service = current_app.extensions["anomaly_service"]
+    peak_service = current_app.extensions["peak_service"]
 
     peak_data = peak_service.get_peak_analysis()
     anomalies = anomaly_service.get_anomalies()
     unresolved_anomalies = [a for a in anomalies if a["status"] != "resolved"]
+    commercial_dashboard = data_provider.get_commercial_dashboard(
+        tab="building", time_range="7D"
+    )
+    most_urgent_anomaly = next(iter(unresolved_anomalies), None)
 
     kpis = [
         {
             "id": "ov-current-demand",
             "title": "Active Grid Load",
-            "value": "384.2",
+            "value": str(peak_data["currentLoadMw"]),
             "unit": "MW",
-            "changePercent": 3.4,
-            "changePeriod": "vs prior hour",
-            "trend": "up",
+            "trend": "neutral",
             "isPositiveGood": False,
-            "subtext": "Coincident draw across 17 regional grid zones",
-            "badge": "Live",
+            "subtext": f"System capacity limit: {peak_data['peakCapacityLimitMw']} MW",
+            "badge": "Backend",
             "badgeVariant": "cyan",
             "category": "consumption",
         },
         {
             "id": "ov-forecast-total",
             "title": "7-Day Projected Total",
-            "value": "64.8",
-            "unit": "GWh",
-            "changePercent": -1.8,
-            "changePeriod": "vs prior 7-day cycle",
-            "trend": "down",
+            "value": str(commercial_dashboard["predictedTotal"]),
+            "unit": commercial_dashboard["totalUnit"],
+            "changePercent": commercial_dashboard["avgDemandDeltaPct"],
+            "changePeriod": "vs previous period",
+            "trend": (
+                "up"
+                if commercial_dashboard["avgDemandDeltaPct"] > 0
+                else "down"
+                if commercial_dashboard["avgDemandDeltaPct"] < 0
+                else "neutral"
+            ),
             "isPositiveGood": True,
-            "subtext": "Autoregressive LightGBM multi-horizon aggregate",
+            "subtext": commercial_dashboard["predictedTotalHorizon"],
             "badge": "Forecast",
             "badgeVariant": "teal",
             "category": "forecast",
@@ -53,11 +61,9 @@ def get_overview():
             "title": "Projected Peak Window",
             "value": str(peak_data["expectedPeakMw"]),
             "unit": "MW",
-            "changePercent": 5.2,
-            "changePeriod": "above baseline reserve",
-            "trend": "up",
+            "trend": "neutral",
             "isPositiveGood": False,
-            "subtext": f"Anticipated: {peak_data['expectedPeakTime']}",
+            "subtext": f"Expected: {peak_data['expectedPeakTime']}",
             "badge": "Elevated Risk",
             "badgeVariant": "amber",
             "category": "peak",
@@ -67,12 +73,15 @@ def get_overview():
             "title": "Active Grid Anomalies",
             "value": str(len(unresolved_anomalies)),
             "unit": "unresolved",
-            "changePercent": 1,
-            "changePeriod": "critical severity",
-            "trend": "up",
+            "changePeriod": "unresolved",
+            "trend": "neutral",
             "isPositiveGood": False,
-            "subtext": "SUB-NORTH-104 requires engineering inspection",
-            "badge": f"{len(anomalies)} Total",
+            "subtext": (
+                f"Highest priority: {most_urgent_anomaly['entityName']}"
+                if most_urgent_anomaly
+                else "No unresolved anomalies"
+            ),
+            "badge": f"{len(anomalies)} total",
             "badgeVariant": "danger",
             "category": "anomaly",
         },

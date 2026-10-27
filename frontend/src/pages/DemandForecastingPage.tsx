@@ -51,6 +51,21 @@ export const DemandForecastingPage: React.FC = () => {
   // Active time-series horizon
   const [timeSeries, setTimeSeries] = useState<TimeSeriesPoint[]>([]);
 
+  const loadHorizon = async (
+    request: Promise<{ horizon: TimeSeriesPoint[] }>
+  ) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await request;
+      setTimeSeries(data.horizon);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load forecast.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     const fetchEntities = async () => {
       try {
@@ -80,28 +95,27 @@ export const DemandForecastingPage: React.FC = () => {
   // Handle entity change
   const handleCommercialChange = async (bldgId: string) => {
     setSelectedBldgId(bldgId);
-    const data = await analyticsService.getCommercialForecast(bldgId);
-    setTimeSeries(data.horizon);
+    await loadHorizon(analyticsService.getCommercialForecast(bldgId));
   };
 
   const handleResidentialChange = async (meterId: string) => {
     setSelectedMeterId(meterId);
-    const data = await analyticsService.getResidentialForecast(meterId);
-    setTimeSeries(data.horizon);
+    await loadHorizon(analyticsService.getResidentialForecast(meterId));
+  };
+
+  const handleGovernmentChange = async (siteId: string) => {
+    setSelectedSiteId(siteId);
+    await loadHorizon(analyticsService.getGovernmentForecast(siteId));
   };
 
   const handleSectorChange = async (newSector: SectorPersona) => {
     setSector(newSector);
     if (newSector === 'commercial') {
-      const data = await analyticsService.getCommercialForecast(selectedBldgId);
-      setTimeSeries(data.horizon);
+      await loadHorizon(analyticsService.getCommercialForecast(selectedBldgId));
     } else if (newSector === 'residential') {
-      const data = await analyticsService.getResidentialForecast(selectedMeterId);
-      setTimeSeries(data.horizon);
+      await loadHorizon(analyticsService.getResidentialForecast(selectedMeterId));
     } else {
-      // Government Regional
-      const data = await analyticsService.getCommercialForecast(selectedBldgId);
-      setTimeSeries(data.horizon);
+      await loadHorizon(analyticsService.getGovernmentForecast(selectedSiteId));
     }
   };
 
@@ -130,11 +144,11 @@ export const DemandForecastingPage: React.FC = () => {
       {/* Page Header */}
       <PageHeader
         title="Demand Forecasting Studio"
-        description="Multi-horizon demand inference based on trained LightGBM and XGBoost model artifacts from the reference system."
+        description="Explore entity-level forecast horizons. Current sector horizons are marked as demo; run the connected gold-data customer bill model from Models."
         badge={
           <span className="gv-badge gv-badge-info">
             <Cpu size={12} />
-            <span>Active Model: {sector === 'residential' ? 'XGBoost Month-End' : 'LightGBM Multi-Horizon'}</span>
+            <span>{sector === 'residential' ? 'Customer Bill Prediction · Gold replay in Models' : 'Demo forecast horizon'}</span>
           </span>
         }
       />
@@ -286,7 +300,7 @@ export const DemandForecastingPage: React.FC = () => {
                 </label>
                 <select
                   value={selectedSiteId}
-                  onChange={(e) => setSelectedSiteId(e.target.value)}
+                  onChange={(e) => handleGovernmentChange(e.target.value)}
                   style={{
                     padding: '0.45rem 0.85rem',
                     borderRadius: 'var(--gv-radius-md)',

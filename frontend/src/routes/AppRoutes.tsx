@@ -13,6 +13,7 @@ import { AnomalyDetectionPage } from '../pages/AnomalyDetectionPage';
 import { CustomerAnalyticsPage } from '../pages/CustomerAnalyticsPage';
 import { EnergyInsightsPage } from '../pages/EnergyInsightsPage';
 import { ProfilePage } from '../pages/ProfilePage';
+import { CustomerBillModelPage } from '../pages/CustomerBillModelPage';
 
 export const AppRoutes: React.FC = () => {
   return (
@@ -33,6 +34,7 @@ export const AppRoutes: React.FC = () => {
         <Route path="/app/customers" element={<CustomerAnalyticsPage />} />
         <Route path="/app/health" element={<Navigate to="/health" replace />} />
         <Route path="/app/assistant" element={<AiAssistantPage />} />
+        <Route path="/models" element={<CustomerBillModelPage />} />
 
         {/* Deep Grid Analytics Suite */}
         <Route path="/overview" element={<OverviewPage />} />

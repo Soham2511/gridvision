@@ -29,11 +29,13 @@ SOURCE_PATH = Path(
 BRONZE_PATH = DATA_ROOT / "bronze" / SOURCE_PATH.name
 SILVER_PATH = DATA_ROOT / "silver" / "customer_silver.parquet"
 GOLD_PATH = DATA_ROOT / "gold" / "customer_gold.parquet"
-SAMPLE_CUSTOMER_BUILDINGS = int(os.getenv("CUSTOMER_SAMPLE_BUILDINGS", "1000"))
+SAMPLE_CUSTOMER_BUILDINGS = int(os.getenv("CUSTOMER_SAMPLE_BUILDINGS", "100"))
 RANDOM_SEED = int(os.getenv("CUSTOMER_SAMPLE_SEED", "42"))
 MIN_MONTH_COVERAGE = float(os.getenv("CUSTOMER_MIN_MONTH_COVERAGE", "0.95"))
 TARIFF_INR_PER_KWH = float(os.getenv("CUSTOMER_TARIFF_INR_PER_KWH", "10.0"))
-DUCKDB_MEMORY_LIMIT = os.getenv("CUSTOMER_DUCKDB_MEMORY_LIMIT", "4GB")
+DUCKDB_MEMORY_LIMIT = os.getenv("CUSTOMER_DUCKDB_MEMORY_LIMIT", "2GB")
+DUCKDB_THREADS = max(1, int(os.getenv("CUSTOMER_DUCKDB_THREADS", "2")))
+PROFILE_SCAN_BATCH_SIZE = 65536
 DUCKDB_TEMP_DIR = Path(
     os.getenv(
         "CUSTOMER_DUCKDB_TEMP_DIR",
@@ -48,7 +50,7 @@ def _connect() -> duckdb.DuckDBPyConnection:
     """Create a bounded DuckDB connection with a configurable spill directory."""
     DUCKDB_TEMP_DIR.mkdir(parents=True, exist_ok=True)
     connection = duckdb.connect()
-    connection.execute("SET threads = 4")
+    connection.execute(f"SET threads = {DUCKDB_THREADS}")
     connection.execute(f"SET memory_limit = '{DUCKDB_MEMORY_LIMIT}'")
     escaped_spill_dir = DUCKDB_TEMP_DIR.as_posix().replace("'", "''")
     connection.execute(f"SET temp_directory = '{escaped_spill_dir}'")
@@ -266,6 +268,73 @@ def create_bronze(
     return {"path": str(output), "rows": metadata.num_rows, **quality}
 
 
+def _load_residential_profiles(source: Path) -> pd.DataFrame:
+    """Collect small entity profiles in Arrow batches without a full-file group-by."""
+    profiles_by_id: dict[int, tuple[Any, Any]] = {}
+    parquet_file = pq.ParquetFile(source)
+    for record_batch in parquet_file.iter_batches(
+        columns=[
+            "OBJECTID",
+            "building.type",
+            "SpecificUseType",
+            "GeneralUseType",
+        ],
+        batch_size=PROFILE_SCAN_BATCH_SIZE,
+    ):
+        batch = record_batch.to_pandas()
+        residential = batch[
+            batch["GeneralUseType"]
+            .astype("string")
+            .str.strip()
+            .eq("Residential")
+            .fillna(False)
+        ].copy()
+        entity_ids = pd.to_numeric(
+            residential["OBJECTID"], errors="coerce"
+        )
+        residential = residential.loc[entity_ids.notna()].copy()
+        residential["entity_id"] = entity_ids[entity_ids.notna()].astype("int64")
+        residential = residential.groupby(
+            "entity_id", as_index=False, sort=False
+        ).agg(
+            {
+                "building.type": "first",
+                "SpecificUseType": "first",
+            }
+        )
+
+        for entity_id, building_type, specific_use_type in residential[
+            ["entity_id", "building.type", "SpecificUseType"]
+        ].itertuples(index=False, name=None):
+            entity_key = int(entity_id)
+            existing = profiles_by_id.get(entity_key)
+            if existing is None:
+                profiles_by_id[entity_key] = (
+                    building_type,
+                    specific_use_type,
+                )
+                continue
+            profiles_by_id[entity_key] = (
+                existing[0] if pd.notna(existing[0]) else building_type,
+                existing[1] if pd.notna(existing[1]) else specific_use_type,
+            )
+
+    if not profiles_by_id:
+        return pd.DataFrame(
+            columns=["entity_id", "building_type", "specific_use_type"]
+        )
+    return pd.DataFrame.from_records(
+        [
+            {
+                "entity_id": entity_id,
+                "building_type": building_type,
+                "specific_use_type": specific_use_type,
+            }
+            for entity_id, (building_type, specific_use_type) in profiles_by_id.items()
+        ]
+    )
+
+
 def _proportional_strata_sample(
     profiles: pd.DataFrame,
     group_columns: list[str],
@@ -327,19 +396,7 @@ def create_customer_silver(
 
     connection = _connect()
     try:
-        profiles = connection.execute(
-            """
-            SELECT
-                TRY_CAST(OBJECTID AS BIGINT) AS entity_id,
-                ANY_VALUE("building.type") AS building_type,
-                ANY_VALUE("SpecificUseType") AS specific_use_type
-            FROM read_parquet(?)
-            WHERE TRIM(GeneralUseType) = 'Residential'
-              AND TRY_CAST(OBJECTID AS BIGINT) IS NOT NULL
-            GROUP BY TRY_CAST(OBJECTID AS BIGINT)
-            """,
-            [str(source)],
-        ).fetchdf()
+        profiles = _load_residential_profiles(source)
         if profiles.empty:
             raise ValueError("No usable building identifiers exist in the source data.")
 
@@ -385,7 +442,6 @@ def create_customer_silver(
               AND TRY_CAST(r."timestamp" AS TIMESTAMP) IS NOT NULL
               AND TRY_CAST(r."normalized_building_energy_kwh" AS DOUBLE) >= 0
             GROUP BY r."OBJECTID", CAST(r."timestamp" AS TIMESTAMP)
-            ORDER BY "timestamp", r."OBJECTID"
         """
         stage_path = silver.with_name(f"{silver.stem}.stage.parquet")
         if stage_path.exists():

@@ -52,73 +52,6 @@ export const AiAssistantPage: React.FC = () => {
     },
   ]);
 
-  const generateAnswer = (prompt: string): string => {
-    const p = prompt.toLowerCase();
-    if (p.includes('bill') || p.includes('tariff') || p.includes('calculate')) {
-      return (
-        `**Billing Computation (Prototype Tariff Specification):**\n\n` +
-        `Your month-end estimated invoice is computed using the baseline equation:\n\n` +
-        `$$\\text{Estimated Bill (₹)} = (\\text{Month-to-Date kWh} + \\text{XGBoost Remaining kWh}) \\times ₹10.00/\\text{kWh}$$\n\n` +
-        `• **Month-to-Date Actual:** 286.4 kWh\n` +
-        `• **Model Predicted Remaining:** 126.1 kWh\n` +
-        `• **Projected Month-End Volume:** 412.5 kWh\n` +
-        `• **Estimated Total:** **₹4,125.00**\n\n` +
-        `*Notice:* This uses the prototype flat tariff rate of ₹10.00/kWh established in the research benchmark. It is an illustrative estimate and not a legal utility invoice.`
-      );
-    }
-
-    if (p.includes('peak')) {
-      if (persona === 'household') {
-        return (
-          `**Peak Consumption Analysis (${activeEntity}):**\n\n` +
-          `Your highest recorded daily demand during the active cycle occurred on **October 11**, reaching **16.0 kWh** ` +
-          `(17.6% above your 13.6 kWh interval average). The primary drivers were evening appliance loads between 18:30 and 21:00.`
-        );
-      }
-      if (persona === 'commercial') {
-        return (
-          `**Facility Peak Observed Demand (${activeEntity}):**\n\n` +
-          `Maximum observed demand was **285.0 kWh** recorded at **14:00 UTC** during peak cooling hours. ` +
-          `The facility reached 94% of its 320 kWh nameplate capacity. Peak coincided with an ambient temperature of 28.1°C.`
-        );
-      }
-      return (
-        `**Grid System Peak Demand (Aggregate):**\n\n` +
-        `Current system peak is recorded at **458.2 MW** (99.6% of the 460.0 MW warning threshold). ` +
-        `The active reserve margin is **+22.8 MW**, with Automated Demand Response (ADR) curtailment protocol ready.`
-      );
-    }
-
-    if (p.includes('summarize') || p.includes('consumption') || p.includes('demand')) {
-      return (
-        `**Telemetry Summary (${persona.toUpperCase()} Context):**\n\n` +
-        `Over the active 30-day baseline window for **${activeEntity}**:\n` +
-        `• Average baseline load is **${persona === 'government' ? '384.2 MW' : persona === 'commercial' ? '142.5 kWh' : '13.6 kWh'}**\n` +
-        `• Period trend indicates a **-4.2%** consumption decrease relative to the prior comparable window\n` +
-        `• Telemetry data completeness is **98.6%** (well above the 90.0% governance gate)`
-      );
-    }
-
-    if (p.includes('region') || p.includes('compare') || p.includes('site')) {
-      return (
-        `**Regional Cross-Site Comparison (17 Sites):**\n\n` +
-        `Demand ranking across the top 5 administrative zones:\n` +
-        `1. **Site Bear**: 38.4 MW (9.2% of total)\n` +
-        `2. **Site Fox**: 35.1 MW (8.4% of total)\n` +
-        `3. **Site Eagle**: 32.8 MW (7.9% of total)\n` +
-        `4. **Site Bull**: 31.5 MW (7.5% of total)\n` +
-        `5. **Site Panther**: 29.4 MW (7.0% of total)\n\n` +
-        `All 17 sites maintain 100% synchronized timestamp alignment.`
-      );
-    }
-
-    return (
-      `**Analytical Response (${persona.toUpperCase()} Mode):**\n\n` +
-      `Based on the verified telemetry for **${activeEntity}**, all feature distributions conform to expected baselines. ` +
-      `The model forecast is tracking within ±2.5% residual tolerance of retrospective observations.`
-    );
-  };
-
   const [isTyping, setIsTyping] = useState<boolean>(false);
 
   const handleSend = async (text: string) => {
@@ -145,12 +78,13 @@ export const AiAssistantPage: React.FC = () => {
         timestamp: 'Just now',
       };
       setMessages((prev) => [...prev, replyMsg]);
-    } catch {
-      // Graceful offline fallback
+    } catch (err) {
       const replyMsg: ChatMessage = {
         id: `ast-${Date.now() + 1}`,
         sender: 'assistant',
-        text: generateAnswer(trimmed),
+        text: `The assistant service did not return an answer: ${
+          err instanceof Error ? err.message : 'Unknown service error.'
+        } Please try again when the backend is available.`,
         timestamp: 'Just now',
       };
       setMessages((prev) => [...prev, replyMsg]);

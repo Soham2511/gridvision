@@ -39,6 +39,42 @@ export const EnergyInsightsPage: React.FC = () => {
   }, []);
 
   const handleExport = () => {
+    const columns = [
+      'Category',
+      'Sector',
+      'Title',
+      'Description',
+      'Impact',
+      'Potential Value',
+      'Urgency',
+      'Recommendation',
+    ];
+    const escapeCsv = (value: string) => `"${value.replace(/"/g, '""')}"`;
+    const rows = filtered.map((insight) =>
+      [
+        insight.category,
+        insight.sector,
+        insight.title,
+        insight.description,
+        insight.impactMetric,
+        insight.potentialValue,
+        insight.urgency,
+        insight.actionableRecommendation,
+      ]
+        .map((value) => escapeCsv(String(value)))
+        .join(',')
+    );
+    const blob = new Blob([[columns.map(escapeCsv).join(','), ...rows].join('\r\n')], {
+      type: 'text/csv;charset=utf-8',
+    });
+    const downloadUrl = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = downloadUrl;
+    link.download = 'gridvision-energy-insights.csv';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 0);
     setExportNotice(true);
     setTimeout(() => setExportNotice(false), 3000);
   };
@@ -108,7 +144,7 @@ export const EnergyInsightsPage: React.FC = () => {
           }}
         >
           <CheckCircle2 size={16} />
-          <span>Intelligence Summary generated and formatted for executive dispatch!</span>
+          <span>Filtered insights exported as gridvision-energy-insights.csv.</span>
         </div>
       )}
 

@@ -33,6 +33,8 @@ export const PeakDemandPage: React.FC = () => {
   // Interactive ADR Curtailment Simulation
   const [curtailmentMw, setCurtailmentMw] = useState<number>(15);
   const [dispatchConfirmed, setDispatchConfirmed] = useState<boolean>(false);
+  const [dispatchMessage, setDispatchMessage] = useState<string | null>(null);
+  const [dispatchError, setDispatchError] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -68,14 +70,16 @@ export const PeakDemandPage: React.FC = () => {
   const simulatedSavingsInr = curtailmentMw * 160000; // ₹160,000 per MW capacity charge tariff
 
   const handleDispatch = async () => {
+    setDispatchError(null);
+    setDispatchMessage(null);
     try {
-      await analyticsService.dispatchCurtailment(curtailmentMw);
+      const result = await analyticsService.dispatchCurtailment(curtailmentMw);
       setDispatchConfirmed(true);
+      setDispatchMessage(result.message);
       setTimeout(() => setDispatchConfirmed(false), 4000);
     } catch (err) {
-      console.error('Failed to dispatch curtailment via API:', err);
-      setDispatchConfirmed(true);
-      setTimeout(() => setDispatchConfirmed(false), 4000);
+      setDispatchConfirmed(false);
+      setDispatchError(err instanceof Error ? err.message : 'Demand response dispatch failed.');
     }
   };
 
@@ -180,10 +184,15 @@ export const PeakDemandPage: React.FC = () => {
           {dispatchConfirmed && (
             <span className="gv-badge gv-badge-success">
               <CheckCircle2 size={13} />
-              <span>Simulated ADR Signal Dispatched</span>
+              <span>{dispatchMessage || 'Simulated ADR signal dispatched'}</span>
             </span>
           )}
         </div>
+        {dispatchError && (
+          <div role="alert" className="gv-badge gv-badge-danger" style={{ marginBottom: '1rem' }}>
+            {dispatchError}
+          </div>
+        )}
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.5rem', alignItems: 'center' }}>
           <div>

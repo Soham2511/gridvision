@@ -2,13 +2,13 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { usePersona } from '../context';
 import { analyticsService } from '../services/analyticsService';
 import {
-  HouseholdOverview,
   CommercialDashboardData,
   GovernmentRegionItem,
   GovernmentDashboardData,
 } from '../types/analytics';
-import { CommonMetricCard, CommonEnergyChart } from '../components/common';
+import { CommonMetricCard } from '../components/common';
 import { CommonChartHoverCard } from '../components/common/CommonChartHoverCard';
+import { ResidentialGoldInsightsPage } from './ResidentialGoldInsightsPage';
 import {
   ResponsiveContainer,
   ComposedChart,
@@ -22,9 +22,7 @@ import {
 } from 'recharts';
 import {
   Zap,
-  Calendar,
   BarChart2,
-  Target,
   TrendingUp,
   FileText,
   MapPin,
@@ -34,51 +32,12 @@ import {
   Plus,
 } from 'lucide-react';
 
-const defaultHouseholdOverview: HouseholdOverview = {
-  householdId: 'METER-1000',
-  userName: 'Ramesh Sharma',
-  currentDailyUsageKwh: 14.8,
-  dailyAvgKwh: 15.2,
-  dailyAvgChangePct: -2.6,
-  prev7DaysAvgKwh: 15.6,
-  monthlyAvgKwh: 456.0,
-  monthlyAvgChangePct: 4.1,
-  prevMonthKwh: 438.0,
-  predictedMonthEndKwh: 462.5,
-  consumptionCurve: [],
-};
-
 export const PersonaDashboardPage: React.FC = () => {
   const { currentPersona, activeEntity, energyUnit } = usePersona();
 
   // Active persona (defaults to household / Residential)
   const persona = currentPersona || 'household';
-
   const isMWh = energyUnit === 'MWh';
-  const formatHouseholdVal = (valKwh: number) => {
-    if (isMWh) {
-      const mwh = valKwh / 1000;
-      return mwh < 1 ? mwh.toFixed(3) : mwh.toFixed(2);
-    }
-    return valKwh % 1 === 0 ? valKwh.toString() : valKwh.toFixed(1);
-  };
-  const householdUnit = isMWh ? 'MWh' : 'kWh';
-
-  // -------------------------------------------------------------
-  // 1. Household View State
-  // -------------------------------------------------------------
-  const [householdData, setHouseholdData] = useState<HouseholdOverview>(defaultHouseholdOverview);
-  const [householdTimeRange, setHouseholdTimeRange] = useState<'1D' | '7D' | '1M' | '3M' | '1Y' | 'ALL'>('1D');
-
-  useEffect(() => {
-    if (persona === 'household') {
-      analyticsService.getHouseholdOverview(activeEntity).then((res) => {
-        setHouseholdData(res);
-      }).catch((err) => {
-        console.error('Failed to load household telemetry from API:', err);
-      });
-    }
-  }, [persona, activeEntity]);
 
   // -------------------------------------------------------------
   // 2. Commercial View State
@@ -266,92 +225,7 @@ export const PersonaDashboardPage: React.FC = () => {
       {/* 1. HOUSEHOLD / RESIDENTIAL VIEW                            */}
       {/* ========================================================= */}
       {persona === 'household' ? (
-        <>
-          <div>
-            <h1 style={{ fontSize: '2.1rem', fontWeight: 800, color: '#0B1F33', margin: '0 0 0.35rem 0', letterSpacing: '-0.025em' }}>
-              Hello, Rohit!
-            </h1>
-            <p style={{ fontSize: '0.95rem', color: '#64748B', margin: 0, fontWeight: 500 }}>
-              Here is your household energy overview.
-            </p>
-          </div>
-
-          <div
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))',
-              gap: '1.25rem',
-            }}
-          >
-            <CommonMetricCard
-              title="Current Daily Usage"
-              value={formatHouseholdVal(householdData.currentDailyUsageKwh)}
-              unit={householdUnit}
-              icon={<Zap size={22} color="#00A396" fill="#00A396" />}
-              iconBg="#E6F7F5"
-              hoverBorderColor="rgba(0, 163, 150, 0.4)"
-            />
-            <CommonMetricCard
-              title="Daily Average"
-              value={formatHouseholdVal(householdData.dailyAvgKwh)}
-              unit={householdUnit}
-              icon={<Calendar size={22} color="#D97706" />}
-              iconBg="#FFF7ED"
-              trend={{
-                value: householdData.dailyAvgChangePct,
-                direction: 'up',
-                isIncreaseNegative: true,
-                comparisonText: `vs previous 7 days (${formatHouseholdVal(householdData.prev7DaysAvgKwh)} ${householdUnit})`,
-              }}
-              hoverBorderColor="rgba(217, 119, 6, 0.4)"
-            />
-            <CommonMetricCard
-              title="Monthly Average"
-              value={formatHouseholdVal(householdData.monthlyAvgKwh)}
-              unit={householdUnit}
-              icon={<BarChart2 size={22} color="#2563EB" />}
-              iconBg="#EFF6FF"
-              trend={{
-                value: Math.abs(householdData.monthlyAvgChangePct),
-                direction: 'down',
-                isIncreaseNegative: true,
-                comparisonText: `vs last month (${formatHouseholdVal(householdData.prevMonthKwh)} ${householdUnit})`,
-              }}
-              hoverBorderColor="rgba(37, 99, 235, 0.4)"
-            />
-            <CommonMetricCard
-              title="Predicted Month End Usage"
-              value={formatHouseholdVal(householdData.predictedMonthEndKwh)}
-              unit={householdUnit}
-              icon={<Target size={22} color="#7C3AED" />}
-              iconBg="#F5F3FF"
-              hoverBorderColor="rgba(124, 58, 237, 0.4)"
-            />
-          </div>
-
-          <CommonEnergyChart
-            title="Energy Consumption"
-            subtitle=""
-            data={householdData.consumptionCurve}
-            timeRange={householdTimeRange}
-            onTimeRangeChange={setHouseholdTimeRange}
-            demarcationTime="12:00"
-            actualCallout={{
-              time: '09:00',
-              value: 3.2,
-              dateText: '19 Oct 2026, 09:00 AM',
-              label: 'Consumption',
-              color: '#00A396',
-            }}
-            predictedCallout={{
-              time: '20:30',
-              value: 3.8,
-              dateText: '19 Oct 2026, 08:00 PM',
-              label: 'Predicted Consumption',
-              color: '#8B5CF6',
-            }}
-          />
-        </>
+        <ResidentialGoldInsightsPage view="dashboard" />
       ) : persona === 'commercial' ? (
         /* ========================================================= */
         /* 2. COMMERCIAL DASHBOARD                                   */

@@ -52,6 +52,9 @@ gridvision-app/
 │   ├── app/
 │   │   ├── __init__.py             # Application factory & blueprint registration
 │   │   ├── config.py               # Environment configuration (Dev, Test, Prod)
+│   │   ├── models/                 # Model registry and independent model packages
+│   │   │   ├── registry.py
+│   │   │   └── customer_bill_prediction/
 │   │   ├── api/
 │   │   │   ├── error_handlers.py   # Centralized error handling & status codes
 │   │   │   └── v1/                 # Versioned API routes
@@ -59,6 +62,7 @@ gridvision-app/
 │   │   │       ├── overview.py     # /overview executive KPIs
 │   │   │       ├── entities.py     # /entities/commercial, residential, government
 │   │   │       ├── forecast.py     # /forecast/* & on-demand inference
+│   │   │       ├── models.py       # Model catalog & gold-backed predictions
 │   │   │       ├── dashboard.py    # /dashboard/* telemetry across personas
 │   │   │       ├── historical.py   # /historical rollups and curves
 │   │   │       ├── peak.py         # /peak-demand & /peak-demand/curtail
@@ -100,8 +104,10 @@ gridvision-app/
     └── src/
         ├── services/
         │   ├── apiClient.ts        # Centralized HTTP client
-        │   └── analyticsService.ts # API integration service layer
+        │   ├── analyticsService.ts # API integration service layer
+        │   └── modelService.ts    # Model catalog and prediction API
         ├── pages/                  # React dashboard pages
+        │   └── CustomerBillModelPage.tsx
         └── types/analytics.ts      # TypeScript domain contracts
 ```
 
@@ -122,6 +128,16 @@ gridvision-app/
    ```
 
 The script runs the customer ETL and training workflow, then starts the MLflow, Airflow, backend, and frontend services. It prints a timed summary and leaves the services running. See [Customer Bill Prediction: Data, Training, and Automation](#customer-bill-prediction-data-training-and-automation) for environment setup, output paths, and EC2 deployment steps.
+
+On Windows, run `python automation.py` from the project root. It defaults `GRIDVISION_DATA_DIR` to `D:\GridVision\data` and generates a temporary development `SECRET_KEY` for the Compose services. The gold dataset is expected at `D:\GridVision\data\gold\customer_gold.parquet`.
+
+If starting Compose directly instead of using the automation script, create a root `.env` file (it is git-ignored) with `GRIDVISION_DATA_DIR=D:\GridVision\data` and a private `SECRET_KEY`. Generate a strong key with:
+
+```powershell
+python -c "import secrets; print(secrets.token_urlsafe(48))"
+```
+
+Paste the generated value as `SECRET_KEY=...` in `.env`, then run `docker compose up -d --build backend frontend`. `SECRET_KEY` is Flask's private application-signing key; it is not the model or dataset key. Keep it private and stable between restarts so signed sessions remain valid.
 
 ---
 
@@ -177,6 +193,21 @@ npm run lint
 | `GET` | `/api/v1/customers/diurnal-curves` | 24-hour diurnal curves across sectors |
 | `GET` | `/api/v1/energy-insights` | Algorithmic optimization recommendations |
 | `POST` | `/api/v1/assistant/chat` | Domain-grounded query answering |
+| `GET` | `/api/v1/models` | Registered model catalog and gold dataset summary |
+| `GET` | `/api/v1/models/customer-bill-prediction/records` | Page through customer entities in the gold dataset |
+| `GET` | `/api/v1/models/customer-bill-prediction/records/<entity_id>` | Get a customer's available gold records |
+| `GET` | `/api/v1/models/customer-bill-prediction/history` | Residential monthly usage and model projections from gold data |
+| `POST` | `/api/v1/models/customer-bill-prediction/predict` | Run a customer bill prediction against a gold record |
+
+### Customer bill model workbench
+
+Open **Models** in the application sidebar to select a customer entity and gold record, run its prediction, and compare the estimated monthly energy and illustrative bill with the actuals. Each entity has multiple cutoff-day records in a month; the UI selects the cutoff day along with the month. Results are labeled as retrospective gold-data replays, not live meter telemetry or invoices.
+
+The backend stores model-specific code in `backend/app/models/<model_name>/` and adds public metadata to `backend/app/models/registry.py`. Each package owns its data contract and inference logic. Add commercial peak-hour detection as a separate model package and registry entry when its artifact and feature contract are ready, without coupling it to customer bill prediction.
+
+Docker Compose mounts `data/gold` and the customer model metadata read-only into the API container. Rebuild/restart the stack after changing application code or Compose mounts.
+
+The Residential **Historical Insights** page reads the customer gold Parquet dataset directly. It removes duplicate entity-month snapshots by choosing the last available cutoff, then charts average monthly actual usage alongside the stored model projection. The dataset contains 1,000 modeled entities across 12 months in 2018; these are retrospective sample-cohort insights, not live readings. The page also displays the selected model's holdout metrics, training features, and dataset version.
 
 ---
 
@@ -254,9 +285,12 @@ The direct local-development backend uses [`DevelopmentModelProvider`](backend/a
 The full `automation.py` workflow configures the Docker backend to use the registered customer bill model:
 
 - Compose sets `MODEL_PROVIDER=mlflow` and points the backend to the MLflow container on its internal Docker network.
+- MLflow serves artifacts through its tracking server, so training and backend containers do not depend on host-specific artifact paths.
 - The application factory (`backend/app/__init__.py`) loads [`MLflowModelAdapter`](backend/app/providers/mlflow_adapter.py).
 - If the tracking server or registered alias is unavailable, the adapter reports an error rather than silently falling back to demo predictions.
 - The customer bill model accepts monthly cutoff features and returns estimated remaining and month-end kWh. The tariff is illustrative because the source data does not contain customer-specific billing plans.
+
+The tracking server proxies artifacts from the persistent `/mlflow/artifacts` volume. New training runs use the `gridvision-customer-bill-prediction-v2` experiment so they receive proxy-backed artifact URIs; this avoids the host-specific artifact paths stored by the earlier experiment. Existing MLflow runs and model versions are preserved. After changing this configuration, rebuild the MLflow service and register a new model version before using the prediction endpoint.
 
 ---
 
@@ -289,6 +323,10 @@ python automation.py
 ```
 
 The script checks dependencies and Docker, starts the persistent MLflow container, runs the Airflow bronze → silver → gold DAG, trains and registers the model, starts the Airflow scheduler/UI, builds and starts the API/UI containers, checks service health, and prints elapsed times and URLs. It generates a development secret if `SECRET_KEY` is not set. The services remain running after the script exits.
+
+For a functional, resource-conscious local run, the silver stage deterministically samples **100 residential entities** by default (down from 1,000). The sample size can be changed with `CUSTOMER_SAMPLE_BUILDINGS` before running automation. The silver transform discovers residential entity profiles with bounded Arrow batches, avoiding a full-file DuckDB profile aggregation. DuckDB is limited to 2 GB and two worker threads by default, and spills intermediate data to `~/.cache/gridvision/duckdb_temp` when needed. Ensure the WSL filesystem containing that directory has free space. You can tune the DuckDB limits with `CUSTOMER_DUCKDB_MEMORY_LIMIT` and `CUSTOMER_DUCKDB_THREADS`. This smaller sample is intended for functional development; increase it as resources and scaling work allow.
+
+To retrain and rebuild the services using an already-generated gold dataset without rerunning the memory-intensive Airflow ETL, run `python automation.py --skip-data-pipeline`. This still trains a new model version and updates the `champion` alias.
 
 Open the frontend at `http://localhost:8080`. Airflow is available at `http://localhost:8081`; its generated login details are in `logs/airflow/standalone.log`. The MLflow UI is at `http://localhost:15001` (host port configurable with `GRIDVISION_MLFLOW_HOST_PORT`). The API health endpoint is `http://localhost:5000/api/v1/health`. Stop the Docker services with `docker compose down`. To stop the Airflow process group started by automation, use its PID file: `kill -TERM -- -$(cat logs/airflow/standalone.pid)`.
 

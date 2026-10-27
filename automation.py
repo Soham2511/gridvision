@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import os
 import platform
 import secrets
@@ -184,7 +185,17 @@ def _start_airflow_ui(
     )
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--skip-data-pipeline",
+        action="store_true",
+        help=(
+            "Reuse the existing gold dataset and skip the Airflow bronze-to-gold "
+            "DAG before training and starting services."
+        ),
+    )
+    arguments = parser.parse_args(argv)
     started = time.perf_counter()
     result_code = 0
     env = os.environ.copy()
@@ -260,15 +271,22 @@ def main() -> int:
                 check=True,
             ).returncode,
         )
-        run_step(
-            "Run customer bronze → silver → gold Airflow DAG",
-            lambda: subprocess.run(
-                airflow_command + ["dags", "test", DAG_ID, date.today().isoformat()],
-                cwd=PROJECT_ROOT,
-                env=env,
-                check=True,
-            ).returncode,
-        )
+        if arguments.skip_data_pipeline:
+            print(
+                "\n[SKIPPED] Reusing the existing customer gold dataset",
+                flush=True,
+            )
+        else:
+            run_step(
+                "Run customer bronze → silver → gold Airflow DAG",
+                lambda: subprocess.run(
+                    airflow_command
+                    + ["dags", "test", DAG_ID, date.today().isoformat()],
+                    cwd=PROJECT_ROOT,
+                    env=env,
+                    check=True,
+                ).returncode,
+            )
         run_step(
             "Train, evaluate, and register customer bill model",
             lambda: subprocess.run(

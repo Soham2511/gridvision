@@ -24,6 +24,7 @@ from app.services.anomaly_service import AnomalyService
 from app.services.customer_service import CustomerService
 from app.services.insight_service import InsightService
 from app.services.assistant_service import AssistantService
+from app.models.customer_bill_prediction import CustomerBillPredictionService
 
 
 def create_app(config_class: type[BaseConfig] | None = None) -> Flask:
@@ -95,6 +96,13 @@ def create_app(config_class: type[BaseConfig] | None = None) -> Flask:
     customer_svc = CustomerService(data_provider)
     insight_svc = InsightService(data_provider)
     assistant_svc = AssistantService(data_provider)
+    customer_bill_prediction_svc = CustomerBillPredictionService(
+        dataset_path=app.config["CUSTOMER_GOLD_DATASET_PATH"],
+        metadata_path=app.config["CUSTOMER_MODEL_METADATA_PATH"],
+        artifact_path=app.config["CUSTOMER_MODEL_ARTIFACT_PATH"],
+        model_provider=model_provider,
+        tariff_inr_per_kwh=app.config["CUSTOMER_TARIFF_INR_PER_KWH"],
+    )
 
     # Attach to app extensions
     app.extensions["data_provider"] = data_provider
@@ -107,6 +115,9 @@ def create_app(config_class: type[BaseConfig] | None = None) -> Flask:
     app.extensions["customer_service"] = customer_svc
     app.extensions["insight_service"] = insight_svc
     app.extensions["assistant_service"] = assistant_svc
+    app.extensions["customer_bill_prediction_service"] = (
+        customer_bill_prediction_svc
+    )
 
     # Register error handlers
     register_error_handlers(app)

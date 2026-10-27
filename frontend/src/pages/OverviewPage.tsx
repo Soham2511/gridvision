@@ -36,85 +36,28 @@ export const OverviewPage: React.FC = () => {
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
+  const [lastSyncedAt, setLastSyncedAt] = useState<Date | null>(null);
 
   const loadData = async (refresh = false) => {
     try {
       if (refresh) setIsRefreshing(true);
       setError(null);
 
-      const [commData, peakData, anomData, segData, insData] = await Promise.all([
+      const [overviewData, commData, anomData, segData, insData] = await Promise.all([
+        analyticsService.getOverview(),
         analyticsService.getCommercialForecast('Panther_office_1'),
-        analyticsService.getPeakDemandAnalysis(),
         analyticsService.getAnomalyEvents(),
         analyticsService.getCustomerSegments(),
         analyticsService.getBusinessInsights(),
       ]);
 
-      setPeakAnalysis(peakData);
+      setPeakAnalysis(overviewData.peakAnalysis);
       setAnomalies(anomData);
       setSegments(segData);
       setInsights(insData);
       setTrends(commData.horizon);
-
-      // Executive Summary KPIs
-      setKpis([
-        {
-          id: 'ov-current-demand',
-          title: 'Active Grid Load',
-          value: '384.2',
-          unit: 'MW',
-          changePercent: 3.4,
-          changePeriod: 'vs prior hour',
-          trend: 'up',
-          isPositiveGood: false,
-          subtext: 'Coincident draw across 17 regional grid zones',
-          badge: 'Live',
-          badgeVariant: 'cyan',
-          category: 'consumption',
-        },
-        {
-          id: 'ov-forecast-total',
-          title: '7-Day Projected Total',
-          value: '64.8',
-          unit: 'GWh',
-          changePercent: -1.8,
-          changePeriod: 'vs prior 7-day cycle',
-          trend: 'down',
-          isPositiveGood: true,
-          subtext: 'Autoregressive LightGBM multi-horizon aggregate',
-          badge: 'Forecast',
-          badgeVariant: 'teal',
-          category: 'forecast',
-        },
-        {
-          id: 'ov-peak-projected',
-          title: 'Projected Peak Window',
-          value: '492.6',
-          unit: 'MW',
-          changePercent: 5.2,
-          changePeriod: 'above baseline reserve',
-          trend: 'up',
-          isPositiveGood: false,
-          subtext: 'Anticipated: Thu Oct 23 • 18:30 IST',
-          badge: 'Elevated Risk',
-          badgeVariant: 'amber',
-          category: 'peak',
-        },
-        {
-          id: 'ov-anomalies',
-          title: 'Active Grid Anomalies',
-          value: anomData.filter((a) => a.status !== 'resolved').length.toString(),
-          unit: 'unresolved',
-          changePercent: 1,
-          changePeriod: 'critical severity',
-          trend: 'up',
-          isPositiveGood: false,
-          subtext: 'SUB-NORTH-104 requires engineering inspection',
-          badge: '4 Total',
-          badgeVariant: 'danger',
-          category: 'anomaly',
-        },
-      ]);
+      setKpis(overviewData.kpis);
+      setLastSyncedAt(new Date());
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to retrieve overview metrics.');
     } finally {
@@ -166,7 +109,7 @@ export const OverviewPage: React.FC = () => {
         badge={
           <span className="gv-badge gv-badge-success">
             <CheckCircle2 size={12} />
-            <span>Telemetry Operational</span>
+            <span>Backend API Connected</span>
           </span>
         }
       />
@@ -193,7 +136,9 @@ export const OverviewPage: React.FC = () => {
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.72rem', color: 'var(--gv-text-muted)' }}>
           <Clock size={12} />
-          <span>Sync: 2026-10-19 23:00 UTC</span>
+          <span>
+            Backend sync: {lastSyncedAt?.toLocaleString() ?? 'Pending'}
+          </span>
         </div>
       </div>
 

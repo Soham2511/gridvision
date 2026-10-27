@@ -319,7 +319,7 @@ export interface ModelRegistryItem {
   modelName: string;
   personaUsed: string;
   version: string;
-  status: 'Active' | 'Monitoring' | 'Deprecated';
+  status: 'Active' | 'Monitoring' | 'Deprecated' | 'Configured' | 'Unavailable';
   lastInference: string;
   mse: number;
   rmse: number;
@@ -336,3 +336,132 @@ export interface PlatformHealthSummary {
   models: ModelRegistryItem[];
 }
 
+export interface CustomerBillModel {
+  modelId: string;
+  name: string;
+  domain: string;
+  task: string;
+  description: string;
+  status: 'configured' | 'unavailable';
+  error?: string;
+  provider: string;
+  modelVersion: string;
+  selectedModel: string;
+  dataset: {
+    name: string;
+    rows: number;
+    entities: number;
+    regions: number;
+    startMonth: string;
+    endMonth: string;
+    qualityPassed: boolean | null;
+    version: string;
+  };
+  testMetrics: {
+    mae_kwh?: number;
+    rmse_kwh?: number;
+    r2?: number;
+  };
+  features: string[];
+  tariffInrPerKwh: number;
+}
+
+export interface RegisteredModel {
+  modelId: string;
+  name: string;
+  domain: string;
+  task: string;
+  description: string;
+  status: 'configured' | 'unavailable';
+  provider: string;
+  modelVersion: string;
+  selectedModel: string;
+  error?: string;
+  dataset?: CustomerBillModel['dataset'];
+  testMetrics?: CustomerBillModel['testMetrics'];
+  features?: string[];
+  tariffInrPerKwh?: number;
+}
+
+export interface CustomerBillRecord {
+  entityId: string;
+  monthStart: string;
+  cutoffDay: number;
+  buildingType: string;
+  cumulativeEnergyKwh: number;
+  actualMonthKwh: number;
+  coverageRatio: number;
+}
+
+export interface PaginatedCustomerRecords {
+  items: CustomerBillRecord[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface CustomerBillPrediction {
+  entityId: string;
+  monthStart: string;
+  cutoffDay: number;
+  actualKwhSoFar: number;
+  predictedMonthEndKwh: number;
+  actualMonthEndKwh: number;
+  predictedRemainingKwh: number;
+  predictedBillInr: number;
+  actualBillInr: number;
+  absoluteErrorKwh: number;
+  modelName: string;
+  modelVersion: string;
+  provider: string;
+  isDemo: boolean;
+  evaluationStatus: string;
+}
+
+export interface ResidentialGoldHistoryPoint {
+  monthStart: string;
+  monthLabel: string;
+  entityCount: number;
+  averageActualKwh: number;
+  medianActualKwh: number;
+  cohortActualKwh: number;
+  averageProjectionKwh: number;
+  averageAbsoluteErrorKwh: number;
+  averageCoverageRatio: number;
+}
+
+export interface ResidentialGoldHistory {
+  timeRange: '3M' | '6M' | '1Y' | 'ALL';
+  monthsReturned: number;
+  startMonth: string;
+  endMonth: string;
+  averageMonthlyKwhPerEntity: number;
+  highestMonthlyAverageKwhPerEntity: number;
+  averageProjectionErrorKwh: number;
+  entityCount: number;
+  dataset: {
+    name: string;
+    version: string;
+    sourceRows: number;
+    months: number;
+    qualityPassed: boolean | null;
+    cutoffDay: number;
+  };
+  model: {
+    name: string;
+    version: string;
+    testMetrics: {
+      mae_kwh?: number;
+      rmse_kwh?: number;
+      r2?: number;
+    };
+    features: string[];
+    provider: string;
+    description: string;
+  };
+  buildingTypeBreakdown: Array<{
+    buildingType: string;
+    entityCount: number;
+  }>;
+  history: ResidentialGoldHistoryPoint[];
+}

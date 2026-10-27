@@ -31,6 +31,24 @@ class BaseConfig:
     CUSTOMER_TARIFF_INR_PER_KWH = float(
         os.getenv("CUSTOMER_TARIFF_INR_PER_KWH", "10.0")
     )
+    CUSTOMER_GOLD_DATASET_PATH = Path(
+        os.getenv(
+            "CUSTOMER_GOLD_DATASET_PATH",
+            PROJECT_ROOT / "data" / "gold" / "customer_gold.parquet",
+        )
+    )
+    CUSTOMER_MODEL_METADATA_PATH = Path(
+        os.getenv(
+            "CUSTOMER_MODEL_METADATA_PATH",
+            PROJECT_ROOT / "models" / "customer_bill_prediction.metadata.json",
+        )
+    )
+    CUSTOMER_MODEL_ARTIFACT_PATH = Path(
+        os.getenv(
+            "CUSTOMER_MODEL_ARTIFACT_PATH",
+            PROJECT_ROOT / "models" / "customer_bill_prediction.pkl",
+        )
+    )
 
 
 class DevelopmentConfig(BaseConfig):

@@ -12,7 +12,8 @@ services:
       - server
       - --backend-store-uri
       - sqlite:////mlflow/mlflow.db
-      - --default-artifact-root
+      - --serve-artifacts
+      - --artifacts-destination
       - file:///mlflow/artifacts
       - --host
       - 0.0.0.0
@@ -48,9 +49,13 @@ services:
       MLFLOW_MODEL_NAME: ${MLFLOW_MODEL_NAME:-customer-bill-prediction}
       MLFLOW_MODEL_ALIAS: ${MLFLOW_MODEL_ALIAS:-champion}
       CUSTOMER_TARIFF_INR_PER_KWH: ${CUSTOMER_TARIFF_INR_PER_KWH:-10.0}
+      CUSTOMER_GOLD_DATASET_PATH: /data/gold/customer_gold.parquet
+      CUSTOMER_MODEL_METADATA_PATH: /models/customer_bill_prediction.metadata.json
       CORS_ORIGINS: http://localhost:8080,http://127.0.0.1:8080
     volumes:
       - ${GRIDVISION_DATA_DIR:?Set GRIDVISION_DATA_DIR}/mlflow:/mlflow:ro
+      - ${GRIDVISION_DATA_DIR:?Set GRIDVISION_DATA_DIR}/gold:/data/gold:ro
+      - ./models/customer_bill_prediction.metadata.json:/models/customer_bill_prediction.metadata.json:ro
       - ${GRIDVISION_LOG_DIR:-./logs}:/logs
     ports:
       - "127.0.0.1:5000:5000"

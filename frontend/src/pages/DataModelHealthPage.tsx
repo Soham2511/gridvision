@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { TopHeader } from '../layouts/TopHeader';
 import { analyticsService } from '../services/analyticsService';
-import { PlatformHealthSummary, ModelRegistryItem } from '../types/analytics';
+import { PlatformHealthSummary, ModelRegistryItem, CustomerBillModel, RegisteredModel } from '../types/analytics';
+import { modelService } from '../services/modelService';
 import { LoadingSkeleton } from '../components/common/LoadingSkeleton';
 import { ErrorState } from '../components/common/ErrorState';
 import {
@@ -16,8 +18,28 @@ import {
   Layers,
 } from 'lucide-react';
 
+const mapRegistryModel = (model: RegisteredModel): ModelRegistryItem => {
+  const rmse = model.testMetrics?.rmse_kwh ?? 0;
+  return {
+    id: model.modelId,
+    modelName: model.name,
+    personaUsed: model.domain,
+    version: model.modelVersion === 'not_deployed' ? 'Not deployed' : `v${model.modelVersion}`,
+    status: model.status === 'configured' ? 'Configured' : 'Unavailable',
+    lastInference:
+      model.status === 'configured'
+        ? 'Ready for on-demand inference'
+        : model.error ?? 'Unavailable',
+    mse: Math.pow(rmse, 2),
+    rmse,
+    r2: model.testMetrics?.r2 ?? 0,
+  };
+};
+
 export const DataModelHealthPage: React.FC = () => {
+  const navigate = useNavigate();
   const [data, setData] = useState<PlatformHealthSummary | null>(null);
+  const [customerModel, setCustomerModel] = useState<CustomerBillModel | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
@@ -26,11 +48,44 @@ export const DataModelHealthPage: React.FC = () => {
   useEffect(() => {
     let mounted = true;
     setLoading(true);
-    analyticsService
-      .getPlatformHealthSummary()
-      .then((res) => {
+    Promise.all([
+      analyticsService.getPlatformHealthSummary(),
+      modelService.getModelCatalog(),
+    ])
+      .then(([platform, registry]) => {
         if (mounted) {
-          setData(res);
+          const registeredCustomer = registry.find(
+            (model) => model.modelId === 'customer-bill-prediction'
+          );
+          if (
+            !registeredCustomer?.dataset ||
+            !registeredCustomer.testMetrics ||
+            !registeredCustomer.features ||
+            registeredCustomer.tariffInrPerKwh === undefined
+          ) {
+            throw new Error(
+              registeredCustomer?.error ??
+                'Customer gold dataset and model metadata are unavailable.'
+            );
+          }
+          const model: CustomerBillModel = {
+            ...registeredCustomer,
+            dataset: registeredCustomer.dataset,
+            testMetrics: registeredCustomer.testMetrics,
+            features: registeredCustomer.features,
+            tariffInrPerKwh: registeredCustomer.tariffInrPerKwh,
+          };
+          setCustomerModel(model);
+          setData({
+            ...platform,
+            totalBuildings: model.dataset.entities,
+            totalRegions: model.dataset.regions,
+            dataTimeInterval: 'Cutoff snapshots',
+            totalDataAccumulated: `${model.dataset.rows.toLocaleString()} rows`,
+            dataAccumulatedSubtext: `${model.dataset.startMonth} – ${model.dataset.endMonth}`,
+            lastUpdated: model.dataset.version,
+            models: registry.map((item) => mapRegistryModel(item)),
+          });
           setLoading(false);
         }
       })
@@ -48,10 +103,50 @@ export const DataModelHealthPage: React.FC = () => {
 
   const handleActionClick = (model: ModelRegistryItem, actionType: string) => {
     setActiveMenuId(null);
-    setActionNotice(`${actionType} initiated for ${model.modelName} (${model.version}).`);
-    setTimeout(() => {
-      setActionNotice(null);
-    }, 3500);
+    if (!customerModel || model.id !== customerModel.modelId) {
+      setActionNotice('Customer model details are unavailable.');
+      return;
+    }
+
+    const showNotice = (message: string) => {
+      setActionNotice(message);
+      window.setTimeout(() => setActionNotice(null), 5000);
+    };
+
+    if (actionType === 'Open Model Workbench') {
+      navigate('/models');
+      return;
+    }
+
+    if (actionType === 'Inspect Schema') {
+      showNotice(
+        `Input features (${customerModel.features.length}): ${customerModel.features.join(', ')}`
+      );
+      return;
+    }
+
+    if (actionType === 'Show Test Metrics') {
+      const { mae_kwh: mae, rmse_kwh: rmse, r2 } = customerModel.testMetrics;
+      showNotice(
+        `Held-out test metrics for ${model.modelName}: MAE ${mae?.toFixed(2) ?? '—'} kWh, RMSE ${rmse?.toFixed(2) ?? '—'} kWh, R² ${r2?.toFixed(4) ?? '—'}.`
+      );
+      return;
+    }
+
+    if (actionType === 'Download Model Metadata') {
+      const blob = new Blob([JSON.stringify(customerModel, null, 2)], {
+        type: 'application/json',
+      });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${customerModel.modelId}-metadata.json`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 0);
+      showNotice(`Downloaded metadata for ${model.modelName}.`);
+    }
   };
 
   return (
@@ -179,7 +274,7 @@ export const DataModelHealthPage: React.FC = () => {
                 </div>
                 <div>
                   <div style={{ fontSize: '0.82rem', fontWeight: 700, color: '#0F172A' }}>
-                    Total Buildings
+                    Gold Dataset Entities
                   </div>
                   <div
                     style={{
@@ -193,7 +288,7 @@ export const DataModelHealthPage: React.FC = () => {
                     {data.totalBuildings}
                   </div>
                   <div style={{ fontSize: '0.76rem', color: '#64748B' }}>
-                    Buildings with ingested data
+                    Entities in the customer gold dataset
                   </div>
                 </div>
               </div>
@@ -385,7 +480,7 @@ export const DataModelHealthPage: React.FC = () => {
                   }}
                 >
                   <Clock size={14} color="#64748B" />
-                  <span>Last updated: {data.lastUpdated}</span>
+                  <span>Gold dataset version: {data.lastUpdated}</span>
                 </div>
               </div>
 
@@ -497,12 +592,20 @@ export const DataModelHealthPage: React.FC = () => {
                                   ? '#DCFCE7'
                                   : model.status === 'Monitoring'
                                   ? '#FEF3C7'
+                                  : model.status === 'Configured'
+                                  ? '#E0F2FE'
+                                  : model.status === 'Unavailable'
+                                  ? '#FEE2E2'
                                   : '#F1F5F9',
                               color:
                                 model.status === 'Active'
                                   ? '#15803D'
                                   : model.status === 'Monitoring'
                                   ? '#B45309'
+                                  : model.status === 'Configured'
+                                  ? '#0369A1'
+                                  : model.status === 'Unavailable'
+                                  ? '#B91C1C'
                                   : '#64748B',
                             }}
                           >
@@ -516,6 +619,10 @@ export const DataModelHealthPage: React.FC = () => {
                                     ? '#16A34A'
                                     : model.status === 'Monitoring'
                                     ? '#D97706'
+                                    : model.status === 'Configured'
+                                    ? '#0284C7'
+                                    : model.status === 'Unavailable'
+                                    ? '#DC2626'
                                     : '#94A3B8',
                               }}
                             />
@@ -571,7 +678,7 @@ export const DataModelHealthPage: React.FC = () => {
 
                         {/* Actions */}
                         <td style={{ padding: '1rem', textAlign: 'center', position: 'relative' }}>
-                          <button
+                          {model.id === 'customer-bill-prediction' && <button
                             type="button"
                             onClick={() =>
                               setActiveMenuId(activeMenuId === model.id ? null : model.id)
@@ -590,10 +697,10 @@ export const DataModelHealthPage: React.FC = () => {
                             }}
                           >
                             <MoreVertical size={16} />
-                          </button>
+                          </button>}
 
                           {/* Context Menu Dropdown */}
-                          {activeMenuId === model.id && (
+                          {model.id === 'customer-bill-prediction' && activeMenuId === model.id && (
                             <div
                               style={{
                                 position: 'absolute',
@@ -609,6 +716,29 @@ export const DataModelHealthPage: React.FC = () => {
                                 textAlign: 'left',
                               }}
                             >
+                              <button
+                                type="button"
+                                onClick={() => handleActionClick(model, 'Open Model Workbench')}
+                                style={{
+                                  width: '100%',
+                                  padding: '8px 12px',
+                                  fontSize: '0.78rem',
+                                  fontWeight: 500,
+                                  color: '#334155',
+                                  background: 'transparent',
+                                  border: 'none',
+                                  borderRadius: '4px',
+                                  cursor: 'pointer',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '8px',
+                                }}
+                                onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#F1F5F9')}
+                                onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+                              >
+                                <Activity size={14} color="#087EBD" />
+                                <span>Open Model Workbench</span>
+                              </button>
                               <button
                                 type="button"
                                 onClick={() => handleActionClick(model, 'Inspect Schema')}
@@ -634,7 +764,7 @@ export const DataModelHealthPage: React.FC = () => {
                               </button>
                               <button
                                 type="button"
-                                onClick={() => handleActionClick(model, 'Evaluate Checkpoint')}
+                                onClick={() => handleActionClick(model, 'Show Test Metrics')}
                                 style={{
                                   width: '100%',
                                   padding: '8px 12px',
@@ -653,11 +783,11 @@ export const DataModelHealthPage: React.FC = () => {
                                 onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
                               >
                                 <Activity size={14} color="#00A389" />
-                                <span>Evaluate Checkpoint</span>
+                                <span>Show Test Metrics</span>
                               </button>
                               <button
                                 type="button"
-                                onClick={() => handleActionClick(model, 'Download Artifact Digest')}
+                                onClick={() => handleActionClick(model, 'Download Model Metadata')}
                                 style={{
                                   width: '100%',
                                   padding: '8px 12px',
@@ -676,7 +806,7 @@ export const DataModelHealthPage: React.FC = () => {
                                 onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
                               >
                                 <Layers size={14} color="#64748B" />
-                                <span>Artifact Digest</span>
+                                <span>Download Model Metadata</span>
                               </button>
                             </div>
                           )}

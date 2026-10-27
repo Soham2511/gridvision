@@ -35,6 +35,7 @@ LOG_ROOT = Path(
 DEFAULT_DATA_PATH = PROJECT_ROOT / "data" / "gold" / "customer_gold.parquet"
 DEFAULT_ARTIFACT_PATH = PROJECT_ROOT / "models" / "customer_bill_prediction.pkl"
 DEFAULT_MODEL_NAME = "customer-bill-prediction"
+MLFLOW_EXPERIMENT_NAME = "gridvision-customer-bill-prediction-v2"
 TARGET = "target_month_kwh"
 DATE_COLUMN = "month_start"
 CATEGORICAL_FEATURES = (
@@ -345,7 +346,7 @@ def train_and_log(
     selected_model_name = model_name or os.getenv("MLFLOW_MODEL_NAME", DEFAULT_MODEL_NAME)
     selected_alias = alias or os.getenv("MLFLOW_MODEL_ALIAS", "champion")
     mlflow.set_tracking_uri(resolved_uri)
-    mlflow.set_experiment("gridvision-customer-bill-prediction")
+    mlflow.set_experiment(MLFLOW_EXPERIMENT_NAME)
 
     data_path = data_path.resolve()
     dataset = _dataset_lineage(data_path)
@@ -486,7 +487,7 @@ def train_and_log(
         model_info = mlflow.sklearn.log_model(
             sk_model=selected_model,
             artifact_path="model",
-            code_paths=[str(Path(__file__).resolve().parent)],
+            code_paths=[str(Path(__file__).resolve().parent / "customer_bill")],
             signature=signature,
             input_example=x_validation.head(3),
             registered_model_name=selected_model_name,

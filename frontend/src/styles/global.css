@@ -169,6 +169,35 @@ input, select, textarea {
   border: 1px solid rgba(239, 68, 68, 0.3);
 }
 
+.gv-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.55rem 0.85rem;
+  border: 1px solid var(--gv-border-medium);
+  border-radius: var(--gv-radius-md);
+  font-size: 0.8rem;
+  font-weight: 600;
+  transition: background-color var(--gv-transition-fast), opacity var(--gv-transition-fast);
+}
+
+.gv-button-primary {
+  background: var(--gv-color-smart-teal);
+  border-color: var(--gv-color-smart-teal);
+  color: #FFFFFF;
+}
+
+.gv-button-secondary {
+  background: var(--gv-bg-surface);
+  color: var(--gv-text-primary);
+}
+
+.gv-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
 .gv-badge-info {
   background: var(--gv-status-info-bg);
   color: var(--gv-color-grid-blue);

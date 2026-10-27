@@ -22,6 +22,7 @@ export const AnomalyDetectionPage: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [severityFilter, setSeverityFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [statusUpdateError, setStatusUpdateError] = useState<string | null>(null);
 
   // Selected event for deep diagnostic drawer
   const [selectedEvent, setSelectedEvent] = useState<AnomalyEvent | null>(null);
@@ -42,6 +43,9 @@ export const AnomalyDetectionPage: React.FC = () => {
   }, []);
 
   const handleStatusUpdate = async (eventId: string, newStatus: AnomalyEvent['status']) => {
+    setStatusUpdateError(null);
+    const previousEvent = anomalies.find((item) => item.id === eventId);
+    const previousSelected = selectedEvent?.id === eventId ? selectedEvent : null;
     // Optimistic UI update
     setAnomalies((prev) =>
       prev.map((item) => (item.id === eventId ? { ...item, status: newStatus } : item))
@@ -51,9 +55,17 @@ export const AnomalyDetectionPage: React.FC = () => {
     }
 
     try {
-      await analyticsService.updateAnomalyStatus(eventId, newStatus);
+      const updated = await analyticsService.updateAnomalyStatus(eventId, newStatus);
+      setAnomalies((prev) => prev.map((item) => (item.id === eventId ? updated : item)));
+      if (previousSelected) setSelectedEvent(updated);
     } catch (err) {
-      console.error('Failed to update anomaly status via API:', err);
+      if (previousEvent) {
+        setAnomalies((prev) =>
+          prev.map((item) => (item.id === eventId ? previousEvent : item))
+        );
+      }
+      if (previousSelected) setSelectedEvent(previousSelected);
+      setStatusUpdateError(err instanceof Error ? err.message : 'Failed to update anomaly status.');
     }
   };
 
@@ -136,6 +148,9 @@ export const AnomalyDetectionPage: React.FC = () => {
       </section>
 
       {/* Search & Filter Bar */}
+      {statusUpdateError && (
+        <div role="alert" className="gv-badge gv-badge-danger">{statusUpdateError}</div>
+      )}
       <div
         className="gv-card"
         style={{

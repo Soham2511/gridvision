@@ -3,6 +3,7 @@ import { usePersona } from '../context';
 import { analyticsService } from '../services/analyticsService';
 import { HistoricalInsightsData } from '../types/analytics';
 import { CommonMetricCard, CommonChartHoverCard } from '../components/common';
+import { ResidentialGoldInsightsPage } from './ResidentialGoldInsightsPage';
 import {
   ResponsiveContainer,
   AreaChart,
@@ -22,6 +23,16 @@ import {
 } from 'lucide-react';
 
 export const HistoricalAnalysisPage: React.FC = () => {
+  const { currentPersona } = usePersona();
+  const persona = currentPersona || 'household';
+
+  if (persona === 'household') {
+    return <ResidentialGoldInsightsPage />;
+  }
+  return <PersonaHistoricalAnalysisPage />;
+};
+
+const PersonaHistoricalAnalysisPage: React.FC = () => {
   const { currentPersona, activeEntity, energyUnit } = usePersona();
   const persona = currentPersona || 'household';
 

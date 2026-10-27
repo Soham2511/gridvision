@@ -98,6 +98,16 @@ class AnalyticsService {
     }>(`/forecast/residential/${encodeURIComponent(householdId)}`);
   }
 
+  async getGovernmentForecast(siteId: string): Promise<{
+    site: RegionalSite;
+    horizon: TimeSeriesPoint[];
+  }> {
+    return apiClient.get<{
+      site: RegionalSite;
+      horizon: TimeSeriesPoint[];
+    }>(`/forecast/government/${encodeURIComponent(siteId)}`);
+  }
+
   async getHouseholdOverview(householdId?: string): Promise<HouseholdOverview> {
     return apiClient.get<HouseholdOverview>('/dashboard/household', {
       household_id: householdId,
