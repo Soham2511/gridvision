@@ -38,6 +38,7 @@ LOG_SUBDIRECTORIES = (
     "training",
 )
 DAG_ID = "customer_energy_data_pipeline"
+GOVERNMENT_DAG_ID = "government_load_forecasting"
 DEFAULT_MODEL_NAME = "customer-bill-prediction"
 DEFAULT_ALIAS = "champion"
 MLFLOW_HOST_PORT = os.getenv("GRIDVISION_MLFLOW_HOST_PORT", "15001")
@@ -111,9 +112,18 @@ def _compose_command() -> list[str]:
         text=True,
     )
     if result.returncode:
+        details = "\n".join(
+            output.strip()
+            for output in (result.stdout, result.stderr)
+            if output.strip()
+        )
+        if not details:
+            details = "Docker returned no diagnostic output."
         raise RuntimeError(
-            "Docker Compose is unavailable. Install the Docker Compose plugin "
-            f"and retry. Details: {result.stderr.strip()}"
+            "Docker Compose could not run. Check Docker Desktop WSL integration "
+            "for this distro or install the Docker Compose plugin. "
+            f"Command: {' '.join(command)}; exit code: {result.returncode}. "
+            f"Details:\n{details}"
         )
     return [docker, "compose"]
 
@@ -125,6 +135,27 @@ def _compose(compose: list[str], arguments: list[str], env: dict[str, str]) -> N
         env=env,
         check=True,
     )
+
+
+def _run_airflow_dag_test(
+    airflow_command: list[str],
+    dag_id: str,
+    env: dict[str, str],
+) -> dict[str, str]:
+    execution_date = date.today().isoformat()
+    subprocess.run(
+        airflow_command + ["dags", "test", dag_id, execution_date],
+        cwd=PROJECT_ROOT,
+        env=env,
+        check=True,
+    )
+    result = {"dag_id": dag_id, "execution_date": execution_date}
+    print(
+        f"Airflow DAG run completed: {dag_id} ({execution_date}). "
+        f"Inspect the run and task XComs at {AIRFLOW_URL}.",
+        flush=True,
+    )
+    return result
 
 
 def _http_healthy(url: str, timeout: float = 2.0) -> bool:
@@ -191,8 +222,8 @@ def main(argv: list[str] | None = None) -> int:
         "--skip-data-pipeline",
         action="store_true",
         help=(
-            "Reuse the existing gold dataset and skip the Airflow bronze-to-gold "
-            "DAG before training and starting services."
+            "Reuse the existing customer gold dataset and skip its bronze-to-gold "
+            "DAG. The government load DAG still runs."
         ),
     )
     arguments = parser.parse_args(argv)
@@ -206,7 +237,7 @@ def main(argv: list[str] | None = None) -> int:
     env.setdefault("MLFLOW_MODEL_NAME", DEFAULT_MODEL_NAME)
     env.setdefault("MLFLOW_MODEL_ALIAS", DEFAULT_ALIAS)
     env.setdefault("AIRFLOW_HOME", str(Path.home() / ".gridvision-airflow"))
-    env["AIRFLOW__CORE__DAGS_FOLDER"] = str(PROJECT_ROOT / "airflow" / "customer")
+    env["AIRFLOW__CORE__DAGS_FOLDER"] = str(PROJECT_ROOT / "airflow")
     env["AIRFLOW__CORE__LOAD_EXAMPLES"] = "False"
     env["AIRFLOW__LOGGING__BASE_LOG_FOLDER"] = str(
         LOG_ROOT / "airflow" / "task_logs"
@@ -226,7 +257,14 @@ def main(argv: list[str] | None = None) -> int:
                 )
             airflow = _airflow_command()
             compose = _compose_command()
-            required_modules = ("duckdb", "mlflow", "pandas", "pyarrow", "sklearn")
+            required_modules = (
+                "duckdb",
+                "lightgbm",
+                "mlflow",
+                "pandas",
+                "pyarrow",
+                "sklearn",
+            )
             missing_modules = [
                 module for module in required_modules if find_spec(module) is None
             ]
@@ -279,20 +317,27 @@ def main(argv: list[str] | None = None) -> int:
         else:
             run_step(
                 "Run customer bronze → silver → gold Airflow DAG",
-                lambda: subprocess.run(
-                    airflow_command
-                    + ["dags", "test", DAG_ID, date.today().isoformat()],
-                    cwd=PROJECT_ROOT,
-                    env=env,
-                    check=True,
-                ).returncode,
+                lambda: _run_airflow_dag_test(airflow_command, DAG_ID, env),
             )
         run_step(
-            "Train, evaluate, and register customer bill model",
+            "Run government load forecasting Airflow DAG",
+            lambda: _run_airflow_dag_test(
+                airflow_command,
+                GOVERNMENT_DAG_ID,
+                env,
+            )
+        )
+        run_step(
+            "Train, evaluate, and register customer bill model with MLflow",
             lambda: subprocess.run(
                 [
                     sys.executable,
-                    str(PROJECT_ROOT / "training" / "train_bill_prediction.py"),
+                    str(
+                        PROJECT_ROOT
+                        / "mlflow"
+                        / "customer"
+                        / "train_and_register.py"
+                    ),
                     "--data-path",
                     str(DATA_ROOT / "gold" / "customer_gold.parquet"),
                     "--tracking-uri",

@@ -88,8 +88,12 @@ gridvision-app/
 │   │       ├── logging.py          # Centralized structured logging
 │   │       ├── responses.py        # Consistent JSON response builders
 │   │       └── validation.py       # Pydantic request schemas
-├── airflow/customer/               # Customer-only bronze/silver/gold DAG
+├── airflow/customer/               # Customer bronze/silver/gold DAG
+├── airflow/2_government_load_prediction/ # Government grid ETL and forecasting
 ├── training/                       # Customer bill training and MLflow logging
+│   └── government_load/            # Government grid model training and inference
+├── mlflow/customer/                # Customer training/registration entrypoint
+├── mlflow/government/              # Government model artifacts and MLflow logger
 ├── tests/                          # All backend and training tests
 ├── requirements.txt                # Single Python dependency manifest
 ├── scripts/filter_requirements.py  # Selects backend groups for the Docker image
@@ -296,7 +300,34 @@ The tracking server proxies artifacts from the persistent `/mlflow/artifacts` vo
 
 ## Customer Bill Prediction: Data, Training, and Automation
 
-The current ML workflow is intentionally limited to **customer bill prediction**. Airflow creates one raw bronze copy, a deterministic residential-only silver sample, and `data/gold/customer_gold.parquet`. Training compares a chronological-tuned HistGradientBoosting model with a cutoff-safe monthly projection baseline; only the validation winner is registered to the `champion` alias. The existing notebook remains experimental. Docker Compose runs MLflow, the Flask API, and the React UI; the Airflow DAG and model training execute in the active Python environment.
+The customer-bill workflow creates one raw bronze copy, a deterministic residential-only silver sample, and `data/gold/customer_gold.parquet`. Training compares a chronological-tuned HistGradientBoosting model with a cutoff-safe monthly projection baseline; only the validation winner is registered to the `champion` alias. The existing notebook remains experimental. Docker Compose runs MLflow, the Flask API, and the React UI; the Airflow DAG and model training execute in the active Python environment.
+
+The customer-specific MLflow entrypoint and run instructions are in
+[`mlflow/customer`](mlflow/customer/README.md). It delegates to the existing
+training-and-registration implementation and is also used by `automation.py`.
+
+### Government load prediction
+
+The separate government-grid workflow is under
+[`airflow/2_government_load_prediction`](airflow/2_government_load_prediction/README.md).
+Its manual Airflow DAG and CLI use the same raw parquet as the customer
+workflow, `data/sample/training_sample_50000.parquet`, but write their own
+intermediate data and trained hybrid model under `data/airflow/government/`.
+Its saved 2018 model/feature assets and MLflow evaluator are isolated under
+[`mlflow/government`](mlflow/government/README.md). Government settings use the
+`GOVERNMENT_PIPELINE_*` environment-variable prefix and do not alter the
+customer pipeline's configuration or outputs. `automation.py` runs the
+government DAG as well as the customer DAG; its task output is available in
+Airflow, and training metrics and the hybrid artifact are logged to the
+`gridvision-government-load-forecasting` MLflow experiment. The dedicated
+[`government MLflow training entrypoint`](mlflow/government/train_and_log.py)
+reuses the same model implementation and logs model cards, validation
+predictions, per-grid/per-horizon metrics, routing, feature importance, and
+training summaries. To retry government training without rerunning customer
+ETL or the full automation, use the government CLI with the existing prepared
+parquet, or run only its Airflow DAG with
+`GOVERNMENT_PIPELINE_REUSE_PREPARED=1`; see the government pipeline README for
+exact WSL commands.
 
 ### Install the local Python dependencies (Python 3.10, WSL2)
 
@@ -312,7 +343,7 @@ pip install -r /tmp/gridvision-automation-requirements.txt \
   --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-2.10.5/constraints-3.10.txt"
 ```
 
-Do not install the `backend` group in this WSL environment: Airflow's constraints pin Flask to 2.2.5, while the backend requires Flask 3 or newer. Docker Desktop must be running with WSL integration enabled. The automation command expects `data/sample/training_sample_50000.parquet`.
+Do not install the `backend` group in this WSL environment: Airflow's constraints pin Flask to 2.2.5, while the backend requires Flask 3 or newer. Docker Desktop must be running with WSL integration enabled for the Ubuntu distribution used by the terminal (for example, `Ubuntu-22.04`). In Docker Desktop, open **Settings → Resources → WSL Integration**, enable integration for that distribution, and apply/restart Docker Desktop. In WSL, verify `docker --version` and `docker compose version` before running automation. The automation command expects `data/sample/training_sample_50000.parquet`.
 
 ### Run the full local workflow
 
@@ -342,6 +373,7 @@ Open the frontend at `http://localhost:8080`. Airflow is available at `http://lo
 | Dataset version manifests and `latest.json` pointers | `data/metadata/dataset_versions/<dataset_name>/` |
 | Dataset-version Parquet snapshots | `data/metadata/dataset_versions/<dataset_name>/<version>.parquet` |
 | Training pickle and metadata sidecar | `models/customer_bill_prediction.pkl` and `models/customer_bill_prediction.metadata.json` |
+| Customer MLflow entrypoint and guide | `mlflow/customer/` |
 | Model cards | `logs/model_cards/` |
 | Model metrics and training summaries | `logs/model_metrics/` and `logs/training/` |
 | API request events (JSON Lines) | `logs/endpoints/api.jsonl` |
