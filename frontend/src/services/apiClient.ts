@@ -47,7 +47,12 @@ class ApiClient {
 
   private buildUrl(path: string, params?: Record<string, string | number | boolean | undefined | null>): string {
     const cleanPath = path.startsWith('/') ? path : `/${path}`;
-    const url = new URL(`${this.baseUrl}${cleanPath}`);
+    const fullPath = `${this.baseUrl}${cleanPath}`;
+    const base =
+      typeof window !== 'undefined' && window.location?.origin
+        ? window.location.origin
+        : 'http://127.0.0.1:5000';
+    const url = new URL(fullPath, base);
 
     if (params) {
       Object.entries(params).forEach(([key, val]) => {
