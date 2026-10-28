@@ -166,7 +166,13 @@ def _run_airflow_dag_test(
                 prepare_training_data(settings)
             if not is_etl_only and env.get("MLFLOW_TRACKING_URI"):
                 from training.government_load.modeling import train_hybrid_model
-                train_hybrid_model(settings)
+                training_settings = PipelineSettings(
+                    **{
+                        **settings.model_dump(),
+                        "input_path": ready_file,
+                    }
+                )
+                train_hybrid_model(training_settings)
     else:
         subprocess.run(
             airflow_command + ["dags", "test", dag_id, execution_date],
