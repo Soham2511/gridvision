@@ -2,13 +2,20 @@
 
 from __future__ import annotations
 
+import sys
+
+if sys.platform == "win32":
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 import argparse
 import os
 import platform
 import secrets
 import shutil
 import subprocess
-import sys
 import time
 import urllib.error
 import urllib.request
@@ -284,6 +291,10 @@ def main(argv: list[str] | None = None) -> int:
     started = time.perf_counter()
     result_code = 0
     env = os.environ.copy()
+    env["PYTHONIOENCODING"] = "utf-8"
+    env["PYTHONUTF8"] = "1"
+    os.environ["PYTHONIOENCODING"] = "utf-8"
+    os.environ["PYTHONUTF8"] = "1"
     env["GRIDVISION_DATA_DIR"] = str(DATA_ROOT)
     env["GRIDVISION_LOG_DIR"] = str(LOG_ROOT)
     env["GRIDVISION_SOURCE_PATH"] = str(SOURCE_PATH)
