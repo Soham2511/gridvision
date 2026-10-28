@@ -114,7 +114,15 @@ class CustomerBillPredictionService:
                     import mlflow.artifacts
 
                     dest_dir = self.dataset_path.parent
-                    dest_dir.mkdir(parents=True, exist_ok=True)
+                    try:
+                        dest_dir.mkdir(parents=True, exist_ok=True)
+                        test_file = dest_dir / ".write_test"
+                        test_file.touch()
+                        test_file.unlink()
+                    except OSError:
+                        dest_dir = Path("/tmp/data/gold")
+                        dest_dir.mkdir(parents=True, exist_ok=True)
+
                     downloaded = mlflow.artifacts.download_artifacts(
                         run_id=run_id,
                         artifact_path="dataset_lineage",
@@ -123,6 +131,8 @@ class CustomerBillPredictionService:
                     )
                     downloaded_path = Path(downloaded)
                     parquets = list(downloaded_path.glob("*.parquet"))
+                    if not parquets:
+                        parquets = list(dest_dir.glob("**/*.parquet"))
                     if parquets:
                         frame_path = parquets[0]
                 except Exception as exc:

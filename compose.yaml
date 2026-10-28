@@ -56,7 +56,7 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:-*}
     volumes:
       - ${GRIDVISION_DATA_DIR:?Set GRIDVISION_DATA_DIR}/mlflow:/mlflow:ro
-      - ${GRIDVISION_DATA_DIR:?Set GRIDVISION_DATA_DIR}/gold:/data/gold:ro
+      - ${GRIDVISION_DATA_DIR:?Set GRIDVISION_DATA_DIR}/gold:/data/gold
       - ${GRIDVISION_MODELS_DIR:-./models}:/models
       - ${GRIDVISION_LOG_DIR:-./logs}:/logs
     ports:
