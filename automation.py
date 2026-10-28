@@ -137,6 +137,7 @@ def _run_airflow_dag_test(
     is_etl_only: bool = False,
 ) -> dict[str, str]:
     execution_date = date.today().isoformat()
+    os.environ.update(env)
     if airflow_command == ["python-direct-runner"]:
         if dag_id == DAG_ID:
             from airflow.customer.data_pipeline import (
@@ -157,9 +158,12 @@ def _run_airflow_dag_test(
                 if str(p) not in sys.path:
                     sys.path.insert(0, str(p))
             from training.government_load.config import PipelineSettings
-            from grid_forecasting_pipeline.etl import prepare_training_data
             settings = PipelineSettings.from_environment()
-            prepare_training_data(settings)
+            ready_file = settings.output_path.expanduser().resolve()
+            reuse = os.getenv("GOVERNMENT_PIPELINE_REUSE_PREPARED", "").strip().lower() in {"1", "true", "yes"}
+            if not (reuse and ready_file.is_file()):
+                from grid_forecasting_pipeline.etl import prepare_training_data
+                prepare_training_data(settings)
             if not is_etl_only and env.get("MLFLOW_TRACKING_URI"):
                 from training.government_load.modeling import train_hybrid_model
                 train_hybrid_model(settings)
@@ -293,8 +297,10 @@ def main(argv: list[str] | None = None) -> int:
     effective_mlflow_uri = arguments.remote_mlflow or MLFLOW_HOST_URI
     if not arguments.etl_only:
         env["MLFLOW_TRACKING_URI"] = effective_mlflow_uri
+        os.environ["MLFLOW_TRACKING_URI"] = effective_mlflow_uri
     else:
         env.pop("MLFLOW_TRACKING_URI", None)
+        os.environ.pop("MLFLOW_TRACKING_URI", None)
 
     try:
         for directory in LOG_SUBDIRECTORIES:
@@ -373,9 +379,11 @@ def main(argv: list[str] | None = None) -> int:
 
         if arguments.skip_data_pipeline:
             print(
-                "\n[SKIPPED] Reusing the existing customer gold dataset",
+                "\n[SKIPPED] Reusing the existing customer gold dataset and government features",
                 flush=True,
             )
+            os.environ["GOVERNMENT_PIPELINE_REUSE_PREPARED"] = "1"
+            env["GOVERNMENT_PIPELINE_REUSE_PREPARED"] = "1"
         else:
             run_step(
                 "Run customer bronze → silver → gold Airflow DAG",
