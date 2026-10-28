@@ -492,7 +492,7 @@ def train_and_log(
             input_example=x_validation.head(3),
             registered_model_name=selected_model_name,
         )
-        client = mlflow.tracking.MlflowClient()
+        client = mlflow.tracking.MlflowClient(tracking_uri=resolved_uri)
         if not model_info.registered_model_version:
             raise RuntimeError(
                 f"MLflow did not register a version of {selected_model_name}."
@@ -623,6 +623,8 @@ def train_and_log(
                 dataset["versioned_dataset_path"],
                 artifact_path="dataset_lineage",
             )
+        if data_path.is_file():
+            mlflow.log_artifact(str(data_path), artifact_path="dataset_lineage")
         client.set_registered_model_alias(
             selected_model_name,
             selected_alias,

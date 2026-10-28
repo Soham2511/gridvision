@@ -42,47 +42,114 @@ class CustomerBillPredictionService:
         self._frame: pd.DataFrame | None = None
         self._artifact: dict[str, Any] | None = None
         self._metadata: dict[str, Any] | None = None
+        self._loaded_model_version: str | None = None
+
+    def _sync_with_model_provider(self) -> None:
+        if isinstance(self.model_provider, MLflowModelAdapter):
+            current_version = getattr(self.model_provider, "_model_version", None)
+            if current_version and current_version != self._loaded_model_version:
+                self._metadata = None
+                self._frame = None
+                self._loaded_model_version = current_version
 
     def _load_metadata(self) -> dict[str, Any]:
-        if self._metadata is None:
-            if not self.metadata_path.is_file():
-                raise CustomerBillPredictionError(
-                    f"Model metadata file is missing: {self.metadata_path}"
-                )
+        self._sync_with_model_provider()
+        if self._metadata is not None:
+            return self._metadata
+
+        if self.metadata_path.is_file():
             try:
                 self._metadata = json.loads(
                     self.metadata_path.read_text(encoding="utf-8")
                 )
+                return self._metadata
             except (OSError, json.JSONDecodeError) as exc:
-                raise CustomerBillPredictionError(
-                    f"Unable to read customer bill model metadata: {exc}"
-                ) from exc
+                logger.warning("Could not read local metadata: %s", exc)
+
+        # Fallback: dynamically download metadata from active champion MLflow run
+        if isinstance(self.model_provider, MLflowModelAdapter):
+            run_id = self.model_provider.get_current_run_id()
+            if run_id:
+                try:
+                    import mlflow.artifacts
+
+                    self.metadata_path.parent.mkdir(parents=True, exist_ok=True)
+                    local_meta = mlflow.artifacts.download_artifacts(
+                        run_id=run_id,
+                        artifact_path="model_metadata.json",
+                        dst_path=str(self.metadata_path.parent),
+                        tracking_uri=self.model_provider.tracking_uri,
+                    )
+                    self._metadata = json.loads(
+                        Path(local_meta).read_text(encoding="utf-8")
+                    )
+                    return self._metadata
+                except Exception as exc:
+                    logger.warning("Unable to download metadata from MLflow: %s", exc)
+
+        if not self.metadata_path.is_file():
+            raise CustomerBillPredictionError(
+                f"Model metadata file is missing: {self.metadata_path}"
+            )
+        try:
+            self._metadata = json.loads(
+                self.metadata_path.read_text(encoding="utf-8")
+            )
+        except (OSError, json.JSONDecodeError) as exc:
+            raise CustomerBillPredictionError(
+                f"Unable to read customer bill model metadata: {exc}"
+            ) from exc
         return self._metadata
 
     def _load_frame(self) -> pd.DataFrame:
-        if self._frame is None:
-            if not self.dataset_path.is_file():
-                raise CustomerBillPredictionError(
-                    f"Customer gold dataset is missing: {self.dataset_path}"
-                )
-            try:
-                frame = pd.read_parquet(self.dataset_path)
-            except (OSError, ValueError, ImportError) as exc:
-                raise CustomerBillPredictionError(
-                    f"Unable to read customer gold dataset: {exc}"
-                ) from exc
-            required_columns = {
-                "entity_id",
-                "month_start",
-                "target_month_kwh",
-                "cumulative_energy_kwh",
-            }
-            missing = sorted(required_columns.difference(frame.columns))
-            if missing:
-                raise CustomerBillPredictionError(
-                    f"Customer gold dataset is missing required columns: {missing}"
-                )
-            self._frame = frame
+        self._sync_with_model_provider()
+        if self._frame is not None:
+            return self._frame
+
+        frame_path = self.dataset_path
+        if not frame_path.is_file() and isinstance(self.model_provider, MLflowModelAdapter):
+            run_id = self.model_provider.get_current_run_id()
+            if run_id:
+                try:
+                    import mlflow.artifacts
+
+                    dest_dir = self.dataset_path.parent
+                    dest_dir.mkdir(parents=True, exist_ok=True)
+                    downloaded = mlflow.artifacts.download_artifacts(
+                        run_id=run_id,
+                        artifact_path="dataset_lineage",
+                        dst_path=str(dest_dir),
+                        tracking_uri=self.model_provider.tracking_uri,
+                    )
+                    downloaded_path = Path(downloaded)
+                    parquets = list(downloaded_path.glob("*.parquet"))
+                    if parquets:
+                        frame_path = parquets[0]
+                except Exception as exc:
+                    logger.warning("Unable to download dataset from MLflow: %s", exc)
+
+        if not frame_path.is_file():
+            raise CustomerBillPredictionError(
+                f"Customer gold dataset is missing: {self.dataset_path}"
+            )
+        try:
+            frame = pd.read_parquet(frame_path)
+        except (OSError, ValueError, ImportError) as exc:
+            raise CustomerBillPredictionError(
+                f"Unable to read customer gold dataset: {exc}"
+            ) from exc
+        required_columns = {
+            "entity_id",
+            "month_start",
+            "target_month_kwh",
+            "cumulative_energy_kwh",
+        }
+        missing = sorted(required_columns.difference(frame.columns))
+        if missing:
+            raise CustomerBillPredictionError(
+                f"Customer gold dataset is missing required columns: {missing}"
+            )
+        self._frame = frame
         return self._frame
 
     def _load_artifact(self) -> dict[str, Any]:

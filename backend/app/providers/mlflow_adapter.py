@@ -40,12 +40,19 @@ class MLflowModelAdapter(BaseModelProvider):
         )
         self._model: Any | None = None
         self._model_version: str | None = None
+        self._run_id: str | None = None
         self._input_names: list[str] | None = None
         self._input_types: dict[str, str] = {}
 
-    def _load_model(self) -> Any:
-        if self._model is not None:
-            return self._model
+    def get_current_run_id(self) -> str | None:
+        """Return the MLflow run ID associated with the active champion model."""
+        try:
+            self._load_model()
+            return self._run_id
+        except Exception:
+            return None
+
+    def _load_model(self, force_reload: bool = False) -> Any:
         if not self.tracking_uri:
             raise MLflowIntegrationError(
                 "MLflow is not configured: MLFLOW_TRACKING_URI is required to load "
@@ -60,6 +67,15 @@ class MLflowModelAdapter(BaseModelProvider):
             version = client.get_model_version_by_alias(
                 self.model_name, self.model_alias
             )
+            target_version_str = str(version.version)
+
+            if (
+                not force_reload
+                and self._model is not None
+                and self._model_version == target_version_str
+            ):
+                return self._model
+
             model_uri = f"models:/{self.model_name}@{self.model_alias}"
             model = mlflow.pyfunc.load_model(model_uri)
             schema = model.metadata.get_input_schema()
@@ -71,7 +87,8 @@ class MLflowModelAdapter(BaseModelProvider):
             self._input_types = {
                 field.name: field.type.name for field in schema.inputs
             }
-            self._model_version = str(version.version)
+            self._model_version = target_version_str
+            self._run_id = getattr(version, "run_id", None)
             self._model = model
             return model
         except MLflowIntegrationError:

@@ -81,29 +81,21 @@ def run_step(name: str, action: Callable[[], Any]) -> Any:
 
 
 def _airflow_command() -> list[str]:
-    if platform.system() == "Windows":
-        raise RuntimeError(
-            "Apache Airflow is not supported on native Windows. Run automation.py "
-            "from WSL2 with the Airflow dependencies installed in the WSL Python environment."
-        )
     executable = shutil.which("airflow")
-    if executable:
+    if executable and platform.system() != "Windows":
         return [executable]
-    raise FileNotFoundError(
-        "Airflow CLI was not found. Install the airflow and model-serving groups "
-        "from the root requirements.txt in WSL2, using the Airflow constraints "
-        "URL documented in the README."
-    )
+
+    # Native direct Python execution: fastest, completely offline, zero container build or network issues
+    return ["python-direct-runner"]
 
 
 def _compose_command() -> list[str]:
-    docker = shutil.which("docker")
-    if not docker:
+    cli = shutil.which("docker") or shutil.which("podman")
+    if not cli:
         raise FileNotFoundError(
-            "Docker CLI was not found. Install/start Docker Desktop with WSL "
-            "integration enabled, or install Docker Engine and Compose on Linux."
+            "Neither Docker nor Podman CLI was found. Install Docker Desktop or Podman."
         )
-    command = [docker, "compose", "version"]
+    command = [cli, "compose", "version"]
     result = subprocess.run(
         command,
         cwd=PROJECT_ROOT,
@@ -112,20 +104,21 @@ def _compose_command() -> list[str]:
         text=True,
     )
     if result.returncode:
+        if "podman" in Path(cli).name.lower() and shutil.which("podman-compose"):
+            return [shutil.which("podman-compose")]
         details = "\n".join(
             output.strip()
             for output in (result.stdout, result.stderr)
             if output.strip()
         )
         if not details:
-            details = "Docker returned no diagnostic output."
+            details = f"{cli} returned no diagnostic output."
         raise RuntimeError(
-            "Docker Compose could not run. Check Docker Desktop WSL integration "
-            "for this distro or install the Docker Compose plugin. "
+            f"Compose could not run with {cli}. "
             f"Command: {' '.join(command)}; exit code: {result.returncode}. "
             f"Details:\n{details}"
         )
-    return [docker, "compose"]
+    return [cli, "compose"]
 
 
 def _compose(compose: list[str], arguments: list[str], env: dict[str, str]) -> None:
@@ -141,18 +134,45 @@ def _run_airflow_dag_test(
     airflow_command: list[str],
     dag_id: str,
     env: dict[str, str],
+    is_etl_only: bool = False,
 ) -> dict[str, str]:
     execution_date = date.today().isoformat()
-    subprocess.run(
-        airflow_command + ["dags", "test", dag_id, execution_date],
-        cwd=PROJECT_ROOT,
-        env=env,
-        check=True,
-    )
+    if airflow_command == ["python-direct-runner"]:
+        if dag_id == DAG_ID:
+            from airflow.customer.data_pipeline import (
+                SOURCE_PATH,
+                BRONZE_PATH,
+                SILVER_PATH,
+                GOLD_PATH,
+                create_bronze,
+                create_customer_silver,
+                build_customer_bill_gold,
+            )
+            create_bronze(SOURCE_PATH, BRONZE_PATH)
+            create_customer_silver(BRONZE_PATH, SILVER_PATH)
+            build_customer_bill_gold(SILVER_PATH, GOLD_PATH)
+        elif dag_id == GOVERNMENT_DAG_ID:
+            gov_dir = PROJECT_ROOT / "airflow" / "2_government_load_prediction"
+            for p in (PROJECT_ROOT, gov_dir):
+                if str(p) not in sys.path:
+                    sys.path.insert(0, str(p))
+            from training.government_load.config import PipelineSettings
+            from grid_forecasting_pipeline.etl import prepare_training_data
+            settings = PipelineSettings.from_environment()
+            prepare_training_data(settings)
+            if not is_etl_only and env.get("MLFLOW_TRACKING_URI"):
+                from training.government_load.modeling import train_hybrid_model
+                train_hybrid_model(settings)
+    else:
+        subprocess.run(
+            airflow_command + ["dags", "test", dag_id, execution_date],
+            cwd=PROJECT_ROOT,
+            env=env,
+            check=True,
+        )
     result = {"dag_id": dag_id, "execution_date": execution_date}
     print(
-        f"Airflow DAG run completed: {dag_id} ({execution_date}). "
-        f"Inspect the run and task XComs at {AIRFLOW_URL}.",
+        f"Airflow DAG run completed: {dag_id} ({execution_date}).",
         flush=True,
     )
     return result
@@ -226,6 +246,30 @@ def main(argv: list[str] | None = None) -> int:
             "DAG. The government load DAG still runs."
         ),
     )
+    parser.add_argument(
+        "--remote-mlflow",
+        default=os.getenv("MLFLOW_TRACKING_URI"),
+        help=(
+            "Remote MLflow tracking server URI (e.g. http://127.0.0.1:15001 via SSH tunnel or EC2 IP). "
+            "Skips starting a local MLflow container."
+        ),
+    )
+    parser.add_argument(
+        "--pipeline-only",
+        action="store_true",
+        help=(
+            "Run local ETL and model training only, logging to MLflow and "
+            "registering the champion model, then exit without starting local containers."
+        ),
+    )
+    parser.add_argument(
+        "--etl-only",
+        action="store_true",
+        help=(
+            "Run local Airflow ETL only to create the gold dataset and government features, "
+            "without needing MLflow or EC2 running."
+        ),
+    )
     arguments = parser.parse_args(argv)
     started = time.perf_counter()
     result_code = 0
@@ -244,7 +288,13 @@ def main(argv: list[str] | None = None) -> int:
     )
     env["AIRFLOW__WEBSERVER__WEB_SERVER_HOST"] = "127.0.0.1"
     env["AIRFLOW__WEBSERVER__WEB_SERVER_PORT"] = "8081"
-    env["MLFLOW_TRACKING_URI"] = MLFLOW_HOST_URI
+
+    is_remote_mlflow = bool(arguments.remote_mlflow)
+    effective_mlflow_uri = arguments.remote_mlflow or MLFLOW_HOST_URI
+    if not arguments.etl_only:
+        env["MLFLOW_TRACKING_URI"] = effective_mlflow_uri
+    else:
+        env.pop("MLFLOW_TRACKING_URI", None)
 
     try:
         for directory in LOG_SUBDIRECTORIES:
@@ -271,9 +321,7 @@ def main(argv: list[str] | None = None) -> int:
             if missing_modules:
                 raise RuntimeError(
                     "Required Python modules are missing: "
-                    f"{', '.join(missing_modules)}. Install the airflow and "
-                    "model-serving groups from the root requirements.txt in WSL2, "
-                    "using the Airflow constraints URL documented in the README."
+                    f"{', '.join(missing_modules)}. Install the required dependencies."
                 )
             return {
                 "airflow": airflow[0],
@@ -282,33 +330,47 @@ def main(argv: list[str] | None = None) -> int:
             }
 
         prerequisites = run_step(
-            "Check source data, Python dependencies, and Docker Compose",
+            "Check source data, Python dependencies, and Container runtime",
             check_prerequisites,
         )
         compose = prerequisites["docker_compose"].split()
 
-        run_step(
-            "Build and start persistent MLflow tracking service",
-            lambda: _compose(compose, ["up", "--build", "-d", "mlflow"], env),
-        )
-        run_step(
-            "Wait for MLflow tracking service",
-            lambda: _wait_for_http(
-                f"{MLFLOW_HOST_URI}/health", "MLflow", timeout=180
-            ),
-        )
+        if not arguments.etl_only:
+            if is_remote_mlflow:
+                run_step(
+                    f"Verify connection to remote MLflow ({effective_mlflow_uri})",
+                    lambda: _wait_for_http(
+                        f"{effective_mlflow_uri}/health",
+                        "Remote MLflow tracking service",
+                        timeout=30,
+                    ),
+                )
+            else:
+                run_step(
+                    "Build and start persistent MLflow tracking service",
+                    lambda: _compose(compose, ["up", "--build", "-d", "mlflow"], env),
+                )
+                run_step(
+                    "Wait for MLflow tracking service",
+                    lambda: _wait_for_http(
+                        f"{MLFLOW_HOST_URI}/health", "MLflow", timeout=180
+                    ),
+                )
 
         airflow = prerequisites["airflow"]
         airflow_command = [airflow]
-        run_step(
-            "Initialize Airflow metadata database",
-            lambda: subprocess.run(
-                airflow_command + ["db", "migrate"],
-                cwd=PROJECT_ROOT,
-                env=env,
-                check=True,
-            ).returncode,
-        )
+
+        if airflow_command != ["python-direct-runner"] and not arguments.etl_only:
+            run_step(
+                "Initialize Airflow metadata database",
+                lambda: subprocess.run(
+                    airflow_command + ["db", "migrate"],
+                    cwd=PROJECT_ROOT,
+                    env=env,
+                    check=True,
+                ).returncode,
+            )
+
         if arguments.skip_data_pipeline:
             print(
                 "\n[SKIPPED] Reusing the existing customer gold dataset",
@@ -317,16 +379,28 @@ def main(argv: list[str] | None = None) -> int:
         else:
             run_step(
                 "Run customer bronze → silver → gold Airflow DAG",
-                lambda: _run_airflow_dag_test(airflow_command, DAG_ID, env),
+                lambda: _run_airflow_dag_test(
+                    airflow_command, DAG_ID, env, is_etl_only=arguments.etl_only
+                ),
             )
+
         run_step(
             "Run government load forecasting Airflow DAG",
             lambda: _run_airflow_dag_test(
                 airflow_command,
                 GOVERNMENT_DAG_ID,
                 env,
-            )
+                is_etl_only=arguments.etl_only,
+            ),
         )
+
+        if arguments.etl_only:
+            print("\n[SUCCESS] Local ETL completed successfully!", flush=True)
+            print(f"  Customer Gold Dataset: {DATA_ROOT / 'gold' / 'customer_gold.parquet'}", flush=True)
+            print(f"  Government Features:   {DATA_ROOT / 'airflow' / 'government'}", flush=True)
+            print("  You can now start EC2 whenever you are ready and run model training.", flush=True)
+            return 0
+
         run_step(
             "Train, evaluate, and register customer bill model with MLflow",
             lambda: subprocess.run(
@@ -341,7 +415,7 @@ def main(argv: list[str] | None = None) -> int:
                     "--data-path",
                     str(DATA_ROOT / "gold" / "customer_gold.parquet"),
                     "--tracking-uri",
-                    MLFLOW_HOST_URI,
+                    effective_mlflow_uri,
                     "--model-name",
                     env["MLFLOW_MODEL_NAME"],
                     "--alias",
@@ -352,6 +426,16 @@ def main(argv: list[str] | None = None) -> int:
                 check=True,
             ).returncode,
         )
+
+        if arguments.pipeline_only:
+            print("\n[SUCCESS] Local ETL and candidate model training complete!", flush=True)
+            print(f"  Target MLflow: {effective_mlflow_uri}", flush=True)
+            print(
+                f"  Registered Model: {env['MLFLOW_MODEL_NAME']}@{env['MLFLOW_MODEL_ALIAS']}",
+                flush=True,
+            )
+            print("  EC2 Flask service will dynamically load this champion version.", flush=True)
+            return 0
 
         airflow_service = run_step(
             "Start Airflow scheduler and web UI",
@@ -393,12 +477,12 @@ def main(argv: list[str] | None = None) -> int:
                 flush=True,
             )
         print(f"  Structured logs: {LOG_ROOT}", flush=True)
-        print(f"  MLflow UI: {MLFLOW_HOST_URI}", flush=True)
+        print(f"  MLflow UI: {effective_mlflow_uri}", flush=True)
         print(
             f"  Registered model: {env['MLFLOW_MODEL_NAME']}@{env['MLFLOW_MODEL_ALIAS']}",
             flush=True,
         )
-        print("  Stop containers with: docker compose down", flush=True)
+        print("  Stop containers with: podman compose down (or docker compose down)", flush=True)
     except Exception as exc:
         print(f"\nAutomation stopped: {exc}", flush=True)
         result_code = 1

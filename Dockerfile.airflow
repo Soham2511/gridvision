@@ -1,0 +1,18 @@
+FROM python:3.10-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    AIRFLOW_HOME=/root/airflow \
+    AIRFLOW__CORE__LOAD_EXAMPLES=False
+
+WORKDIR /app
+COPY requirements.txt ./requirements.txt
+COPY scripts/filter_requirements.py ./scripts/filter_requirements.py
+RUN python scripts/filter_requirements.py requirements.txt /tmp/airflow-requirements.txt --groups airflow model-serving \
+    && pip install --no-cache-dir -r /tmp/airflow-requirements.txt \
+       --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-2.10.5/constraints-3.10.txt"
+
+COPY airflow ./airflow
+COPY training ./training
+
+ENTRYPOINT ["airflow"]
