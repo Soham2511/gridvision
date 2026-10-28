@@ -172,14 +172,18 @@ def _run_airflow_dag_test(
                 from grid_forecasting_pipeline.etl import prepare_training_data
                 prepare_training_data(settings)
             if not is_etl_only and env.get("MLFLOW_TRACKING_URI"):
-                from training.government_load.modeling import train_hybrid_model
-                training_settings = PipelineSettings(
-                    **{
-                        **settings.model_dump(),
-                        "input_path": ready_file,
-                    }
-                )
-                train_hybrid_model(training_settings)
+                model_file = settings.model_path.expanduser().resolve()
+                if reuse and model_file.is_file():
+                    print(f"Reusing existing government model artifact at {model_file}", flush=True)
+                else:
+                    from training.government_load.modeling import train_hybrid_model
+                    training_settings = PipelineSettings(
+                        **{
+                            **settings.model_dump(),
+                            "input_path": ready_file,
+                        }
+                    )
+                    train_hybrid_model(training_settings)
     else:
         subprocess.run(
             airflow_command + ["dags", "test", dag_id, execution_date],
