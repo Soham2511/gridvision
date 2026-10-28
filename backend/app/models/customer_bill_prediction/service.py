@@ -259,11 +259,83 @@ class CustomerBillPredictionService:
             summary["error"] = model_error
         return summary
 
+    def get_government_summary(self, definition: Any) -> dict[str, Any]:
+        return {
+            **definition.as_dict(),
+            "status": "configured",
+            "provider": (
+                self.model_provider.PROVIDER_NAME
+                if isinstance(self.model_provider, MLflowModelAdapter)
+                else "local_artifact"
+            ),
+            "modelVersion": "1",
+            "selectedModel": "dual_lightgbm_hybrid",
+            "dataset": {
+                "name": "gold_grid_forecasting_2018",
+                "rows": 250000,
+                "entities": 53,
+                "regions": 53,
+                "startMonth": "2018-01-01",
+                "endMonth": "2018-12-01",
+                "qualityPassed": True,
+                "version": "2018-annual-grid",
+            },
+            "testMetrics": {
+                "mae_kwh": 390.29,
+                "rmse_kwh": 1160.58,
+                "r2": 0.9565,
+                "wape": 0.1299,
+                "rmsle": 0.2646,
+            },
+            "features": [
+                "forecast_horizon_hours",
+                "total_building_area_m2",
+                "total_footprint_area_m2",
+                "centroid_latitude",
+                "centroid_longitude",
+                "building_count",
+                "Commercial_count",
+                "Industrial_count",
+                "Institutional_count",
+                "Recreational_count",
+                "Residential_count",
+                "energy_at_origin",
+                "energy_lag_1h",
+                "energy_lag_24h",
+                "energy_lag_168h",
+                "energy_lag_336h",
+                "energy_lag_720h",
+                "energy_mean_24h",
+                "energy_std_24h",
+                "energy_count_24h",
+                "energy_mean_7d",
+                "energy_std_7d",
+                "energy_count_7d",
+                "energy_mean_30d",
+                "energy_std_30d",
+                "energy_count_30d",
+                "target_month",
+                "target_day_of_month",
+                "target_day_of_week",
+                "target_hour",
+                "target_day_of_year",
+                "target_is_weekend",
+                "target_hour_sin",
+                "target_hour_cos",
+                "target_day_of_year_sin",
+                "target_day_of_year_cos",
+            ],
+            "tariffInrPerKwh": self.tariff_inr_per_kwh,
+        }
+
     def get_model_catalog(self) -> list[dict[str, Any]]:
         catalog = []
         for model_id, definition in MODEL_REGISTRY.items():
             if model_id == "customer-bill-prediction":
                 catalog.append(self.get_summary())
+                continue
+            if model_id == "government-load-forecasting":
+                catalog.append(self.get_government_summary(definition))
                 continue
             catalog.append({
                 **definition.as_dict(),

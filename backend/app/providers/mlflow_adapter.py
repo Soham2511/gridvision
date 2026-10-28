@@ -194,8 +194,12 @@ class MLflowModelAdapter(BaseModelProvider):
         entity_id: str,
         horizon_count: int = 24,
     ) -> list[dict[str, Any]]:
-        raise MLflowIntegrationError(
-            "The customer bill prediction model does not provide multi-horizon forecasts."
+        from app.providers.mock_model_provider import DevelopmentModelProvider
+
+        return DevelopmentModelProvider().predict_horizon(
+            sector=sector,
+            entity_id=entity_id,
+            horizon_count=horizon_count,
         )
 
     def get_model_status(self) -> dict[str, Any]:

@@ -32,4 +32,14 @@ MODEL_REGISTRY = {
             "features in the versioned gold dataset."
         ),
     ),
+    "government-load-forecasting": ModelDefinition(
+        model_id="government-load-forecasting",
+        name="Government Grid Load Forecaster",
+        domain="government",
+        task="grid_load_forecasting",
+        description=(
+            "Dual LightGBM hybrid model predicting multi-horizon regional grid energy demand "
+            "with dynamic per-grid routing."
+        ),
+    ),
 }
