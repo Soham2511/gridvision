@@ -19,6 +19,8 @@ services:
       - 0.0.0.0
       - --port
       - "5001"
+      - --gunicorn-opts
+      - "--timeout 300"
     volumes:
       - ${GRIDVISION_DATA_DIR:?Set GRIDVISION_DATA_DIR}/mlflow:/mlflow
     ports:
