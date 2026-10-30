@@ -24,6 +24,7 @@ import {
   CustomerSegmentationData,
   PlatformHealthSummary,
   KpiMetric,
+  PairedCommercialForecast,
 } from '../types/analytics';
 
 export interface OverviewApiResponse {
@@ -69,6 +70,12 @@ class AnalyticsService {
       building: CommercialBuilding;
       horizon: TimeSeriesPoint[];
     }>(`/forecast/commercial/${encodeURIComponent(buildingId)}`);
+  }
+
+  async getPairedCommercialForecast(buildingId: string): Promise<PairedCommercialForecast> {
+    return apiClient.get<PairedCommercialForecast>(
+      `/forecast/commercial/${encodeURIComponent(buildingId)}/paired`
+    );
   }
 
   async getCommercialDashboard(

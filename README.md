@@ -89,10 +89,13 @@ gridvision-app/
 │   │       ├── responses.py        # Consistent JSON response builders
 │   │       └── validation.py       # Pydantic request schemas
 ├── airflow/customer/               # Customer bronze/silver/gold DAG
+├── airflow/commercial/             # Commercial building Silver/Gold DAG and ETL
 ├── airflow/2_government_load_prediction/ # Government grid ETL and forecasting
-├── training/                       # Customer bill training and MLflow logging
+├── training/                       # Customer bill and commercial model training
+│   ├── commercial_forecast/        # Commercial building LightGBM model
 │   └── government_load/            # Government grid model training and inference
 ├── mlflow/customer/                # Customer training/registration entrypoint
+├── mlflow/commercial/              # Commercial training and MLflow guide
 ├── mlflow/government/              # Government model artifacts and MLflow logger
 ├── tests/                          # All backend and training tests
 ├── requirements.txt                # Single Python dependency manifest
@@ -126,16 +129,16 @@ gridvision-app/
 3. From the project root, run:
 
    ```bash
-   cd /mnt/d/GridVision
+   cd /path/to/checkout
    source ~/.venvs/gridvision/bin/activate
    python automation.py
    ```
 
-The script runs the customer ETL and training workflow, then starts the MLflow, Airflow, backend, and frontend services. It prints a timed summary and leaves the services running. See [Customer Bill Prediction: Data, Training, and Automation](#customer-bill-prediction-data-training-and-automation) for environment setup, output paths, and EC2 deployment steps.
+The script runs the customer, government, and commercial ETL/training workflows, then starts the MLflow, Airflow, backend, and frontend services. It prints a timed summary and leaves the services running. When all three ETL outputs are already prepared, run `python automation.py --skip-all-data-pipelines` to validate and reuse them while still training/registering each model and starting the services. See [Customer Bill Prediction: Data, Training, and Automation](#customer-bill-prediction-data-training-and-automation) for environment setup, output paths, and EC2 deployment steps.
 
-On Windows, run `python automation.py` from the project root. It defaults `GRIDVISION_DATA_DIR` to `D:\GridVision\data` and generates a temporary development `SECRET_KEY` for the Compose services. The gold dataset is expected at `D:\GridVision\data\gold\customer_gold.parquet`.
+Run automation from WSL/Linux, not native Windows: Airflow is not supported on native Windows. By default, `GRIDVISION_DATA_DIR` points to the checkout's `data/` directory, and the source dataset is expected at `data/sample/training_sample_50000.parquet`.
 
-If starting Compose directly instead of using the automation script, create a root `.env` file (it is git-ignored) with `GRIDVISION_DATA_DIR=D:\GridVision\data` and a private `SECRET_KEY`. Generate a strong key with:
+If starting Compose directly instead of using the automation script, create a root `.env` file (it is git-ignored) with `GRIDVISION_DATA_DIR` set to the absolute `data/` directory in your checkout and a private `SECRET_KEY`. Generate a strong key with:
 
 ```powershell
 python -c "import secrets; print(secrets.token_urlsafe(48))"
@@ -180,6 +183,7 @@ npm run lint
 | `GET` | `/api/v1/entities/residential` | Residential smart meters catalog |
 | `GET` | `/api/v1/entities/government` | Regional government grid sites catalog |
 | `GET` | `/api/v1/forecast/commercial/<id>` | Commercial building multi-horizon forecast |
+| `GET` | `/api/v1/forecast/commercial/<id>/paired` | Commercial building and mapped total-grid government forecasts, paired by timestamp and horizon |
 | `GET` | `/api/v1/forecast/residential/<id>` | Residential month-end consumption forecast |
 | `GET` | `/api/v1/forecast/government/<id>` | Regional grid site demand forecast |
 | `POST` | `/api/v1/forecast/predict` | On-demand feature inference |
@@ -329,12 +333,28 @@ parquet, or run only its Airflow DAG with
 `GOVERNMENT_PIPELINE_REUSE_PREPARED=1`; see the government pipeline README for
 exact WSL commands.
 
+### Commercial building forecast data
+
+The commercial data preparation workflow is under
+[`airflow/commercial`](airflow/commercial/README.md). It uses the shared raw
+Parquet file as Bronze, creates a non-residential Silver dataset, and engineers
+building-level Gold rows with one horizon column and `target_energy` labels.
+The commercial feature contract is in `training/commercial_forecast/features.py`;
+`id.grid.coarse` is retained as the join key to the existing government model's
+regional grid forecast. Chronological comparison of three commercial model
+candidates, validation-baseline gating, MLflow registration, and run instructions are documented in
+[`mlflow/commercial`](mlflow/commercial/README.md). Automation includes the
+commercial DAG and training workflow, and the paired API/UI surface the
+building forecast alongside its associated government total-grid forecast.
+See the commercial guide for validated reuse options, feature order, MLflow
+artifacts, and logs.
+
 ### Install the local Python dependencies (Python 3.10, WSL2)
 
-Apache Airflow does not support native Windows. Run the pipeline in a WSL2 Linux terminal (the repository can remain on the D: drive at `/mnt/d/GridVision`); use a Linux virtual environment rather than the Windows `.venv`:
+Apache Airflow does not support native Windows. Run the pipeline in a WSL2 Linux terminal (the repository can remain on a mounted Windows drive); use a Linux virtual environment rather than the Windows `.venv`:
 
 ```bash
-cd /mnt/d/GridVision
+cd /path/to/checkout
 python3.10 -m venv ~/.venvs/gridvision
 source ~/.venvs/gridvision/bin/activate
 python scripts/filter_requirements.py requirements.txt /tmp/gridvision-automation-requirements.txt \
@@ -343,12 +363,12 @@ pip install -r /tmp/gridvision-automation-requirements.txt \
   --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-2.10.5/constraints-3.10.txt"
 ```
 
-Do not install the `backend` group in this WSL environment: Airflow's constraints pin Flask to 2.2.5, while the backend requires Flask 3 or newer. Docker Desktop must be running with WSL integration enabled for the Ubuntu distribution used by the terminal (for example, `Ubuntu-22.04`). In Docker Desktop, open **Settings → Resources → WSL Integration**, enable integration for that distribution, and apply/restart Docker Desktop. In WSL, verify `docker --version` and `docker compose version` before running automation. The automation command expects `data/sample/training_sample_50000.parquet`.
+The backend container installs its own dependencies. If you also install the `backend` group in WSL for local API development, the Flask constraint in `requirements.txt` is compatible with the Airflow 2.10.5 constraints. Docker Desktop must be running with WSL integration enabled for the Ubuntu distribution used by the terminal (for example, `Ubuntu-22.04`). In Docker Desktop, open **Settings → Resources → WSL Integration**, enable integration for that distribution, and apply/restart Docker Desktop. In WSL, verify `docker --version` and `docker compose version` before running automation. The automation command expects `data/sample/training_sample_50000.parquet`.
 
 ### Run the full local workflow
 
 ```bash
-cd /mnt/d/GridVision
+cd /path/to/checkout
 source ~/.venvs/gridvision/bin/activate
 python automation.py
 ```
@@ -357,9 +377,9 @@ The script checks dependencies and Docker, starts the persistent MLflow containe
 
 For a functional, resource-conscious local run, the silver stage deterministically samples **100 residential entities** by default (down from 1,000). The sample size can be changed with `CUSTOMER_SAMPLE_BUILDINGS` before running automation. The silver transform discovers residential entity profiles with bounded Arrow batches, avoiding a full-file DuckDB profile aggregation. DuckDB is limited to 2 GB and two worker threads by default, and spills intermediate data to `~/.cache/gridvision/duckdb_temp` when needed. Ensure the WSL filesystem containing that directory has free space. You can tune the DuckDB limits with `CUSTOMER_DUCKDB_MEMORY_LIMIT` and `CUSTOMER_DUCKDB_THREADS`. This smaller sample is intended for functional development; increase it as resources and scaling work allow.
 
-To retrain and rebuild the services using an already-generated gold dataset without rerunning the memory-intensive Airflow ETL, run `python automation.py --skip-data-pipeline`. This still trains a new model version and updates the `champion` alias.
+To retrain and rebuild the services using already-prepared outputs without rerunning the ETL, run `python automation.py --skip-all-data-pipelines`. This validates Customer Gold and its quality manifest, the Government training-ready parquet, and Commercial Silver/Gold plus its quality manifest. It skips only data preparation; it still runs government, commercial, and customer training and model registration. `--skip-data-pipeline` skips only customer ETL, while `--skip-commercial-data-pipeline` skips only commercial ETL.
 
-Open the frontend at `http://localhost:8080`. Airflow is available at `http://localhost:8081`; its generated login details are in `logs/airflow/standalone.log`. The MLflow UI is at `http://localhost:15001` (host port configurable with `GRIDVISION_MLFLOW_HOST_PORT`). The API health endpoint is `http://localhost:5000/api/v1/health`. Stop the Docker services with `docker compose down`. To stop the Airflow process group started by automation, use its PID file: `kill -TERM -- -$(cat logs/airflow/standalone.pid)`.
+Open the frontend at `http://localhost:8082` (configurable with `GRIDVISION_FRONTEND_HOST_PORT`). Airflow is available at `http://localhost:8081`; its generated login details are in `~/.gridvision-airflow/logs/standalone.log` when running from WSL with the project on `/mnt`, and otherwise in `logs/airflow/standalone.log`. The MLflow UI is at `http://localhost:15001` (host port configurable with `GRIDVISION_MLFLOW_HOST_PORT`). The API health endpoint is `http://localhost:5000/api/v1/health`. Stop the Docker services with `docker compose down`. To stop the Airflow process group started by automation, use the `standalone.pid` file next to its log: `kill -TERM -- -$(cat ~/.gridvision-airflow/logs/standalone.pid)` in the WSL `/mnt` case.
 
 ### Data and model locations
 
@@ -369,6 +389,10 @@ Open the frontend at `http://localhost:8080`. Airflow is available at `http://lo
 | Bronze (raw Parquet copy/link) | `data/bronze/training_sample_50000.parquet` |
 | Silver (residential sample) | `data/silver/customer_silver.parquet` |
 | Gold (engineered training data) | `data/gold/customer_gold.parquet` |
+| Commercial Silver (non-residential) | `data/silver/commercial_silver.parquet` |
+| Commercial Gold (building-level forecasting) | `data/gold/commercial_gold.parquet` |
+| Commercial quality reports | `logs/data/quality_reports/commercial/` |
+| Commercial dataset versions/manifests | `data/metadata/commercial/dataset_versions/<stage>/` |
 | Dataset quality reports (bronze/silver/gold) | `logs/data/quality_reports/` |
 | Dataset version manifests and `latest.json` pointers | `data/metadata/dataset_versions/<dataset_name>/` |
 | Dataset-version Parquet snapshots | `data/metadata/dataset_versions/<dataset_name>/<version>.parquet` |
@@ -388,7 +412,7 @@ Each Airflow transformation writes a JSON quality report and a version manifest 
 
 Versioned Parquet snapshots are hard links to the generated dataset files, so they retain prior outputs when this pipeline atomically replaces a stage file without duplicating the dataset's storage. The dataset and metadata directories must be on the same filesystem for hard links. These snapshots are intended to be immutable through this pipeline; do not modify a dataset file in place. Back up the data/version directories together.
 
-Training logs the dataset version and lineage, split month ranges, package versions, candidate cross-validation results, validation and held-out metrics, model parameters, model signature, exported pickle, metadata, and model card to MLflow and the appropriate `logs/` folders. Each registered model version is tagged with its dataset version, selected estimator, and training run ID. The local metadata sidecar includes the exported pickle's SHA-256 checksum.
+Training logs the dataset version and lineage, split month ranges, package versions, candidate cross-validation results, validation and held-out metrics, model parameters, model signature, exported pickle, metadata, and model card to MLflow and the appropriate `logs/` folders. The MLflow Metrics tab is limited to at most 20 useful scalar metrics per run; detailed fold, candidate, and grouped evaluation data remains in the run artifacts and local reports. Each registered model version is tagged with its dataset version, selected estimator, and training run ID. The local metadata sidecar includes the exported pickle's SHA-256 checksum.
 
 DuckDB spill files use `~/.cache/gridvision/duckdb_temp` by default so WSL stores temporary processing files on its Linux filesystem rather than the Windows-mounted project drive. Set `CUSTOMER_DUCKDB_TEMP_DIR` to override that location; ensure the chosen filesystem has sufficient free space. Check WSL memory and storage with `free -h` and `df -h ~ /mnt/d` if a transform reports an allocation or spill-write error.
 
@@ -396,7 +420,7 @@ The backend loads the registered MLflow alias from the same persistent `data/mlf
 
 ### Run the workflow on an AWS EC2 Ubuntu instance
 
-1. Launch an Ubuntu 22.04 EC2 instance. Choose CPU, memory, and EBS storage based on the actual Parquet size and the intermediate datasets; check the source size with `ls -lh`. Allow enough free disk for bronze/silver/gold files and DuckDB spill data. In the security group, allow SSH (port 22) only from your IP and, for a temporary UI demo, port 8080 only from your IP. Do **not** expose ports 5000, 5001, or 8081 publicly.
+1. Launch an Ubuntu 22.04 EC2 instance. Choose CPU, memory, and EBS storage based on the actual Parquet size and the intermediate datasets; check the source size with `ls -lh`. Allow enough free disk for bronze/silver/gold files and DuckDB spill data. In the security group, allow SSH (port 22) only from your IP and, for a temporary UI demo, port 8082 only from your IP. Do **not** expose ports 5000, 5001, or 8081 publicly.
 2. SSH into the instance, install Docker Engine/Compose and Python 3.10, then log out/in after adding your user to the Docker group:
 
    ```bash
@@ -414,20 +438,20 @@ The backend loads the registered MLflow alias from the same persistent `data/mlf
 3. Clone this project onto the instance (replace the placeholder with your repository URL), then create the input directory:
 
    ```bash
-   git clone YOUR_REPOSITORY_URL ~/GridVision
-   mkdir -p ~/GridVision/data/sample
+   git clone YOUR_REPOSITORY_URL ~/gridvision_2
+   mkdir -p ~/gridvision_2/data/sample
    ```
 
    Copy the source file into `data/sample/training_sample_50000.parquet`. The dataset may be too large for Git; use SCP or an S3 bucket. From your local Windows PowerShell, an example SCP command is:
 
    ```powershell
-   scp -i C:\path\to\key.pem D:\GridVision\data\sample\training_sample_50000.parquet ubuntu@EC2_PUBLIC_IP:~/GridVision/data/sample/
+   scp -i C:\path\to\key.pem D:\path\to\training_sample_50000.parquet ubuntu@EC2_PUBLIC_IP:~/gridvision_2/data/sample/
    ```
 
 4. After reconnecting over SSH, create and install the Python environment from the project root:
 
    ```bash
-   cd ~/GridVision
+   cd ~/gridvision_2
    python3.10 -m venv ~/.venvs/gridvision
    source ~/.venvs/gridvision/bin/activate
    python -m pip install --upgrade pip
@@ -437,7 +461,7 @@ The backend loads the registered MLflow alias from the same persistent `data/mlf
      --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-2.10.5/constraints-3.10.txt"
    ```
 
-5. Run `python automation.py` from that activated environment. It builds and starts MLflow, runs ETL and training, starts Airflow, then builds and starts the API/UI. Visit `http://EC2_PUBLIC_IP:8080` from an allowed IP. Use a domain and HTTPS reverse proxy/load balancer before exposing this beyond a temporary demo. Keep `data/` on persistent EBS storage and back it up; it contains the trained data products and MLflow registry/artifacts.
+5. Run `python automation.py` from that activated environment. It builds and starts MLflow, runs ETL and training, starts Airflow, then builds and starts the API/UI. Visit `http://EC2_PUBLIC_IP:8082` from an allowed IP. Use a domain and HTTPS reverse proxy/load balancer before exposing this beyond a temporary demo. Keep `data/` on persistent EBS storage and back it up; it contains the trained data products and MLflow registry/artifacts.
 
 To access Airflow and MLflow from your computer without opening their ports publicly, create an SSH tunnel:
 

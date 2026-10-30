@@ -36,6 +36,21 @@ class ModelService {
     return model;
   }
 
+  async getForecastModelEntities(modelId: string): Promise<{ items: Array<Record<string, unknown>> }> {
+    return apiClient.get<{ items: Array<Record<string, unknown>> }>(`/models/${encodeURIComponent(modelId)}/entities`);
+  }
+
+  async predictForecastModel(modelId: string, entityId: string, horizonHours = 24): Promise<{
+    model: { model_name: string; model_version: string; provider: string; evaluation_status: string };
+    entity_id: string;
+    horizon: Array<{ timestamp: string; horizon_hours: number; prediction: number; actual?: number }>;
+  }> {
+    return apiClient.post(`/models/${encodeURIComponent(modelId)}/predict`, {
+      entity_id: entityId,
+      horizon_hours: horizonHours,
+    });
+  }
+
   async getCustomerRecords(
     limit = 50,
     offset = 0

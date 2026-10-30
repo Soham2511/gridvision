@@ -478,11 +478,6 @@ def train_and_log(
                 f"candidate_{candidate['candidate']}_mean_cv_mae_kwh",
                 candidate["mean_cv_mae_kwh"],
             )
-            for fold_index, fold_mae in enumerate(candidate["fold_mae_kwh"], start=1):
-                mlflow.log_metric(
-                    f"candidate_{candidate['candidate']}_fold_{fold_index}_mae_kwh",
-                    fold_mae,
-                )
         signature = infer_signature(x_validation, selected_model.predict(x_validation))
         model_info = mlflow.sklearn.log_model(
             sk_model=selected_model,

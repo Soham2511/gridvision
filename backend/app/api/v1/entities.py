@@ -19,8 +19,8 @@ def get_commercial_buildings():
 @bp.route("/entities/commercial/<building_id>", methods=["GET"])
 def get_commercial_building(building_id: str):
     """Returns details for a single commercial building."""
-    data_provider = current_app.extensions["data_provider"]
-    bldg = data_provider.get_commercial_building(building_id)
+    service = current_app.extensions["forecast_service"]
+    bldg = service.get_commercial_building(building_id)
     if not bldg:
         raise ResourceNotFoundError(f"Commercial building '{building_id}' not found.")
     return success_response(bldg)
@@ -53,8 +53,8 @@ def get_regional_sites():
 @bp.route("/entities/government/<site_id>", methods=["GET"])
 def get_regional_site(site_id: str):
     """Returns details for a single regional site."""
-    data_provider = current_app.extensions["data_provider"]
-    site = data_provider.get_regional_site(site_id)
+    service = current_app.extensions["forecast_service"]
+    site = service.get_regional_site(site_id)
     if not site:
         raise ResourceNotFoundError(f"Regional site '{site_id}' not found.")
     return success_response(site)

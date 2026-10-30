@@ -2,18 +2,12 @@
 
 from __future__ import annotations
 
-import sys
 from datetime import datetime
-from pathlib import Path
 
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 
-DAG_DIRECTORY = Path(__file__).resolve().parent
-if str(DAG_DIRECTORY) not in sys.path:
-    sys.path.insert(0, str(DAG_DIRECTORY))
-
-from data_pipeline import (  # noqa: E402
+from customer.data_pipeline import (
     BRONZE_PATH,
     GOLD_PATH,
     SILVER_PATH,

@@ -28,6 +28,13 @@ class BaseConfig:
     MLFLOW_MODEL_NAME = os.getenv(
         "MLFLOW_MODEL_NAME", "customer-bill-prediction"
     )
+    MLFLOW_MODEL_ALIAS = os.getenv("MLFLOW_MODEL_ALIAS", "champion")
+    COMMERCIAL_MLFLOW_MODEL_NAME = os.getenv(
+        "COMMERCIAL_MLFLOW_MODEL_NAME", "gridvision-commercial-building-forecast"
+    )
+    GOVERNMENT_MLFLOW_MODEL_NAME = os.getenv(
+        "GOVERNMENT_MLFLOW_MODEL_NAME", "gridvision-government-load-forecast"
+    )
     CUSTOMER_TARIFF_INR_PER_KWH = float(
         os.getenv("CUSTOMER_TARIFF_INR_PER_KWH", "10.0")
     )
@@ -48,6 +55,18 @@ class BaseConfig:
             "CUSTOMER_MODEL_ARTIFACT_PATH",
             PROJECT_ROOT / "models" / "customer_bill_prediction.pkl",
         )
+    )
+    COMMERCIAL_FORECAST_DATA_PATH = Path(
+        os.getenv("COMMERCIAL_FORECAST_DATA_PATH", PROJECT_ROOT / "data" / "gold" / "commercial_gold.parquet")
+    )
+    COMMERCIAL_FORECAST_MODEL_PATH = Path(
+        os.getenv("COMMERCIAL_FORECAST_MODEL_PATH", PROJECT_ROOT / "models" / "commercial" / "building_forecast.joblib")
+    )
+    GOVERNMENT_FORECAST_DATA_PATH = Path(
+        os.getenv("GOVERNMENT_FORECAST_DATA_PATH", PROJECT_ROOT / "data" / "airflow" / "government" / "training_ready_2018.parquet")
+    )
+    GOVERNMENT_FORECAST_MODEL_PATH = Path(
+        os.getenv("GOVERNMENT_FORECAST_MODEL_PATH", PROJECT_ROOT / "data" / "airflow" / "government" / "hybrid_grid_2018.joblib")
     )
 
 
