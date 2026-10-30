@@ -114,7 +114,7 @@ export const DataModelHealthPage: React.FC = () => {
     };
 
     if (actionType === 'Open Model Workbench') {
-      navigate('/models');
+      navigate('/models/customer');
       return;
     }
 

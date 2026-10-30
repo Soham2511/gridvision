@@ -7,6 +7,7 @@ import {
   MessageSquare,
   User,
   ArrowLeftRight,
+  ChevronLeft,
   ChevronRight,
   ChevronDown,
   LogOut,
@@ -21,6 +22,17 @@ export const Sidebar: React.FC = () => {
   const { currentPersona, setPersona } = usePersona();
   const navigate = useNavigate();
   const [showPersonaMenu, setShowPersonaMenu] = useState(false);
+  const [isCollapsed, setIsCollapsed] = useState(
+    () => localStorage.getItem('gv_sidebar_collapsed') === 'true',
+  );
+
+  const toggleSidebar = () => {
+    setIsCollapsed((collapsed) => {
+      const next = !collapsed;
+      localStorage.setItem('gv_sidebar_collapsed', String(next));
+      return next;
+    });
+  };
 
   const personaLabel =
     currentPersona === 'commercial'
@@ -85,7 +97,8 @@ export const Sidebar: React.FC = () => {
   return (
     <aside
       style={{
-        width: '240px',
+        width: isCollapsed ? '72px' : '240px',
+        minWidth: isCollapsed ? '72px' : '240px',
         height: '100vh',
         position: 'sticky',
         top: 0,
@@ -98,55 +111,98 @@ export const Sidebar: React.FC = () => {
         zIndex: 50,
         flexShrink: 0,
         boxSizing: 'border-box',
-        padding: '1.25rem 1rem',
+        padding: isCollapsed ? '1.25rem 0.5rem' : '1.25rem 1rem',
+        transition: 'width 0.2s ease, min-width 0.2s ease, padding 0.2s ease',
       }}
     >
       <div>
         {/* Brand Header */}
         <div
-          onClick={() => navigate('/')}
           style={{
             display: 'flex',
+            flexDirection: isCollapsed ? 'column' : 'row',
             alignItems: 'center',
-            gap: '0.75rem',
-            padding: '0.5rem 0.5rem 1.75rem 0.5rem',
-            cursor: 'pointer',
+            justifyContent: isCollapsed ? 'center' : 'space-between',
+            gap: isCollapsed ? '0.75rem' : '0.35rem',
+            padding: '0.5rem 0.25rem 1.75rem',
           }}
         >
-          <div
+          <button
+            type="button"
+            onClick={() => navigate('/')}
+            aria-label="GridVision home"
             style={{
-              width: '32px',
-              height: '32px',
-              borderRadius: '8px',
-              background: 'linear-gradient(135deg, #00A396, #087EBD)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.75rem',
+              minWidth: 0,
+              padding: 0,
+              border: 'none',
+              background: 'transparent',
+              color: 'inherit',
+              cursor: 'pointer',
+              textAlign: 'left',
+            }}
+          >
+            <span
+              style={{
+                width: '32px',
+                height: '32px',
+                borderRadius: '8px',
+                background: 'linear-gradient(135deg, #00A396, #087EBD)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+              }}
+            >
+              <Layers size={18} color="#FFFFFF" />
+            </span>
+            {!isCollapsed && <span>
+              <span style={{ display: 'block', fontSize: '1.15rem', fontWeight: 800, letterSpacing: '-0.02em', color: '#FFFFFF', lineHeight: 1.1 }}>
+                Grid<span style={{ color: '#00B8A9' }}>Vision</span>
+              </span>
+              <span style={{ display: 'block', fontSize: '0.58rem', fontWeight: 700, color: '#00B8A9', letterSpacing: '0.08em', textTransform: 'uppercase', marginTop: '2px' }}>
+                Energy Intelligence
+              </span>
+            </span>}
+          </button>
+          <button
+            type="button"
+            onClick={toggleSidebar}
+            aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            style={{
+              width: '30px',
+              height: '30px',
+              flexShrink: 0,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              flexShrink: 0,
+              borderRadius: '7px',
+              border: '1px solid rgba(255, 255, 255, 0.12)',
+              background: 'rgba(255, 255, 255, 0.04)',
+              color: 'rgba(255, 255, 255, 0.75)',
+              cursor: 'pointer',
             }}
           >
-            <Layers size={18} color="#FFFFFF" />
-          </div>
-          <div>
-            <div style={{ fontSize: '1.15rem', fontWeight: 800, letterSpacing: '-0.02em', color: '#FFFFFF', lineHeight: 1.1 }}>
-              Grid<span style={{ color: '#00B8A9' }}>Vision</span>
-            </div>
-            <div style={{ fontSize: '0.58rem', fontWeight: 700, color: '#00B8A9', letterSpacing: '0.08em', textTransform: 'uppercase', marginTop: '2px' }}>
-              Energy Intelligence
-            </div>
-          </div>
+            {isCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+          </button>
         </div>
 
         {/* Primary Navigation Tabs */}
-        <nav style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginTop: '0.5rem' }}>
+        <nav aria-label="Main navigation" style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', marginTop: '0.5rem' }}>
           {navItems.map((item) => (
             <NavLink
               key={item.path}
               to={item.path}
               end={item.path === '/app'}
+              aria-label={item.label}
+              title={isCollapsed ? item.label : undefined}
               style={({ isActive }) => ({
                 display: 'flex',
                 alignItems: 'center',
+                justifyContent: isCollapsed ? 'center' : 'flex-start',
                 gap: '0.75rem',
                 padding: '0.65rem 0.85rem',
                 borderRadius: '8px',
@@ -158,8 +214,8 @@ export const Sidebar: React.FC = () => {
                 transition: 'all 0.15s ease',
               })}
             >
-              <span style={{ display: 'flex', alignItems: 'center' }}>{item.icon}</span>
-              <span>{item.label}</span>
+              <span style={{ display: 'flex', alignItems: 'center', flexShrink: 0 }}>{item.icon}</span>
+              {!isCollapsed && <span>{item.label}</span>}
             </NavLink>
           ))}
         </nav>
@@ -171,10 +227,12 @@ export const Sidebar: React.FC = () => {
         <button
           type="button"
           onClick={handleSwitchPersona}
+          aria-label="Switch Persona"
+          title={isCollapsed ? 'Switch Persona' : undefined}
           style={{
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'space-between',
+            justifyContent: isCollapsed ? 'center' : 'space-between',
             padding: '0.65rem 0.85rem',
             borderRadius: '8px',
             background: 'transparent',
@@ -193,11 +251,11 @@ export const Sidebar: React.FC = () => {
             e.currentTarget.style.color = 'rgba(255, 255, 255, 0.7)';
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+          <span style={{ display: 'flex', alignItems: 'center', justifyContent: isCollapsed ? 'center' : 'flex-start', gap: '0.65rem' }}>
             <ArrowLeftRight size={16} />
-            <span>Switch Persona</span>
-          </div>
-          <ChevronRight size={15} color="rgba(255, 255, 255, 0.5)" />
+            {!isCollapsed && <span>Switch Persona</span>}
+          </span>
+          {!isCollapsed && <ChevronRight size={15} color="rgba(255, 255, 255, 0.5)" />}
         </button>
 
         {/* Persona Pill / Selector */}
@@ -205,11 +263,14 @@ export const Sidebar: React.FC = () => {
           <button
             type="button"
             onClick={() => setShowPersonaMenu(!showPersonaMenu)}
+            aria-label={`Current persona: ${personaLabel}. Change persona`}
+            aria-expanded={showPersonaMenu}
+            title={isCollapsed ? personaLabel : undefined}
             style={{
               width: '100%',
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'space-between',
+              justifyContent: isCollapsed ? 'center' : 'space-between',
               padding: '0.65rem 0.85rem',
               borderRadius: '8px',
               backgroundColor: 'rgba(255, 255, 255, 0.05)',
@@ -220,7 +281,7 @@ export const Sidebar: React.FC = () => {
               cursor: 'pointer',
             }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
               {currentPersona === 'commercial' ? (
                 <Building2 size={16} color="#FFC247" />
               ) : currentPersona === 'government' ? (
@@ -228,9 +289,9 @@ export const Sidebar: React.FC = () => {
               ) : (
                 <Home size={16} color="#21C7D9" />
               )}
-              <span>{personaLabel}</span>
-            </div>
-            <ChevronDown size={15} color="rgba(255, 255, 255, 0.6)" />
+              {!isCollapsed && <span>{personaLabel}</span>}
+            </span>
+            {!isCollapsed && <ChevronDown size={15} color="rgba(255, 255, 255, 0.6)" />}
           </button>
 
           {/* Persona Menu Popup */}
@@ -239,8 +300,9 @@ export const Sidebar: React.FC = () => {
               style={{
                 position: 'absolute',
                 bottom: '100%',
-                left: 0,
-                right: 0,
+                left: isCollapsed ? 'calc(100% + 0.5rem)' : 0,
+                right: isCollapsed ? 'auto' : 0,
+                width: isCollapsed ? '210px' : 'auto',
                 marginBottom: '0.5rem',
                 backgroundColor: '#0B1F33',
                 border: '1px solid rgba(255, 255, 255, 0.15)',
@@ -282,9 +344,12 @@ export const Sidebar: React.FC = () => {
         <button
           type="button"
           onClick={handleLogout}
+          aria-label="Logout"
+          title={isCollapsed ? 'Logout' : undefined}
           style={{
             display: 'flex',
             alignItems: 'center',
+            justifyContent: isCollapsed ? 'center' : 'flex-start',
             gap: '0.65rem',
             padding: '0.65rem 0.85rem',
             borderRadius: '8px',
@@ -306,7 +371,7 @@ export const Sidebar: React.FC = () => {
           }}
         >
           <LogOut size={16} />
-          <span>Logout</span>
+          {!isCollapsed && <span>Logout</span>}
         </button>
       </div>
     </aside>

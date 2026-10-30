@@ -161,6 +161,7 @@ class DevelopmentModelProvider(BaseModelProvider):
                 points.append({
                     "timestamp": t.isoformat() + "Z",
                     "formattedTime": time_str,
+                    "horizonHours": h,
                     "actualDemand": round(base, 1) if is_history else None,
                     "forecastDemand": round(pred, 1) if not is_history or h == 2 else None,
                     "upperConfidence": round(pred * 1.08, 1) if not is_history else None,
@@ -198,6 +199,7 @@ class DevelopmentModelProvider(BaseModelProvider):
                 points.append({
                     "timestamp": t.isoformat() + "Z",
                     "formattedTime": time_str,
+                    "horizonHours": h * 2,
                     "actualDemand": round(base, 1) if is_history else None,
                     "forecastDemand": round(pred, 1) if not is_history or h == 5 else None,
                     "actualDemandMw": round(base, 1) if is_history else None,
@@ -210,6 +212,16 @@ class DevelopmentModelProvider(BaseModelProvider):
                 })
 
         return points
+
+    def get_forecast_model_info(self, sector: str) -> dict[str, Any]:
+        key = "government" if sector.lower() in {"government", "regional"} else "commercial"
+        configuration = self.MODEL_REGISTRY_MAP[key]
+        return {
+            "model_name": configuration["model_name"],
+            "model_version": configuration["version"],
+            "provider": self.PROVIDER_NAME,
+            "is_demo": True,
+        }
 
     def get_model_status(self) -> dict[str, Any]:
         return {

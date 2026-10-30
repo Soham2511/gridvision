@@ -32,4 +32,18 @@ MODEL_REGISTRY = {
             "features in the versioned gold dataset."
         ),
     ),
+    "commercial-building-forecast": ModelDefinition(
+        model_id="commercial-building-forecast",
+        name="Commercial Building Forecast",
+        domain="commercial",
+        task="24_hour_building_energy_forecast",
+        description="Predicts hourly commercial building demand using the persisted chronological holdout model.",
+    ),
+    "government-load-forecast": ModelDefinition(
+        model_id="government-load-forecast",
+        name="Government Grid Load Forecast",
+        domain="government",
+        task="24_hour_grid_energy_forecast",
+        description="Predicts hourly coarse-grid demand using the per-grid routed hybrid model.",
+    ),
 }

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { PageHeader } from '../components/common/PageHeader';
 import { ChartCard } from '../components/common/ChartCard';
 import { LoadingSkeleton } from '../components/common/LoadingSkeleton';
@@ -10,7 +10,14 @@ import {
   RegionalSite,
   TimeSeriesPoint,
   SectorPersona,
+  PairedCommercialForecast,
 } from '../types/analytics';
+import {
+  isVerifiedPairedForecast,
+  loadForecastForSelectedBuilding,
+  pairedForecastErrorMessage,
+  toPairedForecastSeries,
+} from '../services/pairedCommercialForecast.js';
 import {
   ResponsiveContainer,
   ComposedChart,
@@ -44,12 +51,43 @@ export const DemandForecastingPage: React.FC = () => {
   const [regionalSites, setRegionalSites] = useState<RegionalSite[]>([]);
 
   // Selected entities
-  const [selectedBldgId, setSelectedBldgId] = useState<string>('Panther_office_1');
+  const [selectedBldgId, setSelectedBldgId] = useState<string>('');
   const [selectedMeterId, setSelectedMeterId] = useState<string>('METER-1000');
   const [selectedSiteId, setSelectedSiteId] = useState<string>('Panther');
 
   // Active time-series horizon
   const [timeSeries, setTimeSeries] = useState<TimeSeriesPoint[]>([]);
+  const [pairedForecast, setPairedForecast] = useState<PairedCommercialForecast | null>(null);
+  const [pairedLoading, setPairedLoading] = useState<boolean>(false);
+  const [pairedError, setPairedError] = useState<string | null>(null);
+  const [pairedNotice, setPairedNotice] = useState<string | null>(null);
+  const pairedRequestId = useRef(0);
+
+  const loadCommercialPair = useCallback(async (buildingId: string) => {
+    const requestId = ++pairedRequestId.current;
+    setPairedLoading(true);
+    setPairedError(null);
+    setPairedNotice(null);
+    setPairedForecast(null);
+    try {
+      const result = await loadForecastForSelectedBuilding(
+        buildingId,
+        (selectedId) => analyticsService.getPairedCommercialForecast(selectedId)
+      );
+      if (requestId !== pairedRequestId.current) return;
+      setPairedForecast(result);
+      if (!isVerifiedPairedForecast(result)) {
+        setPairedNotice('Demo provider output is hidden. Connect verified commercial and government models to view forecasts.');
+      } else if (result.paired_horizon.length === 0) {
+        setPairedNotice('No paired forecast history is available for this building and grid.');
+      }
+    } catch (err) {
+      if (requestId !== pairedRequestId.current) return;
+      setPairedError(pairedForecastErrorMessage(err));
+    } finally {
+      if (requestId === pairedRequestId.current) setPairedLoading(false);
+    }
+  }, []);
 
   const loadHorizon = async (
     request: Promise<{ horizon: TimeSeriesPoint[] }>
@@ -80,9 +118,10 @@ export const DemandForecastingPage: React.FC = () => {
         setResidentialMeters(meters);
         setRegionalSites(sites);
 
-        // Load initial commercial forecast
-        const initialComm = await analyticsService.getCommercialForecast('Panther_office_1');
-        setTimeSeries(initialComm.horizon);
+        const firstBuildingId = bldgs[0]?.buildingId ?? '';
+        setSelectedBldgId(firstBuildingId);
+        if (firstBuildingId) await loadCommercialPair(firstBuildingId);
+        else setPairedNotice('No commercial building history is available.');
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load forecasting entities.');
       } finally {
@@ -90,12 +129,12 @@ export const DemandForecastingPage: React.FC = () => {
       }
     };
     fetchEntities();
-  }, []);
+  }, [loadCommercialPair]);
 
   // Handle entity change
   const handleCommercialChange = async (bldgId: string) => {
     setSelectedBldgId(bldgId);
-    await loadHorizon(analyticsService.getCommercialForecast(bldgId));
+    await loadCommercialPair(bldgId);
   };
 
   const handleResidentialChange = async (meterId: string) => {
@@ -111,7 +150,7 @@ export const DemandForecastingPage: React.FC = () => {
   const handleSectorChange = async (newSector: SectorPersona) => {
     setSector(newSector);
     if (newSector === 'commercial') {
-      await loadHorizon(analyticsService.getCommercialForecast(selectedBldgId));
+      await loadCommercialPair(selectedBldgId);
     } else if (newSector === 'residential') {
       await loadHorizon(analyticsService.getResidentialForecast(selectedMeterId));
     } else {
@@ -132,12 +171,11 @@ export const DemandForecastingPage: React.FC = () => {
     return <ErrorState title="Forecasting Error" message={error} />;
   }
 
-  const currentBldg =
-    commercialBldgs.find((b) => b.buildingId === selectedBldgId) || commercialBldgs[0];
   const currentMeter =
     residentialMeters.find((m) => m.householdId === selectedMeterId) || residentialMeters[0];
   const currentSite =
     regionalSites.find((s) => s.siteId === selectedSiteId) || regionalSites[0];
+  const commercialSeries = toPairedForecastSeries(pairedForecast);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
@@ -148,7 +186,11 @@ export const DemandForecastingPage: React.FC = () => {
         badge={
           <span className="gv-badge gv-badge-info">
             <Cpu size={12} />
-            <span>{sector === 'residential' ? 'Customer Bill Prediction · Gold replay in Models' : 'Demo forecast horizon'}</span>
+            <span>{sector === 'residential'
+              ? 'Customer Bill Prediction · Gold replay in Models'
+              : sector === 'commercial'
+                ? isVerifiedPairedForecast(pairedForecast) ? 'Commercial + total-grid models' : 'Verified paired forecast unavailable'
+                : 'Demo forecast horizon'}</span>
           </span>
         }
       />
@@ -340,11 +382,14 @@ export const DemandForecastingPage: React.FC = () => {
         >
           {sector === 'commercial' && (
             <>
-              <span>Site: <strong style={{ color: 'var(--gv-color-grid-blue)' }}>{currentBldg.siteId}</strong></span>
-              <span>Space Usage: <strong style={{ color: 'var(--gv-text-primary)' }}>{currentBldg.primarySpaceUsage}</strong></span>
-              <span>Floor Area: <strong style={{ fontFamily: 'var(--gv-font-mono)' }}>{currentBldg.sqm.toLocaleString()} m²</strong></span>
-              <span>Built: <strong>{currentBldg.yearBuilt}</strong></span>
-              <span>Dataset Split: <strong style={{ color: 'var(--gv-color-smart-teal)' }}>BDG2 Gold Test Split</strong></span>
+              <span>Building: <strong style={{ color: 'var(--gv-text-primary)' }}>{selectedBldgId || 'Unavailable'}</strong></span>
+              <span>Coarse-grid region: <strong style={{ color: 'var(--gv-color-grid-blue)' }}>{pairedForecast?.building['id.grid.coarse'] ?? 'Unmapped'}</strong></span>
+              {pairedForecast && isVerifiedPairedForecast(pairedForecast) && (
+                <>
+                  <span>Commercial source: <strong>{pairedForecast.commercial_forecast.model.model_name} · {pairedForecast.commercial_forecast.model.model_version}</strong></span>
+                  <span>Government source: <strong>{pairedForecast.government_forecast.model.model_name} · {pairedForecast.government_forecast.model.model_version}</strong></span>
+                </>
+              )}
             </>
           )}
 
@@ -375,35 +420,35 @@ export const DemandForecastingPage: React.FC = () => {
         {sector === 'commercial' && (
           <>
             <div className="gv-card">
-              <span className="gv-text-muted" style={{ fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase' }}>Recent Observed Demand</span>
+              <span className="gv-text-muted" style={{ fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase' }}>Building Forecast</span>
               <div style={{ fontSize: '1.8rem', fontWeight: 800, color: 'var(--gv-text-primary)', marginTop: '0.35rem' }}>
-                {currentBldg.recentDemandKwh} <span style={{ fontSize: '0.9rem', color: 'var(--gv-text-secondary)' }}>kWh</span>
+                {pairedLoading ? 'Loading…' : commercialSeries.length ? `${commercialSeries[0].forecastDemand.toLocaleString()} kWh` : '—'}
               </div>
-              <p className="gv-text-muted" style={{ fontSize: '0.72rem', marginTop: '0.35rem' }}>Observed at {currentBldg.lastTimestamp}</p>
+              <p className="gv-text-muted" style={{ fontSize: '0.72rem', marginTop: '0.35rem' }}>{isVerifiedPairedForecast(pairedForecast) ? pairedForecast.commercial_forecast.model.model_name : 'No verified commercial model output'}</p>
             </div>
 
             <div className="gv-card">
-              <span className="gv-text-muted" style={{ fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase' }}>Model Predicted Demand</span>
+              <span className="gv-text-muted" style={{ fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase' }}>Total Grid Forecast</span>
               <div style={{ fontSize: '1.8rem', fontWeight: 800, color: 'var(--gv-color-grid-blue)', marginTop: '0.35rem' }}>
-                {currentBldg.predictedDemandKwh} <span style={{ fontSize: '0.9rem', color: 'var(--gv-text-secondary)' }}>kWh</span>
+                {pairedLoading ? 'Loading…' : commercialSeries.length ? `${commercialSeries[0].totalGridDemandPrediction.toLocaleString()} kWh` : '—'}
               </div>
-              <p className="gv-text-muted" style={{ fontSize: '0.72rem', marginTop: '0.35rem' }}>LightGBM commercial-v1 inference</p>
+              <p className="gv-text-muted" style={{ fontSize: '0.72rem', marginTop: '0.35rem' }}>{isVerifiedPairedForecast(pairedForecast) ? `${pairedForecast.government_forecast.model.model_name} · all building types` : 'No verified government model output'}</p>
             </div>
 
             <div className="gv-card">
-              <span className="gv-text-muted" style={{ fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase' }}>Absolute Forecast Error</span>
+              <span className="gv-text-muted" style={{ fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase' }}>Forecast Horizon</span>
               <div style={{ fontSize: '1.8rem', fontWeight: 800, color: 'var(--gv-color-smart-teal)', marginTop: '0.35rem' }}>
-                {currentBldg.absErrorKwh} <span style={{ fontSize: '0.9rem', color: 'var(--gv-text-secondary)' }}>kWh</span>
+                {commercialSeries.length ? `${commercialSeries.length} steps` : '—'}
               </div>
-              <p className="gv-text-muted" style={{ fontSize: '0.72rem', marginTop: '0.35rem' }}>Percentage Variance: {currentBldg.pctError}%</p>
+              <p className="gv-text-muted" style={{ fontSize: '0.72rem', marginTop: '0.35rem' }}>{commercialSeries.length ? `Through ${commercialSeries[commercialSeries.length - 1].timestamp}` : 'No paired forecast timestamps'}</p>
             </div>
 
             <div className="gv-card">
-              <span className="gv-text-muted" style={{ fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase' }}>10-Hour Forward Outlook</span>
+              <span className="gv-text-muted" style={{ fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase' }}>Forecast status</span>
               <div style={{ fontSize: '1.8rem', fontWeight: 800, color: 'var(--gv-color-energy-amber)', marginTop: '0.35rem' }}>
-                4,250 <span style={{ fontSize: '0.9rem', color: 'var(--gv-text-secondary)' }}>kWh</span>
+                {pairedLoading ? 'Loading' : pairedError ? 'Unavailable' : commercialSeries.length ? 'Ready' : 'Empty'}
               </div>
-              <p className="gv-text-muted" style={{ fontSize: '0.72rem', marginTop: '0.35rem' }}>Autoregressive multi-step horizon total</p>
+              <p className="gv-text-muted" style={{ fontSize: '0.72rem', marginTop: '0.35rem' }}>{pairedForecast?.generated_at ?? pairedError ?? pairedNotice ?? 'Awaiting model output'}</p>
             </div>
           </>
         )}
@@ -485,22 +530,35 @@ export const DemandForecastingPage: React.FC = () => {
       <ChartCard
         title={
           sector === 'commercial'
-            ? `${currentBldg.buildingId} Hourly Demand & 10-Hour Forecast Horizon`
+            ? `${selectedBldgId || 'Commercial building'} Forecasts by Coarse Grid`
             : sector === 'residential'
             ? `${currentMeter.householdId} Daily Consumption & 10-Day Projected Horizon`
             : `Site ${currentSite.siteId} Regional Demand Profile & Outlook`
         }
-        subtitle="Chronological historical observations seamlessly connected to model forecast trajectory"
+        subtitle={sector === 'commercial' && isVerifiedPairedForecast(pairedForecast)
+          ? `Grid ${pairedForecast.building['id.grid.coarse']} · commercial and total-grid demand are separate model outputs`
+          : 'Forecast outputs are shown only when their source models are verified.'}
         height="360px"
         footer={
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--gv-text-muted)' }}>
-            <span>Solid curve: Verified Historical Actuals • Dashed line: Model Predicted Future Horizon</span>
-            <span>Forecast Demarcation: Current Dataset Time Barrier</span>
+            <span>{sector === 'commercial' ? 'Commercial building model · Total-grid government model' : 'Solid curve: Historical actuals · Dashed line: forecast'}</span>
+            <span>{sector === 'commercial' ? 'Both models aligned by timestamp and forecast horizon' : 'Forecast demarcation: current dataset time barrier'}</span>
           </div>
         }
       >
+        {sector === 'commercial' && pairedLoading ? (
+          <div role="status" aria-live="polite" style={{ padding: '2rem', textAlign: 'center' }}>Loading commercial and government forecasts…</div>
+        ) : sector === 'commercial' && pairedError ? (
+          <ErrorState title="Paired forecast unavailable" message={pairedError} onRetry={() => void loadCommercialPair(selectedBldgId)} />
+        ) : sector === 'commercial' && (pairedNotice || commercialSeries.length === 0) ? (
+          <div role="status" style={{ padding: '2rem', textAlign: 'center' }}>
+            <p>{pairedNotice ?? 'No paired forecast history is available for this building and grid.'}</p>
+          </div>
+        ) : sector !== 'commercial' && timeSeries.length === 0 ? (
+          <div role="status" style={{ padding: '2rem', textAlign: 'center' }}>No forecast history is available.</div>
+        ) : (
         <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart data={timeSeries} margin={{ top: 15, right: 25, left: 0, bottom: 0 }}>
+          <ComposedChart data={sector === 'commercial' ? commercialSeries : timeSeries} margin={{ top: 15, right: 25, left: 0, bottom: 0 }}>
             <defs>
               <linearGradient id="actualGradient" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="5%" stopColor="var(--gv-color-smart-teal)" stopOpacity={0.25} />
@@ -530,10 +588,12 @@ export const DemandForecastingPage: React.FC = () => {
             />
             <Legend verticalAlign="top" align="right" wrapperStyle={{ fontSize: 11, paddingBottom: 10 }} />
             <ReferenceLine x="00:00" stroke="#EF4444" strokeDasharray="3 3" label={{ value: 'Forecast Horizon Start', fill: '#EF4444', fontSize: 10, position: 'insideTopLeft' }} />
-            <Area type="monotone" dataKey="actualDemand" name="Historical Actual" stroke="var(--gv-color-smart-teal)" fill="url(#actualGradient)" strokeWidth={2} dot={{ r: 3 }} connectNulls={false} />
-            <Line type="monotone" dataKey="forecastDemand" name="Model Forecast Horizon" stroke="var(--gv-color-energy-amber)" strokeWidth={2.5} strokeDasharray="5 5" dot={{ r: 4, fill: 'var(--gv-color-energy-amber)' }} connectNulls={false} />
+            {sector !== 'commercial' && <Area type="monotone" dataKey="actualDemand" name="Historical Actual" stroke="var(--gv-color-smart-teal)" fill="url(#actualGradient)" strokeWidth={2} dot={{ r: 3 }} connectNulls={false} />}
+            <Line type="monotone" dataKey="forecastDemand" name={sector === 'commercial' ? `Commercial model · ${pairedForecast?.commercial_forecast.model.model_name}` : 'Model Forecast Horizon'} stroke="var(--gv-color-energy-amber)" strokeWidth={2.5} strokeDasharray="5 5" dot={{ r: 4, fill: 'var(--gv-color-energy-amber)' }} connectNulls={false} />
+            {sector === 'commercial' && <Line type="monotone" dataKey="totalGridDemandPrediction" name={`Government total-grid model · ${pairedForecast?.government_forecast.model.model_name}`} stroke="var(--gv-color-grid-blue)" strokeWidth={2.5} strokeDasharray="3 4" dot={{ r: 4, fill: 'var(--gv-color-grid-blue)' }} connectNulls={false} />}
           </ComposedChart>
         </ResponsiveContainer>
+        )}
       </ChartCard>
 
       {/* Domain-Specific Visual Breakdown Component */}

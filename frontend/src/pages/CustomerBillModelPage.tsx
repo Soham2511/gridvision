@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Cpu, Play, ChevronLeft, ChevronRight, Database, CheckCircle2 } from 'lucide-react';
 import { ErrorState } from '../components/common/ErrorState';
 import { LoadingSkeleton } from '../components/common/LoadingSkeleton';
@@ -137,6 +138,7 @@ export const CustomerBillModelPage: React.FC = () => {
           </span>
         }
       />
+      <Link to="/models" className="gv-text-muted">Back to all model workbenches</Link>
 
       {error && (
         <div role="alert" className="gv-card" style={{ color: 'var(--gv-status-danger)' }}>

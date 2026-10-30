@@ -12,6 +12,7 @@ COPY scripts/filter_requirements.py ./scripts/filter_requirements.py
 RUN python scripts/filter_requirements.py requirements.txt /tmp/backend-requirements.txt --groups backend model-serving \
     && pip install --no-cache-dir -r /tmp/backend-requirements.txt
 COPY backend/app ./app
+COPY training ./training
 COPY backend/run.py ./run.py
 
 EXPOSE 5000

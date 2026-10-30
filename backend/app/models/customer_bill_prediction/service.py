@@ -184,16 +184,29 @@ class CustomerBillPredictionService:
 
     def get_model_catalog(self) -> list[dict[str, Any]]:
         catalog = []
+        if hasattr(self.model_provider, "get_horizon_model_status"):
+            forecast_status = self.model_provider.get_horizon_model_status()
+        else:
+            forecast_status = self.model_provider.get_model_status().get("models", {})
         for model_id, definition in MODEL_REGISTRY.items():
             if model_id == "customer-bill-prediction":
                 catalog.append(self.get_summary())
                 continue
+            provider_key = {
+                "commercial-building-forecast": "commercial",
+                "government-load-forecast": "government",
+            }.get(model_id)
+            status = forecast_status.get(provider_key, {}) if provider_key else {}
+            ready = status.get("status") == "ready"
             catalog.append({
                 **definition.as_dict(),
-                "status": "unavailable",
-                "provider": "not_registered",
-                "modelVersion": "not_deployed",
-                "selectedModel": "not_deployed",
+                "status": "configured" if ready else "unavailable",
+                "provider": status.get("provider", "not_deployed"),
+                "modelVersion": status.get("model_version") or "not_deployed",
+                "selectedModel": status.get("model_alias", "not_deployed") if ready else "not_deployed",
+                "testMetrics": status.get("test_metrics", {}),
+                "features": status.get("features", []),
+                **({} if ready else {"error": "Registered champion model or its forecast data is unavailable."}),
             })
         return catalog
 

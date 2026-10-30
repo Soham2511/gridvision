@@ -17,6 +17,9 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 from lightgbm import LGBMRegressor
+from mlflow.models import infer_signature
+from mlflow.tracking import MlflowClient
+from training.government_load.mlflow_model import GovernmentHybridModel
 
 from training.government_load.config import PipelineSettings
 from training.government_load.sql import identifier, sql_string
@@ -25,6 +28,10 @@ TRAIN_START = "2018-01-01 00:00:00"
 TRAIN_END = "2018-10-01 00:00:00"
 VALIDATION_END = "2018-12-01 00:00:00"
 EXPERIMENT_NAME = "gridvision-government-load-forecasting"
+REGISTERED_MODEL_NAME = os.getenv(
+    "GOVERNMENT_MLFLOW_MODEL_NAME", "gridvision-government-load-forecast"
+)
+REGISTERED_MODEL_ALIAS = os.getenv("GOVERNMENT_MLFLOW_MODEL_ALIAS", "champion")
 
 
 def _load_features(path: Path) -> list[str]:
@@ -692,6 +699,24 @@ def train_hybrid_model(settings: PipelineSettings) -> dict[str, Any]:
             str(run_artifact_dir),
             artifact_path="training_artifacts",
         )
+        example = x_validation.head(5).copy()
+        example["grid_id"] = validation_frame["id.grid.coarse"].head(5).to_numpy()
+        signature = infer_signature(example, validation_predictions["hybrid"][:5])
+        mlflow.pyfunc.log_model(
+            artifact_path="government_model",
+            python_model=GovernmentHybridModel(),
+            artifacts={"bundle": str(model_path)},
+            signature=signature,
+            input_example=example,
+            code_paths=[str(Path(__file__).resolve().parents[1])],
+        )
+        registered = mlflow.register_model(
+            model_uri=f"runs:/{run_id}/government_model",
+            name=REGISTERED_MODEL_NAME,
+        )
+        MlflowClient(tracking_uri=tracking_uri).set_registered_model_alias(
+            REGISTERED_MODEL_NAME, REGISTERED_MODEL_ALIAS, registered.version
+        )
     result = {
         "model_path": str(model_path),
         "training_rows": training_rows,
@@ -700,6 +725,9 @@ def train_hybrid_model(settings: PipelineSettings) -> dict[str, Any]:
         "validation_mae": validation_mae,
         "validation_metrics": validation_metrics,
         "mlflow_run_id": run_id,
+        "registered_model": REGISTERED_MODEL_NAME,
+        "registered_version": str(registered.version),
+        "model_alias": REGISTERED_MODEL_ALIAS,
         "model_card_path": str(model_card_path),
         "metrics_path": str(metrics_path),
         "training_log_path": str(training_log_path),

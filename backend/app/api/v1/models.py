@@ -51,6 +51,50 @@ def get_model_catalog():
         ) from exc
 
 
+@bp.route("/models/<model_id>/entities", methods=["GET"])
+def get_forecast_model_entities(model_id: str):
+    """List entity inputs supported by a commercial or government model."""
+    service = current_app.extensions["forecast_service"]
+    if model_id == "commercial-building-forecast":
+        items = service.get_commercial_buildings()
+        return success_response({"items": items})
+    if model_id == "government-load-forecast":
+        items = service.get_regional_sites()
+        return success_response({"items": items})
+    raise ResourceNotFoundError(f"Forecast model '{model_id}' was not found.")
+
+
+@bp.route("/models/<model_id>/predict", methods=["POST"])
+def predict_forecast_model(model_id: str):
+    """Run a verified chronological holdout replay through the registered model."""
+    provider = current_app.extensions["model_provider"]
+    service = current_app.extensions["forecast_service"]
+    payload = request.get_json(force=True, silent=False) or {}
+    if model_id == "commercial-building-forecast":
+        entity_id = str(payload.get("entity_id", ""))
+        if not entity_id.isdigit() or int(entity_id) < 1:
+            raise AppError("entity_id must be a positive integer.", code="INVALID_INPUT", status_code=422)
+        sector = "commercial"
+    elif model_id == "government-load-forecast":
+        entity_id = str(payload.get("entity_id", ""))
+        if not entity_id.isdigit() or int(entity_id) < 1:
+            raise AppError("entity_id must be a positive integer.", code="INVALID_INPUT", status_code=422)
+        sector = "government"
+    else:
+        raise ResourceNotFoundError(f"Forecast model '{model_id}' was not found.")
+    horizon = payload.get("horizon_hours", 24)
+    if isinstance(horizon, bool) or not isinstance(horizon, int) or not 1 <= horizon <= 24:
+        raise AppError("horizon_hours must be an integer from 1 to 24.", code="INVALID_INPUT", status_code=422)
+    status = provider.get_forecast_model_info(sector)
+    if status.get("is_demo"):
+        raise AppError("The registered champion model is unavailable.", code="MODEL_UNAVAILABLE", status_code=503)
+    return success_response({
+        "model": status,
+        "entity_id": entity_id,
+        "horizon": provider.predict_horizon(sector, entity_id, horizon),
+    })
+
+
 @bp.route("/models/customer-bill-prediction/records", methods=["GET"])
 def get_customer_records():
     """List the latest gold-dataset record for each customer entity."""

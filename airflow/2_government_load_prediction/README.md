@@ -94,7 +94,7 @@ To train from an existing prepared parquet without running automation or
 reprocessing customer data, use the government CLI directly:
 
 ```bash
-cd /mnt/d/GridVision
+cd /mnt/d/Ps_Capstone_project/gridvision_2
 source ~/.venvs/gridvision/bin/activate
 export MLFLOW_TRACKING_URI=http://127.0.0.1:15001
 PYTHONPATH=airflow/2_government_load_prediction \
@@ -107,9 +107,9 @@ For a successful Airflow run using that same prepared file, set
 
 ```bash
 export AIRFLOW_HOME="$HOME/.gridvision-airflow"
-export AIRFLOW__CORE__DAGS_FOLDER=/mnt/d/GridVision/airflow
+export AIRFLOW__CORE__DAGS_FOLDER=/mnt/d/Ps_Capstone_project/gridvision_2/airflow
 export AIRFLOW__CORE__LOAD_EXAMPLES=False
-export AIRFLOW__LOGGING__BASE_LOG_FOLDER=/mnt/d/GridVision/logs/airflow/task_logs
+export AIRFLOW__LOGGING__BASE_LOG_FOLDER=/mnt/d/Ps_Capstone_project/gridvision_2/logs/airflow/task_logs
 export MLFLOW_TRACKING_URI=http://127.0.0.1:15001
 export GOVERNMENT_PIPELINE_REUSE_PREPARED=1
 airflow dags test government_load_forecasting 2026-10-29

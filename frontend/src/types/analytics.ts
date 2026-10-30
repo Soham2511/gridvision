@@ -54,6 +54,38 @@ export interface CommercialBuilding {
   lastTimestamp: string;
 }
 
+export interface ForecastModelIdentity {
+  model_name: string;
+  model_version: string;
+  provider: string;
+  is_demo: boolean;
+}
+
+export interface PairedForecastPoint {
+  timestamp: string;
+  horizon_hours: number;
+  commercial_prediction: number;
+  total_grid_demand_prediction: number;
+}
+
+export interface PairedCommercialForecast {
+  generated_at: string;
+  building: { building_id: string; 'id.grid.coarse': number };
+  commercial_forecast: {
+    source: 'commercial_building_model';
+    model: ForecastModelIdentity;
+    horizon: { timestamp: string; horizon_hours: number; prediction: number }[];
+  };
+  government_forecast: {
+    source: 'government_grid_model';
+    scope: 'total_grid_demand';
+    grid_id: number;
+    model: ForecastModelIdentity;
+    horizon: { timestamp: string; horizon_hours: number; prediction: number }[];
+  };
+  paired_horizon: PairedForecastPoint[];
+}
+
 export interface ResidentialMeter {
   householdId: string;
   dailyKwh: number;

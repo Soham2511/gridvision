@@ -3,7 +3,7 @@ services:
     image: gridvision-backend:local
     restart: unless-stopped
     build:
-      context: .
+      context: ${GRIDVISION_BUILD_CONTEXT:-.}
       dockerfile: Dockerfile.backend
     command:
       - python
@@ -19,6 +19,8 @@ services:
       - 0.0.0.0
       - --port
       - "5001"
+      - --workers
+      - "1"
     volumes:
       - ${GRIDVISION_DATA_DIR:?Set GRIDVISION_DATA_DIR}/mlflow:/mlflow
     ports:
@@ -38,7 +40,7 @@ services:
     image: gridvision-backend:local
     restart: unless-stopped
     build:
-      context: .
+      context: ${GRIDVISION_BUILD_CONTEXT:-.}
       dockerfile: Dockerfile.backend
     environment:
       FLASK_ENV: production
@@ -48,13 +50,21 @@ services:
       MLFLOW_TRACKING_URI: http://mlflow:5001
       MLFLOW_MODEL_NAME: ${MLFLOW_MODEL_NAME:-customer-bill-prediction}
       MLFLOW_MODEL_ALIAS: ${MLFLOW_MODEL_ALIAS:-champion}
+      COMMERCIAL_MLFLOW_MODEL_NAME: ${COMMERCIAL_MLFLOW_MODEL_NAME:-gridvision-commercial-building-forecast}
+      GOVERNMENT_MLFLOW_MODEL_NAME: ${GOVERNMENT_MLFLOW_MODEL_NAME:-gridvision-government-load-forecast}
       CUSTOMER_TARIFF_INR_PER_KWH: ${CUSTOMER_TARIFF_INR_PER_KWH:-10.0}
       CUSTOMER_GOLD_DATASET_PATH: /data/gold/customer_gold.parquet
       CUSTOMER_MODEL_METADATA_PATH: /models/customer_bill_prediction.metadata.json
-      CORS_ORIGINS: http://localhost:8080,http://127.0.0.1:8080
+      COMMERCIAL_FORECAST_DATA_PATH: /data/gold/commercial_gold.parquet
+      COMMERCIAL_FORECAST_MODEL_PATH: /models/commercial/building_forecast.joblib
+      GOVERNMENT_FORECAST_DATA_PATH: /data/government/training_ready_2018.parquet
+      GOVERNMENT_FORECAST_MODEL_PATH: /data/government/hybrid_grid_2018.joblib
+      CORS_ORIGINS: http://localhost:8082,http://127.0.0.1:8082
     volumes:
       - ${GRIDVISION_DATA_DIR:?Set GRIDVISION_DATA_DIR}/mlflow:/mlflow:ro
       - ${GRIDVISION_DATA_DIR:?Set GRIDVISION_DATA_DIR}/gold:/data/gold:ro
+      - ${GRIDVISION_DATA_DIR:?Set GRIDVISION_DATA_DIR}/airflow/government:/data/government:ro
+      - ./models/commercial:/models/commercial:ro
       - ./models/customer_bill_prediction.metadata.json:/models/customer_bill_prediction.metadata.json:ro
       - ${GRIDVISION_LOG_DIR:-./logs}:/logs
     ports:
@@ -76,12 +86,12 @@ services:
   frontend:
     restart: unless-stopped
     build:
-      context: .
+      context: ${GRIDVISION_BUILD_CONTEXT:-.}
       dockerfile: Dockerfile.frontend
       args:
-        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8080/api/v1}
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8082/api/v1}
     depends_on:
       backend:
         condition: service_healthy
     ports:
-      - "8080:80"
+      - "${GRIDVISION_FRONTEND_HOST_PORT:-8082}:80"

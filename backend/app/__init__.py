@@ -16,6 +16,7 @@ from app.api.v1 import api_v1_bp
 from app.providers.sample_data_provider import SampleDataProvider
 from app.providers.mock_model_provider import DevelopmentModelProvider
 from app.providers.mlflow_adapter import MLflowModelAdapter
+from app.providers.trained_forecast_provider import TrainedForecastProvider
 from app.services.health_service import HealthService
 from app.services.forecast_service import ForecastService
 from app.services.dashboard_service import DashboardService
@@ -74,7 +75,7 @@ def create_app(config_class: type[BaseConfig] | None = None) -> Flask:
 
     model_provider_type = app.config.get("MODEL_PROVIDER", "development").lower()
     if model_provider_type == "mlflow":
-        model_provider = MLflowModelAdapter(
+        customer_model_provider = MLflowModelAdapter(
             tracking_uri=app.config.get("MLFLOW_TRACKING_URI"),
             model_alias=app.config.get("MLFLOW_MODEL_ALIAS", "champion"),
             model_name=app.config.get(
@@ -84,8 +85,20 @@ def create_app(config_class: type[BaseConfig] | None = None) -> Flask:
                 "CUSTOMER_TARIFF_INR_PER_KWH", 10.0
             ),
         )
+        model_provider = TrainedForecastProvider(
+            customer_provider=customer_model_provider,
+            commercial_data=app.config["COMMERCIAL_FORECAST_DATA_PATH"],
+            commercial_model=app.config["COMMERCIAL_FORECAST_MODEL_PATH"],
+            government_data=app.config["GOVERNMENT_FORECAST_DATA_PATH"],
+            government_model=app.config["GOVERNMENT_FORECAST_MODEL_PATH"],
+            tracking_uri=app.config.get("MLFLOW_TRACKING_URI", ""),
+            commercial_model_name=app.config["COMMERCIAL_MLFLOW_MODEL_NAME"],
+            government_model_name=app.config["GOVERNMENT_MLFLOW_MODEL_NAME"],
+            model_alias=app.config["MLFLOW_MODEL_ALIAS"],
+        )
     else:
         model_provider = DevelopmentModelProvider()
+        customer_model_provider = model_provider
 
     # Instantiate business services
     health_svc = HealthService(data_provider, model_provider)
@@ -100,7 +113,7 @@ def create_app(config_class: type[BaseConfig] | None = None) -> Flask:
         dataset_path=app.config["CUSTOMER_GOLD_DATASET_PATH"],
         metadata_path=app.config["CUSTOMER_MODEL_METADATA_PATH"],
         artifact_path=app.config["CUSTOMER_MODEL_ARTIFACT_PATH"],
-        model_provider=model_provider,
+        model_provider=customer_model_provider,
         tariff_inr_per_kwh=app.config["CUSTOMER_TARIFF_INR_PER_KWH"],
     )
 
