@@ -1,0 +1,18 @@
+FROM apache/airflow:2.10.5-python3.10
+
+USER root
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libgomp1 \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+USER airflow
+WORKDIR /opt/gridvision
+
+COPY requirements.txt ./requirements.txt
+COPY scripts/filter_requirements.py ./scripts/filter_requirements.py
+RUN python scripts/filter_requirements.py requirements.txt /tmp/airflow-requirements.txt \
+    --groups airflow model-serving \
+    && pip install --no-cache-dir \
+        --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-2.10.5/constraints-3.10.txt" \
+        -r /tmp/airflow-requirements.txt

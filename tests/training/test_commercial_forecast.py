@@ -17,10 +17,12 @@ from sklearn.base import BaseEstimator, RegressorMixin
 
 from training.commercial_forecast.config import CommercialTrainingSettings
 from training.commercial_forecast.features import FEATURE_COLUMNS, TARGET_COLUMN
+import training.commercial_forecast.modeling as commercial_modeling
 from training.commercial_forecast.modeling import (
     CATEGORICAL_FEATURES,
     _features,
     _make_pipeline,
+    _validate_manifest,
     chronological_boundaries,
     train_commercial_model,
 )
@@ -151,6 +153,49 @@ def test_chronological_boundaries_are_strict_and_ordered() -> None:
     assert timestamps.min() < train_end < validation_end < timestamps.max()
     with pytest.raises(ValueError, match="10 distinct"):
         chronological_boundaries(pd.Series(pd.date_range("2024-01-01", periods=5, freq="h")))
+
+
+def test_manifest_accepts_compose_container_path_for_host_gold(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    data_root = tmp_path / "data"
+    gold_path = data_root / "gold" / "commercial_gold.parquet"
+    manifest_path = tmp_path / "latest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "quality_passed": True,
+                "dataset_path": "/opt/gridvision/data/gold/commercial_gold.parquet",
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(commercial_modeling, "DATA_ROOT", data_root)
+
+    manifest = _validate_manifest(manifest_path, gold_path)
+
+    assert manifest["quality_passed"] is True
+
+
+def test_manifest_rejects_unrelated_dataset_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    data_root = tmp_path / "data"
+    gold_path = data_root / "gold" / "commercial_gold.parquet"
+    manifest_path = tmp_path / "latest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "quality_passed": True,
+                "dataset_path": "/tmp/unrelated/gold/commercial_gold.parquet",
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(commercial_modeling, "DATA_ROOT", data_root)
+
+    with pytest.raises(ValueError, match="different dataset"):
+        _validate_manifest(manifest_path, gold_path)
 
 
 @pytest.mark.skipif(

@@ -80,6 +80,24 @@ docker compose version
 If `docker compose` is unavailable, enable Docker Desktop WSL integration for
 that distribution or install the Compose plugin before continuing.
 
+### If starting Docker Compose directly
+
+`automation.py` sets the Compose variables for its own run. If you start the
+services with `docker compose` yourself, create a root `.env` file first so
+Compose knows where the data directory is and the backend has a private signing
+key. From the repository root in WSL/Linux, run:
+
+```bash
+printf 'GRIDVISION_DATA_DIR=%s/data\nSECRET_KEY=%s\n' "$PWD" "$(openssl rand -hex 32)" > .env
+```
+
+The `.env` file is git-ignored. Keep the `SECRET_KEY` private and retain it
+between restarts. Then start the services with:
+
+```bash
+docker compose up -d --build
+```
+
 ## 4. Run the complete setup
 
 With the source file in place and the WSL environment active:

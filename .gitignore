@@ -75,5 +75,6 @@ frontend/.env
 # IDE & OS files
 .vscode/
 .idea/
+.slingshot/
 .DS_Store
 Thumbs.db

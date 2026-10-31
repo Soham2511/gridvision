@@ -51,7 +51,8 @@ MLFLOW_HOST_URI = os.getenv("MLFLOW_TRACKING_URI", f"http://127.0.0.1:{MLFLOW_HO
 MLFLOW_CONTAINER_URI = "http://mlflow:5001"
 FRONTEND_URL = "http://127.0.0.1:8082"
 BACKEND_HEALTH_URL = "http://127.0.0.1:5000/api/v1/health"
-AIRFLOW_URL = "http://127.0.0.1:8081"
+AIRFLOW_HOST_PORT = os.getenv("GRIDVISION_AIRFLOW_HOST_PORT", "8081")
+AIRFLOW_URL = f"http://127.0.0.1:{AIRFLOW_HOST_PORT}"
 steps: list[dict[str, Any]] = []
 
 
@@ -85,19 +86,32 @@ def run_step(name: str, action: Callable[[], Any]) -> Any:
     return result
 
 
-def _airflow_command() -> list[str]:
+def _airflow_command(compose_command: list[str] | None = None) -> list[str]:
+    if platform.system() == "Darwin":
+        if not compose_command:
+            raise RuntimeError(
+                "Docker Compose is required to run Airflow on macOS. "
+                "Start Docker Desktop and install the Compose plugin."
+            )
+        return compose_command + [
+            "run",
+            "--rm",
+            "--no-deps",
+            "airflow",
+            "airflow",
+        ]
     if platform.system() == "Windows":
         raise RuntimeError(
             "Apache Airflow is not supported on native Windows. Run automation.py "
-            "from WSL2 with the Airflow dependencies installed in the WSL Python environment."
+            "from WSL2 or use Docker Desktop with WSL integration."
         )
     executable = shutil.which("airflow")
     if executable:
         return [executable]
     raise FileNotFoundError(
         "Airflow CLI was not found. Install the airflow and model-serving groups "
-        "from the root requirements.txt in WSL2, using the Airflow constraints "
-        "URL documented in the README."
+        "from the root requirements.txt using the Airflow constraints URL "
+        "documented in the README."
     )
 
 
@@ -105,8 +119,8 @@ def _compose_command() -> list[str]:
     docker = shutil.which("docker")
     if not docker:
         raise FileNotFoundError(
-            "Docker CLI was not found. Install/start Docker Desktop with WSL "
-            "integration enabled, or install Docker Engine and Compose on Linux."
+            "Docker CLI was not found. Install and start Docker Desktop, or install "
+            "Docker Engine and Compose on Linux."
         )
     command = [docker, "compose", "version"]
     result = subprocess.run(
@@ -136,9 +150,9 @@ def _compose_command() -> list[str]:
         if not details:
             details = "Docker returned no diagnostic output."
         raise RuntimeError(
-            "Docker Compose could not run. Check Docker Desktop WSL integration "
-            "for this distro or install Docker Compose (the Docker Compose plugin "
-            "or the standalone docker-compose command). "
+            "Docker Compose could not run. Check that Docker Desktop or Docker "
+            "Engine is running and install Docker Compose (the Docker Compose "
+            "plugin or the standalone docker-compose command). "
             f"Command: {' '.join(command)}; exit code: {result.returncode}. "
             f"Details:\n{details}"
         )
@@ -153,6 +167,7 @@ def _stage_wsl_build_context() -> tempfile.TemporaryDirectory[str] | None:
     context = tempfile.TemporaryDirectory(prefix="gridvision-docker-context-")
     root = Path(context.name)
     shutil.copy2(PROJECT_ROOT / "Dockerfile.backend", root / "Dockerfile.backend")
+    shutil.copy2(PROJECT_ROOT / "Dockerfile.airflow", root / "Dockerfile.airflow")
     shutil.copy2(PROJECT_ROOT / "Dockerfile.frontend", root / "Dockerfile.frontend")
     shutil.copy2(PROJECT_ROOT / "requirements.txt", root / "requirements.txt")
     ignored_python_cache = shutil.ignore_patterns("__pycache__", "*.pyc")
@@ -375,9 +390,22 @@ def _wait_for_http(url: str, label: str, timeout: float = 180.0) -> str:
 
 
 def _start_airflow_ui(
-    airflow_command: list[str], env: dict[str, str]
+    airflow_command: list[str],
+    env: dict[str, str],
+    compose_command: list[str] | None = None,
 ) -> dict[str, str]:
     health_url = f"{AIRFLOW_URL}/health"
+    if platform.system() == "Darwin":
+        if not compose_command:
+            raise RuntimeError("Docker Compose is required to start Airflow on macOS.")
+        _compose(compose_command, ["up", "-d", "airflow"], env)
+        _wait_for_http(health_url, "Airflow UI", timeout=240)
+        return {
+            "url": AIRFLOW_URL,
+            "log": str(LOG_ROOT / "airflow" / "standalone.log"),
+            "status": "running in Docker",
+        }
+
     if _http_healthy(health_url):
         return {"url": AIRFLOW_URL, "status": "already running"}
 
@@ -449,6 +477,9 @@ def main(argv: list[str] | None = None) -> int:
     env["GRIDVISION_DATA_DIR"] = str(DATA_ROOT)
     env["GRIDVISION_LOG_DIR"] = str(LOG_ROOT)
     env["GRIDVISION_SOURCE_PATH"] = str(SOURCE_PATH)
+    env["GRIDVISION_SOURCE_FILENAME"] = SOURCE_PATH.name
+    if hasattr(os, "getuid"):
+        env.setdefault("AIRFLOW_UID", str(os.getuid()))
     env.setdefault("SECRET_KEY", secrets.token_urlsafe(48))
     env.setdefault("MLFLOW_MODEL_NAME", DEFAULT_MODEL_NAME)
     env.setdefault("MLFLOW_MODEL_ALIAS", DEFAULT_ALIAS)
@@ -480,28 +511,36 @@ def main(argv: list[str] | None = None) -> int:
                 raise FileNotFoundError(
                     f"Required raw source dataset is missing: {SOURCE_PATH}"
                 )
-            airflow = _airflow_command()
             compose = _compose_command()
-            required_modules = (
+            airflow = _airflow_command(compose)
+            required_modules = [
                 "duckdb",
                 "lightgbm",
                 "mlflow",
                 "pandas",
                 "pyarrow",
                 "sklearn",
-            )
+            ]
+            if platform.system() != "Darwin":
+                required_modules.append("airflow")
             missing_modules = [
                 module for module in required_modules if find_spec(module) is None
             ]
             if missing_modules:
+                install_hint = (
+                    "Install the model-serving group from requirements.txt; "
+                    "Airflow runs in Docker on macOS."
+                    if platform.system() == "Darwin"
+                    else "Install the airflow and model-serving groups from "
+                    "requirements.txt using the Airflow constraints URL documented "
+                    "in the README."
+                )
                 raise RuntimeError(
                     "Required Python modules are missing: "
-                    f"{', '.join(missing_modules)}. Install the airflow and "
-                    "model-serving groups from the root requirements.txt in WSL2, "
-                    "using the Airflow constraints URL documented in the README."
+                    f"{', '.join(missing_modules)}. {install_hint}"
                 )
             return {
-                "airflow": airflow[0],
+                "airflow": airflow,
                 "docker_compose": compose,
                 "source": str(SOURCE_PATH),
             }
@@ -527,7 +566,7 @@ def main(argv: list[str] | None = None) -> int:
         )
 
         airflow = prerequisites["airflow"]
-        airflow_command = [airflow]
+        airflow_command = airflow
         skip_customer_pipeline = arguments.skip_data_pipeline or arguments.skip_all_data_pipelines
         skip_commercial_pipeline = arguments.skip_commercial_data_pipeline or arguments.skip_all_data_pipelines
         if arguments.skip_all_data_pipelines:
@@ -608,7 +647,7 @@ def main(argv: list[str] | None = None) -> int:
 
         airflow_service = run_step(
             "Start Airflow scheduler and web UI",
-            lambda: _start_airflow_ui(airflow_command, env),
+            lambda: _start_airflow_ui(airflow_command, env, compose),
         )
         stack_env = env.copy()
         stack_env["MODEL_PROVIDER"] = "mlflow"
@@ -637,7 +676,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  Backend API health: {BACKEND_HEALTH_URL}", flush=True)
         print(f"  Airflow UI: {AIRFLOW_URL}", flush=True)
         print(
-            f"  Airflow login details: {_airflow_process_log_path(env)}",
+            "  Airflow login details: "
+            + airflow_service.get("log", str(_airflow_process_log_path(env))),
             flush=True,
         )
         if "log" in airflow_service:

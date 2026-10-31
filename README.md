@@ -124,8 +124,8 @@ gridvision-app/
 
 ### Start the full stack
 
-1. Start Docker Desktop and enable its WSL integration for your Ubuntu distribution.
-2. In Ubuntu, activate the Python 3.10 environment with the Airflow and model-serving dependencies installed.
+1. Start Docker Desktop on macOS. On WSL2, enable Docker Desktop integration for your Ubuntu distribution; on Linux, ensure Docker Engine is running.
+2. Activate the Python 3.10 environment with the model-serving dependencies installed. Linux/WSL2 also needs the Airflow dependencies.
 3. From the project root, run:
 
    ```bash
@@ -136,7 +136,10 @@ gridvision-app/
 
 The script runs the customer, government, and commercial ETL/training workflows, then starts the MLflow, Airflow, backend, and frontend services. It prints a timed summary and leaves the services running. When all three ETL outputs are already prepared, run `python automation.py --skip-all-data-pipelines` to validate and reuse them while still training/registering each model and starting the services. See [Customer Bill Prediction: Data, Training, and Automation](#customer-bill-prediction-data-training-and-automation) for environment setup, output paths, and EC2 deployment steps.
 
-Run automation from WSL/Linux, not native Windows: Airflow is not supported on native Windows. By default, `GRIDVISION_DATA_DIR` points to the checkout's `data/` directory, and the source dataset is expected at `data/sample/training_sample_50000.parquet`.
+Run automation on macOS, Linux, or WSL2, not native Windows. macOS runs Airflow
+in Docker; Linux/WSL2 uses its Linux Airflow environment. By default,
+`GRIDVISION_DATA_DIR` points to the checkout's `data/` directory, and the source
+dataset is expected at `data/sample/training_sample_50000.parquet`.
 
 If starting Compose directly instead of using the automation script, create a root `.env` file (it is git-ignored) with `GRIDVISION_DATA_DIR` set to the absolute `data/` directory in your checkout and a private `SECRET_KEY`. Generate a strong key with:
 
@@ -349,21 +352,40 @@ building forecast alongside its associated government total-grid forecast.
 See the commercial guide for validated reuse options, feature order, MLflow
 artifacts, and logs.
 
-### Install the local Python dependencies (Python 3.10, WSL2)
+### Install the local Python dependencies (Python 3.10)
 
-Apache Airflow does not support native Windows. Run the pipeline in a WSL2 Linux terminal (the repository can remain on a mounted Windows drive); use a Linux virtual environment rather than the Windows `.venv`:
+On macOS, automation runs Airflow in Docker because Airflow's native process
+stack is not reliable on every macOS/Python combination. The model-training
+scripts still run in the host virtual environment. Install Docker Desktop and
+start it before running automation:
 
 ```bash
-cd /path/to/checkout
+brew install python@3.10 libomp
+cd /path/to/GridVision
+python3.10 -m venv ~/.venvs/gridvision
+source ~/.venvs/gridvision/bin/activate
+python scripts/filter_requirements.py requirements.txt /tmp/gridvision-model-requirements.txt \
+  --groups model-serving
+python -m pip install --upgrade pip
+python -m pip install -r /tmp/gridvision-model-requirements.txt
+```
+
+On Windows, run from WSL2 rather than native Windows. On Linux/WSL, install the
+Airflow and model-serving groups into the Linux Python 3.10 environment:
+
+```bash
 python3.10 -m venv ~/.venvs/gridvision
 source ~/.venvs/gridvision/bin/activate
 python scripts/filter_requirements.py requirements.txt /tmp/gridvision-automation-requirements.txt \
   --groups airflow model-serving
-pip install -r /tmp/gridvision-automation-requirements.txt \
+python -m pip install -r /tmp/gridvision-automation-requirements.txt \
   --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-2.10.5/constraints-3.10.txt"
 ```
 
-The backend container installs its own dependencies. If you also install the `backend` group in WSL for local API development, the Flask constraint in `requirements.txt` is compatible with the Airflow 2.10.5 constraints. Docker Desktop must be running with WSL integration enabled for the Ubuntu distribution used by the terminal (for example, `Ubuntu-22.04`). In Docker Desktop, open **Settings → Resources → WSL Integration**, enable integration for that distribution, and apply/restart Docker Desktop. In WSL, verify `docker --version` and `docker compose version` before running automation. The automation command expects `data/sample/training_sample_50000.parquet`.
+Docker Desktop must be running on macOS. In WSL, enable Docker Desktop integration
+for the Ubuntu distribution. Verify `docker --version` and `docker compose
+version` in the terminal you use to run automation. The source dataset is
+expected at `data/sample/training_sample_50000.parquet`.
 
 ### Run the full local workflow
 
@@ -373,13 +395,30 @@ source ~/.venvs/gridvision/bin/activate
 python automation.py
 ```
 
-The script checks dependencies and Docker, starts the persistent MLflow container, runs the Airflow bronze → silver → gold DAG, trains and registers the model, starts the Airflow scheduler/UI, builds and starts the API/UI containers, checks service health, and prints elapsed times and URLs. It generates a development secret if `SECRET_KEY` is not set. The services remain running after the script exits.
+The script checks dependencies and Docker, starts the persistent MLflow
+container, runs the Airflow data workflows, trains and registers the models,
+starts the Airflow scheduler/UI, builds and starts the API/UI containers,
+checks service health, and prints elapsed times and URLs. On macOS, Airflow and
+its DAG tasks run in the `airflow` Compose service; host Python is used for model
+training. On Linux/WSL, Airflow runs in the configured Linux Python environment.
+The script generates a development secret if `SECRET_KEY` is not set. Services
+remain running after the script exits.
 
-For a functional, resource-conscious local run, the silver stage deterministically samples **100 residential entities** by default (down from 1,000). The sample size can be changed with `CUSTOMER_SAMPLE_BUILDINGS` before running automation. The silver transform discovers residential entity profiles with bounded Arrow batches, avoiding a full-file DuckDB profile aggregation. DuckDB is limited to 2 GB and two worker threads by default, and spills intermediate data to `~/.cache/gridvision/duckdb_temp` when needed. Ensure the WSL filesystem containing that directory has free space. You can tune the DuckDB limits with `CUSTOMER_DUCKDB_MEMORY_LIMIT` and `CUSTOMER_DUCKDB_THREADS`. This smaller sample is intended for functional development; increase it as resources and scaling work allow.
+For a functional, resource-conscious local run, the silver stage deterministically samples **100 residential entities** by default (down from 1,000). The sample size can be changed with `CUSTOMER_SAMPLE_BUILDINGS` before running automation. The silver transform discovers residential entity profiles with bounded Arrow batches, avoiding a full-file DuckDB profile aggregation. DuckDB is limited to 2 GB and two worker threads by default, and spills intermediate data when needed. In the macOS Airflow container, spill files use the persistent Airflow volume; on Linux/WSL, the default is `~/.cache/gridvision/duckdb_temp`. Ensure the filesystem containing the spill directory has free space. You can tune the DuckDB limits with `CUSTOMER_DUCKDB_MEMORY_LIMIT` and `CUSTOMER_DUCKDB_THREADS`. This smaller sample is intended for functional development; increase it as resources and scaling work allow.
 
 To retrain and rebuild the services using already-prepared outputs without rerunning the ETL, run `python automation.py --skip-all-data-pipelines`. This validates Customer Gold and its quality manifest, the Government training-ready parquet, and Commercial Silver/Gold plus its quality manifest. It skips only data preparation; it still runs government, commercial, and customer training and model registration. `--skip-data-pipeline` skips only customer ETL, while `--skip-commercial-data-pipeline` skips only commercial ETL.
 
-Open the frontend at `http://localhost:8082` (configurable with `GRIDVISION_FRONTEND_HOST_PORT`). Airflow is available at `http://localhost:8081`; its generated login details are in `~/.gridvision-airflow/logs/standalone.log` when running from WSL with the project on `/mnt`, and otherwise in `logs/airflow/standalone.log`. The MLflow UI is at `http://localhost:15001` (host port configurable with `GRIDVISION_MLFLOW_HOST_PORT`). The API health endpoint is `http://localhost:5000/api/v1/health`. Stop the Docker services with `docker compose down`. To stop the Airflow process group started by automation, use the `standalone.pid` file next to its log: `kill -TERM -- -$(cat ~/.gridvision-airflow/logs/standalone.pid)` in the WSL `/mnt` case.
+Open the frontend at `http://localhost:8082` (configurable with
+`GRIDVISION_FRONTEND_HOST_PORT`). Airflow is at `http://localhost:8081`
+(configurable with `GRIDVISION_AIRFLOW_HOST_PORT`). Its
+generated login details are in `logs/airflow/standalone.log` on macOS and in the
+Airflow `standalone.log` file on Linux/WSL. The MLflow UI is at
+`http://localhost:15001` (host port configurable with
+`GRIDVISION_MLFLOW_HOST_PORT`). The API health endpoint is at
+`http://localhost:5000/api/v1/health`. Stop Docker services with
+`docker compose down`. On Linux/WSL, stop the separately started Airflow process
+using its `standalone.pid` file as described in the platform-specific setup
+guide.
 
 ### Data and model locations
 
