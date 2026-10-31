@@ -98,10 +98,31 @@ def _dataset_lineage(data_path: Path) -> dict[str, Any]:
             "dataset_path": str(data_path.resolve()),
         }
     manifest = json.loads(latest_manifest.read_text(encoding="utf-8"))
-    report_path = Path(manifest["quality_report"])
-    if not report_path.is_absolute():
-        report_path = data_root / report_path
-    versioned_dataset_path = Path(manifest["versioned_dataset_path"])
+
+    def resolve_manifest_path(
+        value: str, *, root: Path, container_root: Path, host_root: Path
+    ) -> Path:
+        path = Path(value)
+        if not path.is_absolute():
+            return root / path
+        try:
+            relative_path = path.relative_to(container_root)
+        except ValueError:
+            return path
+        return host_root / relative_path
+
+    report_path = resolve_manifest_path(
+        manifest["quality_report"],
+        root=data_root,
+        container_root=Path("/opt/gridvision/logs"),
+        host_root=LOG_ROOT,
+    )
+    versioned_dataset_path = resolve_manifest_path(
+        manifest["versioned_dataset_path"],
+        root=data_root,
+        container_root=Path("/opt/gridvision/data"),
+        host_root=data_root,
+    )
     if not versioned_dataset_path.is_file():
         raise FileNotFoundError(
             f"Versioned gold dataset snapshot is missing: {versioned_dataset_path}"

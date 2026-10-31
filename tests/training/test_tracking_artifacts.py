@@ -16,10 +16,8 @@ TRAINING_PATH = PROJECT_ROOT / "training"
 if str(TRAINING_PATH) not in sys.path:
     sys.path.insert(0, str(TRAINING_PATH))
 
-from training.train_bill_prediction import (
-    _dataset_lineage,
-    _model_card,
-)
+from training import train_bill_prediction as customer_training
+from training.train_bill_prediction import _dataset_lineage, _model_card
 
 AIRFLOW_CUSTOMER_PATH = PROJECT_ROOT / "airflow" / "customer"
 PIPELINE_SPEC = spec_from_file_location(
@@ -117,6 +115,61 @@ def test_gold_transform_records_quality_and_dataset_lineage(
     assert os.path.samefile(gold_path, lineage["versioned_dataset_path"])
     assert manifest["quality_passed"] is True
     assert report["quality_checks"]["unique_entity_month_cutoff"]["passed"] is True
+
+
+def test_dataset_lineage_resolves_airflow_container_paths_on_host(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    data_root = tmp_path / "data"
+    log_root = tmp_path / "logs"
+    data_path = data_root / "gold" / "customer_gold.parquet"
+    version = "gold-test-version"
+    versioned_path = (
+        data_root
+        / "metadata"
+        / "dataset_versions"
+        / "customer_gold"
+        / f"{version}.parquet"
+    )
+    report_path = log_root / "data" / "quality_reports" / f"gold_{version}.json"
+    latest_manifest = (
+        data_root
+        / "metadata"
+        / "dataset_versions"
+        / "customer_gold"
+        / "latest.json"
+    )
+    for path in (data_path, versioned_path, report_path, latest_manifest):
+        path.parent.mkdir(parents=True, exist_ok=True)
+    data_path.touch()
+    versioned_path.touch()
+    report_path.touch()
+    latest_manifest.write_text(
+        json.dumps(
+            {
+                "dataset_name": "customer_gold",
+                "dataset_version": version,
+                "row_count": 1,
+                "quality_passed": True,
+                "quality_report": (
+                    f"/opt/gridvision/logs/data/quality_reports/gold_{version}.json"
+                ),
+                "versioned_dataset_path": (
+                    "/opt/gridvision/data/metadata/dataset_versions/"
+                    f"customer_gold/{version}.parquet"
+                ),
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(customer_training, "LOG_ROOT", log_root)
+
+    lineage = _dataset_lineage(data_path)
+
+    assert lineage["tracked"] is True
+    assert Path(lineage["quality_report"]) == report_path
+    assert Path(lineage["versioned_dataset_path"]) == versioned_path
 
 
 def test_failed_quality_report_is_persisted_before_error(

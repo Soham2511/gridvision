@@ -24,6 +24,7 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OrdinalEncoder
 
 from training.commercial_forecast.config import (
+    DATA_ROOT,
     LOG_ROOT,
     PROJECT_ROOT,
     CommercialTrainingSettings,
@@ -50,11 +51,23 @@ def _validate_manifest(path: Path, gold_path: Path) -> dict[str, Any]:
         raise ValueError(
             "Commercial Gold's latest quality report failed; refusing to train."
         )
-    if Path(manifest.get("dataset_path", "")).resolve() != gold_path.resolve():
+    manifest_dataset_path = Path(manifest.get("dataset_path", ""))
+    if not _manifest_dataset_matches(manifest_dataset_path, gold_path):
         raise ValueError(
             "Commercial Gold manifest points to a different dataset than the training input."
         )
     return manifest
+
+
+def _manifest_dataset_matches(manifest_path: Path, gold_path: Path) -> bool:
+    if manifest_path.resolve() == gold_path.resolve():
+        return True
+    try:
+        data_relative_path = gold_path.resolve().relative_to(DATA_ROOT.resolve())
+    except ValueError:
+        return False
+    airflow_dataset_path = Path("/opt/gridvision/data") / data_relative_path
+    return manifest_path.resolve() == airflow_dataset_path
 
 
 def chronological_boundaries(
@@ -616,4 +629,3 @@ def train_commercial_model(
     }
     _write_json(training_log_path, training_record)
     return training_record
-

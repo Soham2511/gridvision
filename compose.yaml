@@ -1,4 +1,81 @@
 services:
+  airflow:
+    image: gridvision-airflow:local
+    restart: unless-stopped
+    build:
+      context: ${GRIDVISION_BUILD_CONTEXT:-.}
+      dockerfile: Dockerfile.airflow
+    user: "${AIRFLOW_UID:-50000}:0"
+    command:
+      - bash
+      - -o
+      - pipefail
+      - -c
+      - umask 077; airflow standalone 2>&1 | tee -a /opt/gridvision/logs/airflow/standalone.log
+    environment:
+      AIRFLOW_HOME: /opt/airflow
+      AIRFLOW__CORE__DAGS_FOLDER: /opt/gridvision/airflow
+      AIRFLOW__CORE__EXECUTOR: SequentialExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+      AIRFLOW__WEBSERVER__WEB_SERVER_HOST: 0.0.0.0
+      AIRFLOW__WEBSERVER__WEB_SERVER_PORT: "8080"
+      GRIDVISION_DATA_DIR: /opt/gridvision/data
+      GRIDVISION_LOG_DIR: /opt/gridvision/logs
+      GRIDVISION_SOURCE_PATH: /opt/gridvision/data/sample/${GRIDVISION_SOURCE_FILENAME:-training_sample_50000.parquet}
+      GOVERNMENT_PIPELINE_INPUT: /opt/gridvision/data/sample/${GRIDVISION_SOURCE_FILENAME:-training_sample_50000.parquet}
+      MLFLOW_TRACKING_URI: http://mlflow:5001
+      MLFLOW_MODEL_NAME: ${MLFLOW_MODEL_NAME:-customer-bill-prediction}
+      MLFLOW_MODEL_ALIAS: ${MLFLOW_MODEL_ALIAS:-champion}
+      CUSTOMER_SAMPLE_BUILDINGS: ${CUSTOMER_SAMPLE_BUILDINGS:-100}
+      CUSTOMER_SAMPLE_SEED: ${CUSTOMER_SAMPLE_SEED:-42}
+      CUSTOMER_MIN_MONTH_COVERAGE: ${CUSTOMER_MIN_MONTH_COVERAGE:-0.95}
+      CUSTOMER_TARIFF_INR_PER_KWH: ${CUSTOMER_TARIFF_INR_PER_KWH:-10.0}
+      CUSTOMER_DUCKDB_MEMORY_LIMIT: ${CUSTOMER_DUCKDB_MEMORY_LIMIT:-2GB}
+      CUSTOMER_DUCKDB_THREADS: ${CUSTOMER_DUCKDB_THREADS:-2}
+      CUSTOMER_DUCKDB_TEMP_DIR: /opt/airflow/tmp/customer-duckdb
+      MLFLOW_DATA_QUALITY_EXPERIMENT: ${MLFLOW_DATA_QUALITY_EXPERIMENT:-GridVision Data Quality}
+      COMMERCIAL_SILVER_DATASET: /opt/gridvision/data/silver/commercial_silver.parquet
+      COMMERCIAL_GOLD_DATASET: /opt/gridvision/data/gold/commercial_gold.parquet
+      COMMERCIAL_DUCKDB_MEMORY_LIMIT: ${COMMERCIAL_DUCKDB_MEMORY_LIMIT:-2GB}
+      COMMERCIAL_DUCKDB_THREADS: ${COMMERCIAL_DUCKDB_THREADS:-2}
+      COMMERCIAL_DUCKDB_TEMP_DIR: /opt/airflow/tmp/commercial-duckdb
+      COMMERCIAL_FORECAST_HORIZON_HOURS: ${COMMERCIAL_FORECAST_HORIZON_HOURS:-24}
+      COMMERCIAL_SAMPLE_BUILDINGS: ${COMMERCIAL_SAMPLE_BUILDINGS:-100}
+      GOVERNMENT_PIPELINE_FEATURES: /opt/gridvision/mlflow/government/feature_columns_2018.joblib
+      GOVERNMENT_PIPELINE_OUTPUT: /opt/gridvision/data/airflow/government/training_ready_2018.parquet
+      GOVERNMENT_PIPELINE_MODEL: /opt/gridvision/data/airflow/government/hybrid_grid_2018.joblib
+      GOVERNMENT_PIPELINE_MEMORY_LIMIT: ${GOVERNMENT_PIPELINE_MEMORY_LIMIT:-4GB}
+      GOVERNMENT_PIPELINE_THREADS: ${GOVERNMENT_PIPELINE_THREADS:-4}
+      GOVERNMENT_PIPELINE_HORIZON_HOURS: ${GOVERNMENT_PIPELINE_HORIZON_HOURS:-24}
+      GOVERNMENT_PIPELINE_BATCH_SIZE: ${GOVERNMENT_PIPELINE_BATCH_SIZE:-100000}
+      GOVERNMENT_PIPELINE_MAX_TRAINING_ROWS: ${GOVERNMENT_PIPELINE_MAX_TRAINING_ROWS:-1000000}
+      GOVERNMENT_PIPELINE_MAX_VALIDATION_ROWS: ${GOVERNMENT_PIPELINE_MAX_VALIDATION_ROWS:-250000}
+      GOVERNMENT_PIPELINE_N_ESTIMATORS: ${GOVERNMENT_PIPELINE_N_ESTIMATORS:-1200}
+      AIRFLOW__LOGGING__BASE_LOG_FOLDER: /opt/airflow/logs
+    volumes:
+      - airflow-home:/opt/airflow
+      - ./airflow:/opt/gridvision/airflow:ro
+      - ./training:/opt/gridvision/training:ro
+      - ./mlflow/government:/opt/gridvision/mlflow/government:ro
+      - ${GRIDVISION_DATA_DIR:?Set GRIDVISION_DATA_DIR}:/opt/gridvision/data
+      - ${GRIDVISION_LOG_DIR:-./logs}:/opt/gridvision/logs
+      - ${GRIDVISION_SOURCE_PATH:-${GRIDVISION_DATA_DIR}/sample/training_sample_50000.parquet}:/opt/gridvision/data/sample/${GRIDVISION_SOURCE_FILENAME:-training_sample_50000.parquet}:ro
+    ports:
+      - "127.0.0.1:${GRIDVISION_AIRFLOW_HOST_PORT:-8081}:8080"
+    depends_on:
+      mlflow:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=3)"
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 60s
+
   mlflow:
     image: gridvision-backend:local
     restart: unless-stopped
@@ -95,3 +172,6 @@ services:
         condition: service_healthy
     ports:
       - "${GRIDVISION_FRONTEND_HOST_PORT:-8082}:80"
+
+volumes:
+  airflow-home:
