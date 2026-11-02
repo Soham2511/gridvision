@@ -7,6 +7,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PORT=5000
 
 WORKDIR /app
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
 COPY requirements.txt ./requirements.txt
 COPY scripts/filter_requirements.py ./scripts/filter_requirements.py
 RUN python scripts/filter_requirements.py requirements.txt /tmp/backend-requirements.txt --groups backend model-serving \

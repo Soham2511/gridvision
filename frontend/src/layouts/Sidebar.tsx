@@ -15,7 +15,6 @@ import {
   Building2,
   Map,
   PieChart,
-  Cpu,
 } from 'lucide-react';
 
 export const Sidebar: React.FC = () => {
@@ -67,13 +66,8 @@ export const Sidebar: React.FC = () => {
       icon: <MessageSquare size={18} />,
     },
     {
-      path: '/models',
-      label: 'Models',
-      icon: <Cpu size={18} />,
-    },
-    {
       path: '/profile',
-      label: 'Profile',
+      label: currentPersona === 'government' ? 'Profile' : 'Building Profile',
       icon: <User size={18} />,
     },
   ];

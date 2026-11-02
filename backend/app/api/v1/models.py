@@ -147,10 +147,38 @@ def get_customer_months(entity_id: int):
     return success_response(records)
 
 
+@bp.route("/models/customer-bill-prediction/profile/<int:entity_id>", methods=["GET"])
+def get_customer_entity_profile(entity_id: int):
+    """Return identity and location metadata for one residential entity."""
+    try:
+        profile = _service().get_entity_profile(entity_id)
+    except CustomerBillPredictionError as exc:
+        raise AppError(
+            str(exc), code="DATA_UNAVAILABLE", status_code=503
+        ) from exc
+    if profile is None:
+        raise ResourceNotFoundError(
+            f"Customer entity '{entity_id}' was not found in the gold dataset."
+        )
+    return success_response(profile)
+
+
 @bp.route("/models/customer-bill-prediction/history", methods=["GET"])
 def get_customer_historical_insights():
     """Return residential historical trends from the customer gold dataset."""
     time_range = request.args.get("time_range", "ALL")
+    entity_id_value = request.args.get("entity_id")
+    entity_id = (
+        _positive_int(entity_id_value, "entity_id", 0)
+        if entity_id_value is not None
+        else None
+    )
+    if entity_id is not None and entity_id < 1:
+        raise AppError(
+            "entity_id must be a positive integer.",
+            code="INVALID_INPUT",
+            status_code=422,
+        )
     if time_range not in {"3M", "6M", "1Y", "ALL"}:
         raise AppError(
             "time_range must be one of 3M, 6M, 1Y, or ALL.",
@@ -158,7 +186,12 @@ def get_customer_historical_insights():
             status_code=422,
         )
     try:
-        result = _service().get_historical_gold_insights(time_range)
+        service = _service()
+        if entity_id is not None and not service.get_entity_months(entity_id):
+            raise ResourceNotFoundError(
+                f"Customer entity '{entity_id}' was not found in the gold dataset."
+            )
+        result = service.get_historical_gold_insights(time_range, entity_id)
     except CustomerBillPredictionError as exc:
         raise AppError(
             str(exc), code="DATA_UNAVAILABLE", status_code=503

@@ -13,4 +13,13 @@ GridVision writes generated output beneath this directory. Set `GRIDVISION_LOG_D
 | `testing/` | One JSON test-run summary and per-test outcomes per pytest invocation |
 | `training/<domain>/` | One JSON execution summary per MLflow training run |
 
+Government customer segmentation is an Airflow-managed workflow. Its source,
+feature, geospatial, validation, and execution reports are published under
+`data/segmentation/reports/`; these are data-pipeline artifacts, not files in
+this logs directory. Airflow's native task logs are available in the Airflow
+UI and in its container at `/opt/airflow/logs/`; `airflow/standalone.log` here
+records the service startup stream. See
+[`docs/customer_segmentation/README.md`](../docs/customer_segmentation/README.md)
+for run commands, artifact names, and the current MLflow registry namespace.
+
 Dataset manifests and versioned Parquet snapshots are kept separately under `data/metadata/`; they are lineage records and data assets rather than log files. Commercial stage reports are JSON, and commercial training summaries include candidate, champion, baseline, split, feature order, and promotion-gate outcomes. MLflow retains its own run history and artifacts under the configured tracking store. Airflow task logs retain native Airflow formatting; request events, automation summaries, data-quality reports, and training summaries are structured JSON.

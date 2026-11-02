@@ -264,7 +264,43 @@ class CustomerBillPredictionService:
             for row in rows.itertuples()
         ]
 
-    def get_historical_gold_insights(self, time_range: str) -> dict[str, Any]:
+    def get_entity_profile(self, entity_id: int) -> dict[str, Any] | None:
+        frame = self._load_frame()
+        rows = frame[frame["entity_id"] == entity_id].sort_values(
+            ["month_start", "cutoff_day"]
+        )
+        if rows.empty:
+            return None
+
+        row = rows.iloc[-1]
+        fields = {
+            "buildingType": "building_type",
+            "specificUseType": "specific_use_type",
+            "useType": "usetype",
+            "buildingAreaM2": "building_area_m2",
+            "footprintAreaM2": "footprint_area_m2",
+            "effectiveYearBuilt": "effective_year_built",
+            "vintage": "vintage",
+            "gridCoarseId": "id_grid_coarse",
+            "idfKw": "idf_kw",
+            "gridFinerId": "id_grid_finer",
+            "tractId": "id_tract",
+            "latitude": "latitude",
+            "longitude": "longitude",
+        }
+        profile: dict[str, Any] = {"entityId": str(entity_id)}
+        for output_name, column_name in fields.items():
+            value = row[column_name] if column_name in rows.columns else None
+            if value is not None and pd.isna(value):
+                value = None
+            elif hasattr(value, "item"):
+                value = value.item()
+            profile[output_name] = value
+        return profile
+
+    def get_historical_gold_insights(
+        self, time_range: str, entity_id: int | None = None
+    ) -> dict[str, Any]:
         frame = self._load_frame()
         required_columns = {
             "cutoff_day",
@@ -279,6 +315,13 @@ class CustomerBillPredictionService:
                 f"Customer gold dataset is missing historical insight columns: {missing}"
             )
 
+        if entity_id is not None:
+            frame = frame[frame["entity_id"] == entity_id]
+            if frame.empty:
+                raise CustomerBillPredictionError(
+                    f"Customer entity '{entity_id}' was not found in the gold dataset."
+                )
+
         latest = (
             frame.sort_values(["entity_id", "month_start", "cutoff_day"])
             .drop_duplicates(["entity_id", "month_start"], keep="last")
@@ -292,7 +335,6 @@ class CustomerBillPredictionService:
         month_limit = {"3M": 3, "6M": 6, "1Y": 12}.get(time_range)
         if month_limit is not None:
             selected_months = available_months[-month_limit:]
-            latest = latest[latest["month_start"].isin(selected_months)]
 
         monthly = (
             latest.groupby("month_start", sort=True)
@@ -310,6 +352,17 @@ class CustomerBillPredictionService:
             )
             .reset_index()
         )
+        previous_average = monthly["average_actual_kwh"].shift(1)
+        month_periods = pd.to_datetime(monthly["month_start"]).dt.to_period("M")
+        previous_periods = month_periods.shift(1)
+        monthly["month_over_month_change_percent"] = (
+            (monthly["average_actual_kwh"] - previous_average)
+            / previous_average
+            * 100
+        ).where((previous_average > 0) & (month_periods == previous_periods + 1))
+        if month_limit is not None:
+            monthly = monthly[monthly["month_start"].isin(selected_months)]
+            latest = latest[latest["month_start"].isin(selected_months)]
         if monthly.empty:
             raise CustomerBillPredictionError(
                 "Customer gold dataset has no monthly records for historical insights."
@@ -332,6 +385,11 @@ class CustomerBillPredictionService:
                     row.average_absolute_error_kwh
                 ),
                 "averageCoverageRatio": float(row.average_coverage_ratio),
+                "monthOverMonthChangePercent": (
+                    float(row.month_over_month_change_percent)
+                    if pd.notna(row.month_over_month_change_percent)
+                    else None
+                ),
             }
             for row in monthly.itertuples()
         ]
@@ -344,6 +402,7 @@ class CustomerBillPredictionService:
 
         return {
             "timeRange": time_range,
+            "entityId": str(entity_id) if entity_id is not None else None,
             "monthsReturned": len(month_records),
             "startMonth": month_records[0]["monthStart"],
             "endMonth": month_records[-1]["monthStart"],

@@ -202,6 +202,7 @@ npm run lint
 | `GET` | `/api/v1/customers/segments` | High-level customer segment breakdown |
 | `GET` | `/api/v1/customers/segmentation-matrix`| Multi-dimensional customer segmentation |
 | `GET` | `/api/v1/customers/diurnal-curves` | 24-hour diurnal curves across sectors |
+| `GET` | `/api/v1/government/segmentation/*` | Government building behaviour segments, category-aware regional drilldown, profiles and assignments |
 | `GET` | `/api/v1/energy-insights` | Algorithmic optimization recommendations |
 | `POST` | `/api/v1/assistant/chat` | Domain-grounded query answering |
 | `GET` | `/api/v1/models` | Registered model catalog and gold dataset summary |
@@ -215,6 +216,17 @@ npm run lint
 Open **Models** in the application sidebar to select a customer entity and gold record, run its prediction, and compare the estimated monthly energy and illustrative bill with the actuals. Each entity has multiple cutoff-day records in a month; the UI selects the cutoff day along with the month. Results are labeled as retrospective gold-data replays, not live meter telemetry or invoices.
 
 The backend stores model-specific code in `backend/app/models/<model_name>/` and adds public metadata to `backend/app/models/registry.py`. Each package owns its data contract and inference logic. Add commercial peak-hour detection as a separate model package and registry entry when its artifact and feature contract are ready, without coupling it to customer bill prediction.
+
+### Government building behaviour segmentation
+
+The separate **Building Behaviour Segments** view is available to Government
+users at `/app/government/segmentation`. It segments all `GeneralUseType`
+categories found in the Bronze source, including Residential, Commercial,
+Industrial, Institutional and Recreational. Small source categories share a
+model group when they do not meet the configured model-size threshold; the UI
+continues to filter and display their original category. The independent
+Airflow, MLflow, API, outputs, and operating commands are documented in the
+[Customer Segmentation operations guide](docs/customer_segmentation/README.md).
 
 Docker Compose mounts `data/gold` and the customer model metadata read-only into the API container. Rebuild/restart the stack after changing application code or Compose mounts.
 
@@ -335,6 +347,13 @@ ETL or the full automation, use the government CLI with the existing prepared
 parquet, or run only its Airflow DAG with
 `GOVERNMENT_PIPELINE_REUSE_PREPARED=1`; see the government pipeline README for
 exact WSL commands.
+
+The Government & Utilities dashboard presents a historical replay through the
+latest available grid observation, followed by a forecast limited to the next
+24 hours. Its range selector aggregates history hourly (`1D`), daily (`7D`,
+`1M`), weekly (`3M`), or monthly (`1Y`); the forecast horizon remains hourly
+and does not expand with the selected history range. Regional summaries use the
+same range and report one item per grid.
 
 ### Commercial building forecast data
 

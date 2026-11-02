@@ -18,7 +18,10 @@ export interface CommonChartHoverCardProps {
   }>;
   label?: string;
   unit?: string;
+  totalUnit?: string;
+  totalLabel?: string;
   tariffRate?: number;
+  showCost?: boolean;
   peakTimes?: string[];
   datePrefix?: string;
 }
@@ -38,7 +41,10 @@ export const CommonChartHoverCard: React.FC<CommonChartHoverCardProps> = ({
   payload,
   label,
   unit = 'kWh',
+  totalUnit = unit,
+  totalLabel = 'Total Consumption',
   tariffRate = 10.0,
+  showCost = true,
   peakTimes = ['09:00', '20:00', '20:30'],
   datePrefix = '19 Oct 2026',
 }) => {
@@ -128,9 +134,9 @@ export const CommonChartHoverCard: React.FC<CommonChartHoverCardProps> = ({
                 marginTop: '0.2rem',
               }}
             >
-              <span style={{ color: '#0B1F33', fontWeight: 700 }}>Total Consumption</span>
+              <span style={{ color: '#0B1F33', fontWeight: 700 }}>{totalLabel}</span>
               <strong style={{ color: '#0B1F33', fontWeight: 800 }}>
-                {Number(totalVal).toFixed(1)} {unit}
+                {Number(totalVal).toFixed(1)} {totalUnit}
               </strong>
             </div>
           )}
@@ -163,7 +169,10 @@ export const CommonChartHoverCard: React.FC<CommonChartHoverCardProps> = ({
   const activeValue = isPredicted ? predictedItem?.value : (actualItem?.value ?? payload[0]?.value);
 
   const isPeak = label ? peakTimes.includes(label) : false;
-  const tariffCost = typeof activeValue === 'number' ? (activeValue * tariffRate).toFixed(2) : null;
+  const tariffCost =
+    showCost && typeof activeValue === 'number'
+      ? (activeValue * tariffRate).toFixed(2)
+      : null;
 
   return (
     <div
