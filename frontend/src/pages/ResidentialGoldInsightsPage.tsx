@@ -8,16 +8,12 @@ import {
   TrendingUp,
 } from 'lucide-react';
 import {
-  Bar,
-  BarChart,
   CartesianGrid,
-  Cell,
   Legend,
   Line,
   LineChart,
-  Pie,
-  PieChart,
   ResponsiveContainer,
+  ReferenceLine,
   Tooltip,
   XAxis,
   YAxis,
@@ -26,6 +22,8 @@ import { CommonMetricCard } from '../components/common';
 import { usePersona } from '../context';
 import { modelService } from '../services/modelService';
 import {
+  CustomerBillPrediction,
+  CustomerBillRecord,
   ResidentialGoldHistory,
   ResidentialGoldHistoryPoint,
 } from '../types/analytics';
@@ -39,7 +37,6 @@ const ranges: Array<{ value: HistoryRange; label: string }> = [
   { value: '1Y', label: '1 year' },
   { value: 'ALL', label: 'All data' },
 ];
-const buildingTypeColors = ['#00A396', '#7C3AED', '#2563EB', '#D97706'];
 
 const formatUsage = (value: number, unit: string): string => {
   if (unit === 'MWh') {
@@ -58,32 +55,111 @@ const formatMonth = (month: string): string =>
 export const ResidentialGoldInsightsPage: React.FC<{ view?: PageView }> = ({
   view = 'history',
 }) => {
-  const { energyUnit } = usePersona();
+  const { energyUnit, activeEntity, setActiveEntity } = usePersona();
   const [timeRange, setTimeRange] = useState<HistoryRange>('ALL');
   const [history, setHistory] = useState<ResidentialGoldHistory | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [residentialObjectIds, setResidentialObjectIds] = useState<string[]>([]);
+  const [residentialObjectIdsLoaded, setResidentialObjectIdsLoaded] = useState(false);
+  const [selectedObjectId, setSelectedObjectId] = useState('');
+  const [objectRecords, setObjectRecords] = useState<CustomerBillRecord[]>([]);
+  const [objectPrediction, setObjectPrediction] = useState<CustomerBillPrediction | null>(null);
+  const [objectLoading, setObjectLoading] = useState(false);
+  const [objectError, setObjectError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    modelService.getCustomerRecords(200, 0).then((page) => {
+      if (cancelled) return;
+      const ids = Array.from(new Set(page.items.map((record) => record.entityId)));
+      setResidentialObjectIds(ids);
+      const initialId = ids.includes(activeEntity) ? activeEntity : (ids[0] ?? '');
+      setSelectedObjectId(initialId);
+      if (initialId && initialId !== activeEntity) setActiveEntity(initialId);
+    }).catch((loadError) => {
+      if (!cancelled) {
+        const message = loadError instanceof Error
+          ? loadError.message
+          : 'Unable to load residential building IDs.';
+        setObjectError(message);
+        setError(message);
+        setLoading(false);
+      }
+    }).finally(() => {
+      if (!cancelled) setResidentialObjectIdsLoaded(true);
+    });
+    return () => { cancelled = true; };
+  }, [view, activeEntity, setActiveEntity]);
+
+  useEffect(() => {
+    if (view !== 'dashboard' || !selectedObjectId) return;
+    let cancelled = false;
+    setObjectLoading(true);
+    setObjectError(null);
+    setObjectRecords([]);
+    setObjectPrediction(null);
+    const loadPrediction = async () => {
+      try {
+        const records: CustomerBillRecord[] = await modelService.getEntityMonths(selectedObjectId);
+        const latestByMonth = new Map<string, CustomerBillRecord>();
+        records.forEach((record) => {
+          const current = latestByMonth.get(record.monthStart);
+          if (!current || record.cutoffDay > current.cutoffDay) {
+            latestByMonth.set(record.monthStart, record);
+          }
+        });
+        const monthlyRecords = Array.from(latestByMonth.values()).sort((a, b) =>
+          a.monthStart.localeCompare(b.monthStart)
+        );
+        const latest = monthlyRecords[monthlyRecords.length - 1];
+        if (!latest) throw new Error('No model records are available for this building ID.');
+        if (!cancelled) setObjectRecords(monthlyRecords);
+        const prediction = await modelService.predictCustomerBill(
+          selectedObjectId,
+          latest.monthStart,
+          latest.cutoffDay
+        );
+        if (!cancelled) setObjectPrediction(prediction);
+      } catch (loadError) {
+        if (!cancelled) {
+          setObjectError(loadError instanceof Error ? loadError.message : 'Unable to load this building prediction.');
+        }
+      } finally {
+        if (!cancelled) setObjectLoading(false);
+      }
+    };
+    void loadPrediction();
+    return () => { cancelled = true; };
+  }, [view, selectedObjectId]);
 
   const loadHistory = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setHistory(null);
     try {
-      const result = await modelService.getResidentialGoldHistory(timeRange);
+      const result = await modelService.getResidentialGoldHistory(timeRange, activeEntity);
       setHistory(result);
     } catch (loadError) {
       setError(
         loadError instanceof Error
           ? loadError.message
-          : 'Unable to load residential gold-dataset insights.'
+          : 'Unable to load residential household insights.'
       );
     } finally {
       setLoading(false);
     }
-  }, [timeRange]);
+  }, [activeEntity, timeRange]);
 
   useEffect(() => {
-    void loadHistory();
-  }, [loadHistory]);
+    if (
+      view === 'history' &&
+      residentialObjectIdsLoaded &&
+      residentialObjectIds.includes(activeEntity)
+    ) {
+      void loadHistory();
+    }
+  }, [view, loadHistory, residentialObjectIds, residentialObjectIdsLoaded, activeEntity]);
 
   const peakMonth = useMemo(() => {
     if (!history?.history.length) return null;
@@ -91,20 +167,53 @@ export const ResidentialGoldInsightsPage: React.FC<{ view?: PageView }> = ({
       point.averageActualKwh > peak.averageActualKwh ? point : peak
     );
   }, [history]);
+  const selectedMonthlyAverage = useMemo(
+    () =>
+      objectRecords.length
+        ? objectRecords.reduce((total, record) => total + record.actualMonthKwh, 0)
+          / objectRecords.length
+        : null,
+    [objectRecords]
+  );
+  const selectedPeakMonth = useMemo(
+    () =>
+      objectRecords.reduce<CustomerBillRecord | null>(
+        (peak, record) =>
+          !peak || record.actualMonthKwh > peak.actualMonthKwh ? record : peak,
+        null
+      ),
+    [objectRecords]
+  );
+  const residentialDashboardChartData = useMemo(() => {
+    const predictionMonth = objectPrediction?.monthStart;
+    const latestMonth = objectRecords[objectRecords.length - 1]?.monthStart;
+    const usageForChart = (value: number) =>
+      energyUnit === 'MWh' ? value / 1000 : value;
+    return objectRecords.map((record) => ({
+      month: formatMonth(record.monthStart),
+      fullDate: formatMonth(record.monthStart),
+      actualUsage:
+        predictionMonth === latestMonth && record.monthStart === latestMonth
+          ? null
+          : usageForChart(record.actualMonthKwh),
+      predictedUsage:
+        objectPrediction?.monthStart === record.monthStart
+          ? usageForChart(objectPrediction.predictedMonthEndKwh)
+          : null,
+    }));
+  }, [energyUnit, objectPrediction, objectRecords]);
 
   const chartData = useMemo(
     () =>
       history?.history.map((point: ResidentialGoldHistoryPoint) => ({
         ...point,
         month: formatMonth(point.monthStart),
-        cohortProjectionKwh: point.averageProjectionKwh * point.entityCount,
+        monthOverMonthChangePercent: point.monthOverMonthChangePercent,
       })) ?? [],
     [history]
   );
 
   const unit = energyUnit === 'MWh' ? 'MWh' : 'kWh';
-  const modelMae = history?.model.testMetrics.mae_kwh;
-  const features = history?.model.features ?? [];
 
   return (
     <main
@@ -141,7 +250,7 @@ export const ResidentialGoldInsightsPage: React.FC<{ view?: PageView }> = ({
             }}
           >
             <Home size={16} />
-            Residential gold dataset
+            Residential household insights
           </div>
           <h1
             style={{
@@ -156,57 +265,81 @@ export const ResidentialGoldInsightsPage: React.FC<{ view?: PageView }> = ({
           </h1>
           <p style={{ fontSize: '0.92rem', color: '#64748B', margin: 0 }}>
             {view === 'dashboard'
-              ? 'Gold-dataset trends, sample-cohort usage, and model projections.'
-              : 'Monthly household usage and model projections from the trained gold-data cohort.'}
+              ? 'Selected household energy use and model estimates.'
+              : 'Historical monthly household consumption and estimated month-end use.'}
           </p>
         </div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.45rem' }}>
-          {ranges.map((range) => (
+        {view === 'history' && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.45rem' }}>
+            {ranges.map((range) => (
+              <button
+                key={range.value}
+                type="button"
+                onClick={() => setTimeRange(range.value)}
+                aria-pressed={timeRange === range.value}
+                style={{
+                  border: `1px solid ${timeRange === range.value ? '#00A396' : '#E2E8F0'}`,
+                  borderRadius: '9px',
+                  background: timeRange === range.value ? '#E6F7F5' : '#FFFFFF',
+                  color: timeRange === range.value ? '#007F75' : '#64748B',
+                  cursor: 'pointer',
+                  padding: '0.55rem 0.8rem',
+                  fontSize: '0.78rem',
+                  fontWeight: 700,
+                }}
+              >
+                {range.label}
+              </button>
+            ))}
             <button
-              key={range.value}
               type="button"
-              onClick={() => setTimeRange(range.value)}
-              aria-pressed={timeRange === range.value}
+              onClick={() => void loadHistory()}
+              disabled={loading}
+              aria-label="Refresh residential historical insights"
               style={{
-                border: `1px solid ${timeRange === range.value ? '#00A396' : '#E2E8F0'}`,
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+                border: '1px solid #E2E8F0',
                 borderRadius: '9px',
-                background: timeRange === range.value ? '#E6F7F5' : '#FFFFFF',
-                color: timeRange === range.value ? '#007F75' : '#64748B',
-                cursor: 'pointer',
+                background: '#FFFFFF',
+                color: '#334155',
+                cursor: loading ? 'wait' : 'pointer',
                 padding: '0.55rem 0.8rem',
                 fontSize: '0.78rem',
                 fontWeight: 700,
               }}
             >
-              {range.label}
+              <RefreshCw size={14} />
+              Refresh
             </button>
-          ))}
-          <button
-            type="button"
-            onClick={() => void loadHistory()}
-            disabled={loading}
-            aria-label="Refresh residential historical insights"
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: '0.4rem',
-              border: '1px solid #E2E8F0',
-              borderRadius: '9px',
-              background: '#FFFFFF',
-              color: '#334155',
-              cursor: loading ? 'wait' : 'pointer',
-              padding: '0.55rem 0.8rem',
-              fontSize: '0.78rem',
-              fontWeight: 700,
-            }}
-          >
-            <RefreshCw size={14} />
-            Refresh
-          </button>
-        </div>
+          </div>
+        )}
       </header>
 
-      {history && (
+      <section
+        aria-label="Residential building selection"
+        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem', background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '14px', padding: '1rem 1.2rem' }}
+      >
+        <label style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', color: '#334155', fontSize: '0.88rem', fontWeight: 700 }}>
+          Building ID
+          <select
+            aria-label="Residential building ID"
+            value={activeEntity}
+            onChange={(event) => {
+              setSelectedObjectId(event.target.value);
+              setActiveEntity(event.target.value);
+            }}
+            disabled={!residentialObjectIds.length}
+            style={{ border: '1px solid #CBD5E1', borderRadius: '8px', background: '#FFFFFF', color: '#0B1F33', padding: '0.55rem 0.7rem', minWidth: '150px' }}
+          >
+            {!residentialObjectIds.length && <option value="">Loading building IDs…</option>}
+            {residentialObjectIds.map((objectId) => <option key={objectId} value={objectId}>{objectId}</option>)}
+          </select>
+        </label>
+      </section>
+
+      {view === 'history' && history && (
         <div
           role="note"
           style={{
@@ -219,14 +352,15 @@ export const ResidentialGoldInsightsPage: React.FC<{ view?: PageView }> = ({
             padding: '0.85rem 1rem',
           }}
         >
-          This is a retrospective profile of {history.entityCount.toLocaleString()} modeled
-          customer entities in the gold sample, covering {formatMonth(history.startMonth)} to{' '}
-          {formatMonth(history.endMonth)}. It is not live household telemetry. Each month uses
-          the latest available cutoff snapshot (day {history.dataset.cutoffDay}).
+          Historical monthly figures for {history.entityId ? `household ${history.entityId}` : `${history.entityCount.toLocaleString()} households`} from{' '}
+          {formatMonth(history.startMonth)} to {formatMonth(history.endMonth)}. Actual use is
+          shown alongside the month-end estimate based on usage recorded through day{' '}
+          {history.dataset.cutoffDay} of each month. This is historical data, not live household
+          usage.
         </div>
       )}
 
-      {error && (
+      {view === 'history' && error && (
         <div
           role="alert"
           style={{
@@ -260,7 +394,142 @@ export const ResidentialGoldInsightsPage: React.FC<{ view?: PageView }> = ({
         </div>
       )}
 
-      {loading && !history ? (
+      {view === 'dashboard' ? (
+        <>
+          {objectError && (
+            <div role="alert" style={{ border: '1px solid #FECACA', background: '#FEF2F2', color: '#991B1B', borderRadius: '12px', padding: '0.85rem 1rem' }}>
+              {objectError}
+            </div>
+          )}
+          {objectLoading && !objectRecords.length ? (
+            <div role="status" style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '16px', color: '#64748B', padding: '3rem 1rem', textAlign: 'center' }}>
+              Loading selected household history and estimate…
+            </div>
+          ) : objectRecords.length > 0 ? (
+            <>
+              <section
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(230px, 1fr))',
+                  gap: '1rem',
+                }}
+              >
+                <CommonMetricCard
+                  title="Average monthly use"
+                  value={selectedMonthlyAverage === null ? '—' : formatUsage(selectedMonthlyAverage, unit)}
+                  unit={selectedMonthlyAverage === null ? '' : unit}
+                  icon={<BarChart3 size={22} color="#00A396" />}
+                  iconBg="#E6F7F5"
+                  subtext={`${selectedObjectId} · ${objectRecords.length} months of history`}
+                />
+                <CommonMetricCard
+                  title="Highest monthly use"
+                  value={selectedPeakMonth ? formatUsage(selectedPeakMonth.actualMonthKwh, unit) : '—'}
+                  unit={selectedPeakMonth ? unit : ''}
+                  icon={<TrendingUp size={22} color="#D97706" />}
+                  iconBg="#FFF7ED"
+                  subtext={selectedPeakMonth ? formatMonth(selectedPeakMonth.monthStart) : undefined}
+                />
+                <CommonMetricCard
+                  title="Predicted month-end use"
+                  value={objectPrediction ? formatUsage(objectPrediction.predictedMonthEndKwh, unit) : objectLoading ? '…' : '—'}
+                  unit={objectPrediction ? unit : ''}
+                  icon={<Target size={22} color="#7C3AED" />}
+                  iconBg="#F5F3FF"
+                  subtext={objectPrediction ? formatMonth(objectPrediction.monthStart) : 'Registered customer model'}
+                />
+                <CommonMetricCard
+                  title="Predicted month-end bill"
+                  value={objectPrediction ? `₹${objectPrediction.predictedBillInr.toLocaleString()}` : objectLoading ? '…' : '—'}
+                  unit=""
+                  icon={<Database size={22} color="#2563EB" />}
+                  iconBg="#EFF6FF"
+                  subtext={objectPrediction ? `Recorded bill: ₹${objectPrediction.actualBillInr.toLocaleString()}` : 'Based on selected household'}
+                />
+              </section>
+
+              <section
+                style={{
+                  background: '#FFFFFF',
+                  border: '1px solid #E2E8F0',
+                  borderRadius: '16px',
+                  boxShadow: '0 4px 20px -2px rgba(11, 31, 51, 0.03)',
+                  padding: '1.4rem 1.5rem 1rem',
+                }}
+              >
+                <div style={{ marginBottom: '1rem' }}>
+                  <h2 style={{ color: '#0B1F33', fontSize: '1.1rem', margin: 0 }}>
+                    Household consumption history &amp; prediction
+                  </h2>
+                  <p style={{ color: '#64748B', fontSize: '0.82rem', margin: '0.35rem 0 0' }}>
+                    Recorded monthly usage followed by the model estimate for the latest month
+                    {objectPrediction ? ` based on usage through day ${objectPrediction.cutoffDay}.` : '.'}
+                  </p>
+                </div>
+                <div style={{ height: '360px', width: '100%' }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={residentialDashboardChartData} margin={{ top: 10, right: 20, left: 8, bottom: 8 }}>
+                      <CartesianGrid stroke="#F1F5F9" strokeDasharray="3 3" vertical={false} />
+                      <XAxis
+                        dataKey="month"
+                        tick={{ fontSize: 11, fill: '#64748B' }}
+                        axisLine={{ stroke: '#E2E8F0' }}
+                        tickLine={false}
+                      />
+                      <YAxis
+                        width={72}
+                        tick={{ fontSize: 11, fill: '#64748B' }}
+                        axisLine={false}
+                        tickLine={false}
+                        tickFormatter={(value: number) => value.toLocaleString()}
+                        label={{
+                          value: `Consumption (${unit})`,
+                          angle: -90,
+                          position: 'insideLeft',
+                          fill: '#64748B',
+                          fontSize: 11,
+                        }}
+                      />
+                      <Tooltip
+                        formatter={(value, name) => [
+                          `${Number(value).toLocaleString()} ${unit}`,
+                          name,
+                        ]}
+                      />
+                      <Legend wrapperStyle={{ fontSize: '0.78rem' }} />
+                      <Line
+                        type="monotone"
+                        dataKey="actualUsage"
+                        name="Recorded consumption"
+                        stroke="#00A396"
+                        strokeWidth={2.7}
+                        dot={{ r: 3, fill: '#FFFFFF', strokeWidth: 2 }}
+                        activeDot={{ r: 5 }}
+                        connectNulls={false}
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="predictedUsage"
+                        name="Model-predicted month-end"
+                        stroke="#7C3AED"
+                        strokeWidth={2.5}
+                        strokeDasharray="6 4"
+                        dot={{ r: 5, fill: '#7C3AED' }}
+                        activeDot={{ r: 6 }}
+                        connectNulls={false}
+                      />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </section>
+            </>
+          ) : !objectError ? (
+            <div role="status" style={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '16px', color: '#64748B', padding: '3rem 1rem', textAlign: 'center' }}>
+              {objectLoading ? 'Loading selected household history…' : 'No historical data is available for this household.'}
+            </div>
+          ) : null}
+        </>
+      ) : loading && !history ? (
         <div
           role="status"
           style={{
@@ -272,7 +541,7 @@ export const ResidentialGoldInsightsPage: React.FC<{ view?: PageView }> = ({
             textAlign: 'center',
           }}
         >
-          Loading gold-dataset history…
+          Loading household history…
         </div>
       ) : history ? (
         <>
@@ -283,42 +552,30 @@ export const ResidentialGoldInsightsPage: React.FC<{ view?: PageView }> = ({
               gap: '1rem',
             }}
           >
-            <CommonMetricCard
-              title="Average monthly use per entity"
-              value={formatUsage(history.averageMonthlyKwhPerEntity, unit)}
-              unit={unit}
-              icon={<BarChart3 size={22} color="#00A396" />}
-              iconBg="#E6F7F5"
-              subtext={`${history.monthsReturned} gold months`}
-            />
-            <CommonMetricCard
-              title="Highest average-use month"
-              value={peakMonth ? formatUsage(peakMonth.averageActualKwh, unit) : '—'}
-              unit={unit}
-              icon={<TrendingUp size={22} color="#D97706" />}
-              iconBg="#FFF7ED"
-              subtext={peakMonth ? formatMonth(peakMonth.monthStart) : undefined}
-            />
-            <CommonMetricCard
-              title="Model holdout MAE"
-              value={
-                modelMae === undefined
-                  ? '—'
-                  : formatUsage(modelMae, unit)
-              }
-              unit={modelMae === undefined ? '' : unit}
-              icon={<Target size={22} color="#7C3AED" />}
-              iconBg="#F5F3FF"
-              subtext="Training test split"
-            />
-            <CommonMetricCard
-              title="Gold sample entities"
-              value={history.entityCount.toLocaleString()}
-              unit=""
-              icon={<Database size={22} color="#2563EB" />}
-              iconBg="#EFF6FF"
-              subtext={`${history.dataset.sourceRows.toLocaleString()} cutoff snapshots`}
-            />
+                <CommonMetricCard
+                  title="Average monthly consumption"
+                  value={formatUsage(history.averageMonthlyKwhPerEntity, unit)}
+                  unit={unit}
+                  icon={<BarChart3 size={22} color="#00A396" />}
+                  iconBg="#E6F7F5"
+                  subtext={`${history.monthsReturned} months shown`}
+                />
+                <CommonMetricCard
+                  title="Highest average-use month"
+                  value={peakMonth ? formatUsage(peakMonth.averageActualKwh, unit) : '—'}
+                  unit={unit}
+                  icon={<TrendingUp size={22} color="#D97706" />}
+                  iconBg="#FFF7ED"
+                  subtext={peakMonth ? formatMonth(peakMonth.monthStart) : undefined}
+                />
+                <CommonMetricCard
+                  title={history.entityCount === 1 ? 'Household included' : 'Households included'}
+                  value={history.entityCount.toLocaleString()}
+                  unit=""
+                  icon={<Database size={22} color="#2563EB" />}
+                  iconBg="#EFF6FF"
+                  subtext={`${history.monthsReturned} months of household history`}
+                />
           </section>
 
           <section
@@ -332,13 +589,13 @@ export const ResidentialGoldInsightsPage: React.FC<{ view?: PageView }> = ({
           >
             <div style={{ marginBottom: '1rem' }}>
               <h2 style={{ color: '#0B1F33', fontSize: '1.1rem', margin: 0 }}>
-                Monthly use per modeled household
+                {history.entityId ? 'Month-over-month change in household use' : 'Month-over-month change in average use'}
               </h2>
               <p style={{ color: '#64748B', fontSize: '0.82rem', margin: '0.35rem 0 0' }}>
-                Mean actual month-end energy compared with the projection available at the final cutoff.
+                Percentage change in actual household consumption versus the previous calendar month.
               </p>
             </div>
-            <div style={{ height: '340px', width: '100%' }}>
+            <div style={{ height: '260px', width: '100%' }}>
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={chartData} margin={{ top: 10, right: 20, left: 8, bottom: 8 }}>
                   <CartesianGrid stroke="#F1F5F9" strokeDasharray="3 3" vertical={false} />
@@ -349,308 +606,46 @@ export const ResidentialGoldInsightsPage: React.FC<{ view?: PageView }> = ({
                     tickLine={false}
                   />
                   <YAxis
-                    width={68}
+                    width={72}
                     tick={{ fontSize: 11, fill: '#64748B' }}
                     axisLine={false}
                     tickLine={false}
-                    tickFormatter={(value: number) => formatUsage(value, unit)}
+                    tickFormatter={(value: number) => `${value.toFixed(0)}%`}
                     label={{
-                      value: `${unit} per entity`,
+                      value: 'Change (%)',
                       angle: -90,
                       position: 'insideLeft',
                       fill: '#64748B',
                       fontSize: 11,
                     }}
                   />
-                  <Tooltip />
-                  <Line
-                    type="monotone"
-                    dataKey="averageActualKwh"
-                    name="Actual month-end use"
-                    stroke="#00A396"
-                    strokeWidth={2.7}
-                    dot={{ r: 3, fill: '#FFFFFF', strokeWidth: 2 }}
-                    activeDot={{ r: 5 }}
+                  <Tooltip
+                    formatter={(value) => [
+                      value === null || value === undefined
+                        ? 'No prior-month comparison'
+                        : `${Number(value).toFixed(1)}%`,
+                      'Change vs prior month',
+                    ]}
                   />
+                  <ReferenceLine y={0} stroke="#94A3B8" strokeDasharray="4 4" />
                   <Line
                     type="monotone"
-                    dataKey="averageProjectionKwh"
-                    name="Cutoff-day projection"
-                    stroke="#7C3AED"
-                    strokeWidth={2.2}
-                    strokeDasharray="6 4"
+                    dataKey="monthOverMonthChangePercent"
+                    name="Change vs prior month"
+                    stroke="#2563EB"
+                    strokeWidth={2.5}
                     dot={{ r: 3, fill: '#FFFFFF', strokeWidth: 2 }}
                     activeDot={{ r: 5 }}
+                    connectNulls={false}
                   />
                 </LineChart>
               </ResponsiveContainer>
             </div>
-            <div
-              style={{
-                display: 'flex',
-                flexWrap: 'wrap',
-                gap: '1.2rem',
-                color: '#64748B',
-                fontSize: '0.78rem',
-                marginTop: '0.25rem',
-              }}
-            >
-              <span><strong style={{ color: '#00A396' }}>●</strong> Actual use</span>
-              <span><strong style={{ color: '#7C3AED' }}>●</strong> Model projection</span>
-              <span>Values are monthly means per entity, not cohort totals.</span>
-            </div>
-          </section>
-
-          <section
-            style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))',
-              gap: '1rem',
-            }}
-          >
-            <div
-              style={{
-                background: '#FFFFFF',
-                border: '1px solid #E2E8F0',
-                borderRadius: '16px',
-                padding: '1.25rem 1.25rem 0.75rem',
-              }}
-            >
-              <h2 style={{ color: '#0B1F33', fontSize: '1rem', margin: '0 0 0.3rem' }}>
-                Sample-cohort monthly consumption
-              </h2>
-              <p style={{ color: '#64748B', fontSize: '0.78rem', margin: '0 0 0.65rem' }}>
-                Total actual energy vs projected energy across the included entities.
-              </p>
-              <div style={{ height: '280px', width: '100%' }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={chartData} margin={{ top: 8, right: 8, left: 4, bottom: 8 }}>
-                    <CartesianGrid stroke="#F1F5F9" strokeDasharray="3 3" vertical={false} />
-                    <XAxis dataKey="month" tick={{ fontSize: 10, fill: '#64748B' }} />
-                    <YAxis
-                      width={64}
-                      tick={{ fontSize: 10, fill: '#64748B' }}
-                      tickFormatter={(value: number) => formatUsage(value, unit)}
-                    />
-                    <Tooltip />
-                    <Legend wrapperStyle={{ fontSize: '0.72rem' }} />
-                    <Bar
-                      dataKey="cohortActualKwh"
-                      name="Actual cohort use"
-                      fill="#00A396"
-                      radius={[4, 4, 0, 0]}
-                    />
-                    <Bar
-                      dataKey="cohortProjectionKwh"
-                      name="Projected cohort use"
-                      fill="#8B5CF6"
-                      radius={[4, 4, 0, 0]}
-                    />
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-
-            <div
-              style={{
-                background: '#FFFFFF',
-                border: '1px solid #E2E8F0',
-                borderRadius: '16px',
-                padding: '1.25rem 1.25rem 0.75rem',
-              }}
-            >
-              <h2 style={{ color: '#0B1F33', fontSize: '1rem', margin: '0 0 0.3rem' }}>
-                Household types in the sample
-              </h2>
-              <p style={{ color: '#64748B', fontSize: '0.78rem', margin: '0 0 0.65rem' }}>
-                Entity mix from the latest gold-data month.
-              </p>
-              <div style={{ height: '280px', width: '100%' }}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={history.buildingTypeBreakdown}
-                      dataKey="entityCount"
-                      nameKey="buildingType"
-                      innerRadius="55%"
-                      outerRadius="80%"
-                      paddingAngle={3}
-                      label={({ name, percent }) =>
-                        `${String(name).replace(/-/g, ' ')} ${((percent ?? 0) * 100).toFixed(0)}%`
-                      }
-                    >
-                      {history.buildingTypeBreakdown.map((group, index) => (
-                        <Cell
-                          key={group.buildingType}
-                          fill={buildingTypeColors[index % buildingTypeColors.length]}
-                        />
-                      ))}
-                    </Pie>
-                    <Tooltip />
-                    <Legend wrapperStyle={{ fontSize: '0.72rem' }} />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-            </div>
-          </section>
-
-          <section
-            style={{
-              background: '#FFFFFF',
-              border: '1px solid #E2E8F0',
-              borderRadius: '16px',
-              padding: '1.25rem 1.5rem 0.8rem',
-            }}
-          >
-            <h2 style={{ color: '#0B1F33', fontSize: '1rem', margin: '0 0 0.3rem' }}>
-              Monthly model projection error
-            </h2>
-            <p style={{ color: '#64748B', fontSize: '0.78rem', margin: '0 0 0.65rem' }}>
-              Mean absolute difference between cutoff-day projection and actual month-end use per entity.
+            <p style={{ color: '#64748B', fontSize: '0.76rem', margin: '0.25rem 0 0' }}>
+              {history.entityId
+                ? `This compares recorded monthly use for household ${history.entityId}.`
+                : 'Monthly household coverage can vary; this compares monthly averages, not a fixed set of matched households.'}
             </p>
-            <div style={{ height: '260px', width: '100%' }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData} margin={{ top: 8, right: 12, left: 8, bottom: 8 }}>
-                  <CartesianGrid stroke="#F1F5F9" strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="month" tick={{ fontSize: 10, fill: '#64748B' }} />
-                  <YAxis
-                    width={68}
-                    tick={{ fontSize: 10, fill: '#64748B' }}
-                    tickFormatter={(value: number) => formatUsage(value, unit)}
-                  />
-                  <Tooltip />
-                  <Bar
-                    dataKey="averageAbsoluteErrorKwh"
-                    name="Mean absolute error"
-                    fill="#D97706"
-                    radius={[5, 5, 0, 0]}
-                  />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </section>
-
-          <section
-            style={{
-              background: '#FFFFFF',
-              border: '1px solid #E2E8F0',
-              borderRadius: '16px',
-              padding: '1.35rem 1.5rem',
-            }}
-          >
-            <div
-              style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'flex-start',
-                flexWrap: 'wrap',
-                gap: '1rem',
-              }}
-            >
-              <div>
-                <h2 style={{ color: '#0B1F33', fontSize: '1.05rem', margin: 0 }}>
-                  Model and training
-                </h2>
-                <p style={{ color: '#64748B', fontSize: '0.82rem', margin: '0.4rem 0 0' }}>
-                  {history.model.description}
-                </p>
-              </div>
-              <span
-                style={{
-                  background: '#F5F3FF',
-                  borderRadius: '999px',
-                  color: '#6D28D9',
-                  fontSize: '0.75rem',
-                  fontWeight: 700,
-                  padding: '0.4rem 0.7rem',
-                }}
-              >
-                {history.model.name} · v{history.model.version}
-              </span>
-            </div>
-            <div
-              style={{
-                display: 'flex',
-                flexWrap: 'wrap',
-                gap: '0.65rem 1.4rem',
-                color: '#475569',
-                fontSize: '0.82rem',
-                marginTop: '1rem',
-              }}
-            >
-              <span>Test RMSE: {history.model.testMetrics.rmse_kwh?.toFixed(1) ?? '—'} kWh</span>
-              <span>Test R²: {history.model.testMetrics.r2?.toFixed(4) ?? '—'}</span>
-              <span>Dataset quality: {history.dataset.qualityPassed ? 'Passed' : 'Not confirmed'}</span>
-              <span>Dataset version: {history.dataset.version}</span>
-            </div>
-            <details style={{ marginTop: '1rem' }}>
-              <summary
-                style={{
-                  color: '#2563EB',
-                  cursor: 'pointer',
-                  fontSize: '0.82rem',
-                  fontWeight: 700,
-                }}
-              >
-                View {features.length} training features
-              </summary>
-              <div
-                style={{
-                  display: 'flex',
-                  flexWrap: 'wrap',
-                  gap: '0.45rem',
-                  marginTop: '0.8rem',
-                }}
-              >
-                {features.map((feature) => (
-                  <span
-                    key={feature}
-                    style={{
-                      background: '#F8FAFC',
-                      border: '1px solid #E2E8F0',
-                      borderRadius: '7px',
-                      color: '#475569',
-                      fontFamily: 'monospace',
-                      fontSize: '0.72rem',
-                      padding: '0.35rem 0.5rem',
-                    }}
-                  >
-                    {feature}
-                  </span>
-                ))}
-              </div>
-            </details>
-          </section>
-
-          <section
-            style={{
-              background: '#FFFFFF',
-              border: '1px solid #E2E8F0',
-              borderRadius: '16px',
-              padding: '1.2rem 1.5rem',
-            }}
-          >
-            <h2 style={{ color: '#0B1F33', fontSize: '1.05rem', margin: '0 0 0.9rem' }}>
-              Sample household mix
-            </h2>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem' }}>
-              {history.buildingTypeBreakdown.map((group) => (
-                <div
-                  key={group.buildingType}
-                  style={{
-                    background: '#F8FAFC',
-                    border: '1px solid #E2E8F0',
-                    borderRadius: '10px',
-                    color: '#334155',
-                    fontSize: '0.84rem',
-                    padding: '0.7rem 0.85rem',
-                  }}
-                >
-                  <strong>{group.entityCount.toLocaleString()}</strong>{' '}
-                  {group.buildingType.replace(/-/g, ' ')}
-                </div>
-              ))}
-            </div>
           </section>
         </>
       ) : null}

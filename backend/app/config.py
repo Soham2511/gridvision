@@ -68,6 +68,15 @@ class BaseConfig:
     GOVERNMENT_FORECAST_MODEL_PATH = Path(
         os.getenv("GOVERNMENT_FORECAST_MODEL_PATH", PROJECT_ROOT / "data" / "airflow" / "government" / "hybrid_grid_2018.joblib")
     )
+    SEGMENTATION_OUTPUT_DIR = Path(
+        os.getenv(
+            "SEGMENTATION_OUTPUT_DIR",
+            PROJECT_ROOT / "data" / "segmentation",
+        )
+    )
+    SEGMENTATION_API_MAX_PAGE_SIZE = int(
+        os.getenv("SEGMENTATION_API_MAX_PAGE_SIZE", "200")
+    )
 
 
 class DevelopmentConfig(BaseConfig):

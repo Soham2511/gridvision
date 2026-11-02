@@ -1,5 +1,11 @@
-import React from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { usePersona } from '../context';
+import { analyticsService } from '../services/analyticsService';
+import { modelService } from '../services/modelService';
+import {
+  CommercialBuilding,
+  ResidentialBuildingProfile,
+} from '../types/analytics';
 import {
   Calendar,
   Clock,
@@ -65,6 +71,8 @@ const ToggleSwitch: React.FC<ToggleSwitchProps> = ({ id, checked, onChange, aria
 export const ProfilePage: React.FC = () => {
   const {
     currentPersona,
+    activeEntity,
+    setActiveEntity,
     energyUnit,
     setEnergyUnit,
     notificationPreferences,
@@ -96,8 +104,155 @@ export const ProfilePage: React.FC = () => {
     : '18 Jun 2024';
 
   const lastLoginTimestamp = '19 Oct 2026, 09:15 AM';
-  const userName = 'Rohit Sharma';
+  const userName = isGov
+    ? 'Government Demo User'
+    : isComm
+    ? 'Commercial Demo User'
+    : 'Residential Demo User';
   const userInitial = userName.charAt(0);
+  const [commercialBuildings, setCommercialBuildings] = useState<CommercialBuilding[]>([]);
+  const [residentialEntityIds, setResidentialEntityIds] = useState<string[]>([]);
+  const [residentialBuildingProfile, setResidentialBuildingProfile] =
+    useState<ResidentialBuildingProfile | null>(null);
+  const [buildingListLoading, setBuildingListLoading] = useState(false);
+  const [buildingProfileLoading, setBuildingProfileLoading] = useState(false);
+  const [buildingError, setBuildingError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (currentPersona !== 'household' && currentPersona !== 'commercial') return;
+
+    let cancelled = false;
+    setBuildingListLoading(true);
+    setBuildingError(null);
+    const loadBuildings = async () => {
+      try {
+        if (currentPersona === 'commercial') {
+          const buildings = await analyticsService.getCommercialBuildings();
+          if (cancelled) return;
+          setCommercialBuildings(buildings);
+          const buildingIds = buildings.map((building) => building.buildingId);
+          if (buildingIds.length && !buildingIds.includes(activeEntity)) {
+            setActiveEntity(buildingIds[0]);
+          }
+        } else {
+          const page = await modelService.getCustomerRecords(200, 0);
+          if (cancelled) return;
+          const entityIds = Array.from(
+            new Set(page.items.map((record) => record.entityId))
+          );
+          setResidentialEntityIds(entityIds);
+          if (entityIds.length && !entityIds.includes(activeEntity)) {
+            setActiveEntity(entityIds[0]);
+          }
+        }
+      } catch (loadError) {
+        if (!cancelled) {
+          setBuildingError(
+            loadError instanceof Error
+              ? loadError.message
+              : 'Unable to load building profiles.'
+          );
+        }
+      } finally {
+        if (!cancelled) setBuildingListLoading(false);
+      }
+    };
+    void loadBuildings();
+    return () => {
+      cancelled = true;
+    };
+  }, [currentPersona]);
+
+  useEffect(() => {
+    if (currentPersona !== 'household' || !activeEntity) {
+      setResidentialBuildingProfile(null);
+      return;
+    }
+
+    let cancelled = false;
+    setBuildingProfileLoading(true);
+    setBuildingError(null);
+    modelService
+      .getResidentialBuildingProfile(activeEntity)
+      .then((profile) => {
+        if (!cancelled) setResidentialBuildingProfile(profile);
+      })
+      .catch((loadError: unknown) => {
+        if (!cancelled) {
+          setBuildingError(
+            loadError instanceof Error
+              ? loadError.message
+              : 'Unable to load this residential building profile.'
+          );
+          setResidentialBuildingProfile(null);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setBuildingProfileLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [currentPersona, activeEntity]);
+
+  const selectedCommercialBuilding = commercialBuildings.find(
+    (building) => building.buildingId === activeEntity
+  );
+  const buildingOptions =
+    currentPersona === 'commercial'
+      ? commercialBuildings.map((building) => building.buildingId)
+      : residentialEntityIds;
+  const profileDetails = useMemo(() => {
+    if (currentPersona === 'commercial' && selectedCommercialBuilding) {
+      const building = selectedCommercialBuilding;
+      return [
+        ['Building ID', building.buildingId],
+        ['General use', building.primarySpaceUsage],
+        ['Specific use', building.specificSpaceUsage],
+        ['Building type', building.buildingType],
+        ['Building area', building.sqm, 'm²'],
+        ['Footprint area', building.footprintAreaM2, 'm²'],
+        ['Year built', building.yearBuilt],
+        ['Grid ID', building.coarseGridId],
+        ['IDF', building.idfKw],
+        ['Latitude', building.latitude],
+        ['Longitude', building.longitude],
+        ['Latest observation', building.lastTimestamp],
+      ] as Array<[string, string | number | null | undefined, string?]>;
+    }
+    if (currentPersona === 'household' && residentialBuildingProfile) {
+      const building = residentialBuildingProfile;
+      return [
+        ['Meter / building ID', building.entityId],
+        ['Building type', building.buildingType],
+        ['Specific use', building.specificUseType],
+        ['Use type', building.useType],
+        ['Building area', building.buildingAreaM2, 'm²'],
+        ['Footprint area', building.footprintAreaM2, 'm²'],
+        ['Year built', building.effectiveYearBuilt],
+        ['Vintage', building.vintage],
+        ['Coarse grid ID', building.gridCoarseId],
+        ['Finer grid ID', building.gridFinerId],
+        ['IDF', building.idfKw],
+        ['Tract ID', building.tractId],
+        ['Latitude', building.latitude],
+        ['Longitude', building.longitude],
+      ] as Array<[string, string | number | null | undefined, string?]>;
+    }
+    return [];
+  }, [currentPersona, residentialBuildingProfile, selectedCommercialBuilding]);
+
+  const formatBuildingValue = (
+    value: string | number | null | undefined,
+    unit?: string
+  ): string => {
+    if (value === null || value === undefined || value === '') return 'Not available';
+    const formatted =
+      typeof value === 'number'
+        ? value.toLocaleString(undefined, { maximumFractionDigits: 6 })
+        : value;
+    return unit ? `${formatted} ${unit}` : formatted;
+  };
 
   const handleToggle = (key: keyof typeof notificationPreferences) => {
     setNotificationPreferences((prev) => ({
@@ -140,6 +295,95 @@ export const ProfilePage: React.FC = () => {
           View your account details and manage your preferences.
         </p>
       </div>
+
+      {(currentPersona === 'household' || currentPersona === 'commercial') && (
+        <section
+          aria-label="Building profile"
+          style={{
+            backgroundColor: '#FFFFFF',
+            borderRadius: '14px',
+            border: '1px solid #E2E8F0',
+            boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04)',
+            padding: '1.5rem 1.75rem',
+          }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              gap: '1rem',
+              marginBottom: '1.25rem',
+            }}
+          >
+            <div>
+              <h2 style={{ fontSize: '1.15rem', fontWeight: 700, color: '#0F172A', margin: 0 }}>
+                Selected building details
+              </h2>
+              <p style={{ fontSize: '0.82rem', color: '#64748B', margin: '0.35rem 0 0' }}>
+                Dataset attributes and location for the selected {isComm ? 'building' : 'household'}.
+              </p>
+            </div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', color: '#334155', fontSize: '0.85rem', fontWeight: 700 }}>
+              Building ID
+              <select
+                aria-label="Select building ID"
+                value={activeEntity}
+                onChange={(event) => setActiveEntity(event.target.value)}
+                disabled={buildingListLoading || buildingOptions.length === 0}
+                style={{ border: '1px solid #CBD5E1', borderRadius: '8px', background: '#FFFFFF', color: '#0B1F33', padding: '0.55rem 0.7rem', minWidth: '150px' }}
+              >
+                {buildingOptions.length === 0 && (
+                  <option value="">
+                    {buildingListLoading ? 'Loading building IDs…' : 'No building IDs'}
+                  </option>
+                )}
+                {buildingOptions.map((buildingId) => (
+                  <option key={buildingId} value={buildingId}>{buildingId}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+          {buildingError && (
+            <div
+              role="alert"
+              style={{ border: '1px solid #FECACA', background: '#FEF2F2', color: '#991B1B', borderRadius: '9px', padding: '0.75rem 0.9rem', marginBottom: '1rem' }}
+            >
+              {buildingError}
+            </div>
+          )}
+          {buildingListLoading || buildingProfileLoading ? (
+            <p role="status" style={{ color: '#64748B', margin: 0 }}>
+              Loading selected building details…
+            </p>
+          ) : profileDetails.length ? (
+            <dl
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))',
+                gap: '1rem',
+                margin: 0,
+              }}
+            >
+              {profileDetails.map(([label, value, unit]) => (
+                <div key={label} style={{ borderTop: '1px solid #E2E8F0', paddingTop: '0.75rem' }}>
+                  <dt style={{ color: '#64748B', fontSize: '0.75rem', fontWeight: 600, marginBottom: '0.3rem' }}>
+                    {label}
+                  </dt>
+                  <dd style={{ color: '#0F172A', fontSize: '0.92rem', fontWeight: 700, margin: 0, overflowWrap: 'anywhere' }}>
+                    {formatBuildingValue(value, unit)}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          ) : !buildingError ? (
+            <p style={{ color: '#64748B', margin: 0 }}>
+              No dataset details are available for this building ID.
+            </p>
+          ) : null}
+        </section>
+      )}
 
       {/* 2. Profile Summary Card */}
       <div

@@ -26,6 +26,7 @@ from app.services.customer_service import CustomerService
 from app.services.insight_service import InsightService
 from app.services.assistant_service import AssistantService
 from app.models.customer_bill_prediction import CustomerBillPredictionService
+from app.services.segmentation_service import SegmentationService
 
 
 def create_app(config_class: type[BaseConfig] | None = None) -> Flask:
@@ -103,7 +104,7 @@ def create_app(config_class: type[BaseConfig] | None = None) -> Flask:
     # Instantiate business services
     health_svc = HealthService(data_provider, model_provider)
     forecast_svc = ForecastService(data_provider, model_provider)
-    dashboard_svc = DashboardService(data_provider)
+    dashboard_svc = DashboardService(data_provider, model_provider)
     peak_svc = PeakDemandService(data_provider)
     anomaly_svc = AnomalyService(data_provider)
     customer_svc = CustomerService(data_provider)
@@ -115,6 +116,10 @@ def create_app(config_class: type[BaseConfig] | None = None) -> Flask:
         artifact_path=app.config["CUSTOMER_MODEL_ARTIFACT_PATH"],
         model_provider=customer_model_provider,
         tariff_inr_per_kwh=app.config["CUSTOMER_TARIFF_INR_PER_KWH"],
+    )
+    government_segmentation_svc = SegmentationService(
+        output_dir=app.config["SEGMENTATION_OUTPUT_DIR"],
+        max_page_size=app.config["SEGMENTATION_API_MAX_PAGE_SIZE"],
     )
 
     # Attach to app extensions
@@ -131,6 +136,7 @@ def create_app(config_class: type[BaseConfig] | None = None) -> Flask:
     app.extensions["customer_bill_prediction_service"] = (
         customer_bill_prediction_svc
     )
+    app.extensions["government_segmentation_service"] = government_segmentation_svc
 
     # Register error handlers
     register_error_handlers(app)
@@ -156,6 +162,7 @@ def create_app(config_class: type[BaseConfig] | None = None) -> Flask:
                 "anomalies": f"{app.config.get('API_PREFIX')}/anomalies",
                 "customers": f"{app.config.get('API_PREFIX')}/customers/segmentation-matrix",
                 "insights": f"{app.config.get('API_PREFIX')}/energy-insights",
+                "government_segmentation": f"{app.config.get('API_PREFIX')}/government/segmentation/overview",
             },
         })
 

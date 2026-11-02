@@ -11,7 +11,7 @@ services:
       - -o
       - pipefail
       - -c
-      - umask 077; airflow standalone 2>&1 | tee -a /opt/gridvision/logs/airflow/standalone.log
+      - umask 077; rm -f /opt/airflow/airflow-webserver.pid; airflow standalone 2>&1 | tee -a /opt/gridvision/logs/airflow/standalone.log
     environment:
       AIRFLOW_HOME: /opt/airflow
       AIRFLOW__CORE__DAGS_FOLDER: /opt/gridvision/airflow
@@ -22,6 +22,9 @@ services:
       GRIDVISION_DATA_DIR: /opt/gridvision/data
       GRIDVISION_LOG_DIR: /opt/gridvision/logs
       GRIDVISION_SOURCE_PATH: /opt/gridvision/data/sample/${GRIDVISION_SOURCE_FILENAME:-training_sample_50000.parquet}
+      SEGMENTATION_SOURCE_PATH: /opt/gridvision/data/bronze/${GRIDVISION_SOURCE_FILENAME:-training_sample_50000.parquet}
+      SEGMENTATION_DUCKDB_MEMORY_LIMIT: ${SEGMENTATION_DUCKDB_MEMORY_LIMIT:-1GB}
+      SEGMENTATION_DUCKDB_THREADS: ${SEGMENTATION_DUCKDB_THREADS:-1}
       GOVERNMENT_PIPELINE_INPUT: /opt/gridvision/data/sample/${GRIDVISION_SOURCE_FILENAME:-training_sample_50000.parquet}
       MLFLOW_TRACKING_URI: http://mlflow:5001
       MLFLOW_MODEL_NAME: ${MLFLOW_MODEL_NAME:-customer-bill-prediction}
@@ -136,11 +139,13 @@ services:
       COMMERCIAL_FORECAST_MODEL_PATH: /models/commercial/building_forecast.joblib
       GOVERNMENT_FORECAST_DATA_PATH: /data/government/training_ready_2018.parquet
       GOVERNMENT_FORECAST_MODEL_PATH: /data/government/hybrid_grid_2018.joblib
+      SEGMENTATION_OUTPUT_DIR: /data/segmentation
       CORS_ORIGINS: http://localhost:8082,http://127.0.0.1:8082
     volumes:
       - ${GRIDVISION_DATA_DIR:?Set GRIDVISION_DATA_DIR}/mlflow:/mlflow:ro
       - ${GRIDVISION_DATA_DIR:?Set GRIDVISION_DATA_DIR}/gold:/data/gold:ro
       - ${GRIDVISION_DATA_DIR:?Set GRIDVISION_DATA_DIR}/airflow/government:/data/government:ro
+      - ${GRIDVISION_DATA_DIR:?Set GRIDVISION_DATA_DIR}/segmentation:/data/segmentation:ro
       - ./models/commercial:/models/commercial:ro
       - ./models/customer_bill_prediction.metadata.json:/models/customer_bill_prediction.metadata.json:ro
       - ${GRIDVISION_LOG_DIR:-./logs}:/logs
@@ -167,6 +172,7 @@ services:
       dockerfile: Dockerfile.frontend
       args:
         VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8082/api/v1}
+        VITE_MAP_TILE_URL: ${VITE_MAP_TILE_URL:-https://tile.openstreetmap.org/{z}/{x}/{y}.png}
     depends_on:
       backend:
         condition: service_healthy

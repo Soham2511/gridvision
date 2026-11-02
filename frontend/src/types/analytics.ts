@@ -44,9 +44,16 @@ export type PeakDemandSummary = PeakDemandAnalysis;
 export interface CommercialBuilding {
   buildingId: string;
   siteId: string;
+  coarseGridId?: number;
   primarySpaceUsage: string;
+  specificSpaceUsage?: string | null;
+  buildingType?: string | null;
   sqm: number;
+  footprintAreaM2?: number | null;
   yearBuilt: number;
+  idfKw?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
   recentDemandKwh: number;
   predictedDemandKwh: number;
   absErrorKwh: number;
@@ -260,6 +267,7 @@ export interface CommercialDashboardData {
     label: string;
   };
   demarcationTime?: string;
+  dataPeriod?: string;
   curve: CommercialDashboardPoint[];
 }
 
@@ -268,7 +276,7 @@ export interface GovernmentRegionItem {
   name: string;
   currentDemand: number;
   predictedDemand: number;
-  deltaPct: number;
+  deltaPct: number | null;
   isIncreaseNegative?: boolean;
   pinColor: string;
   sparkline: number[];
@@ -281,8 +289,8 @@ export interface GovernmentDashboardData {
   regionName?: string;
   timeRange: '1D' | '7D' | '1M' | '3M' | '1Y';
   avgDemand: number;
-  avgDemandDeltaPct: number;
-  prevPeriodAvgDemand: number;
+  avgDemandDeltaPct: number | null;
+  prevPeriodAvgDemand: number | null;
   peakDemand: number;
   peakTimestamp: string;
   predictedPeak: number;
@@ -304,6 +312,7 @@ export interface GovernmentDashboardData {
     label: string;
   };
   demarcationTime?: string;
+  dataPeriod?: string;
   yDomain: [number, number];
   yTicks: number[];
   curve: Array<{
@@ -460,10 +469,12 @@ export interface ResidentialGoldHistoryPoint {
   averageProjectionKwh: number;
   averageAbsoluteErrorKwh: number;
   averageCoverageRatio: number;
+  monthOverMonthChangePercent: number | null;
 }
 
 export interface ResidentialGoldHistory {
   timeRange: '3M' | '6M' | '1Y' | 'ALL';
+  entityId: string | null;
   monthsReturned: number;
   startMonth: string;
   endMonth: string;
@@ -496,4 +507,21 @@ export interface ResidentialGoldHistory {
     entityCount: number;
   }>;
   history: ResidentialGoldHistoryPoint[];
+}
+
+export interface ResidentialBuildingProfile {
+  entityId: string;
+  buildingType: string | null;
+  specificUseType: string | null;
+  useType: string | null;
+  buildingAreaM2: number | null;
+  footprintAreaM2: number | null;
+  effectiveYearBuilt: number | null;
+  vintage: string | null;
+  gridCoarseId: number | null;
+  idfKw: string | null;
+  gridFinerId: number | null;
+  tractId: string | null;
+  latitude: number | null;
+  longitude: number | null;
 }

@@ -5,6 +5,7 @@ import {
   CustomerBillRecord,
   PaginatedCustomerRecords,
   RegisteredModel,
+  ResidentialBuildingProfile,
   ResidentialGoldHistory,
 } from '../types/analytics';
 
@@ -67,12 +68,21 @@ class ModelService {
     );
   }
 
+  async getResidentialBuildingProfile(
+    entityId: string
+  ): Promise<ResidentialBuildingProfile> {
+    return apiClient.get<ResidentialBuildingProfile>(
+      `/models/customer-bill-prediction/profile/${encodeURIComponent(entityId)}`
+    );
+  }
+
   async getResidentialGoldHistory(
-    timeRange: ResidentialGoldHistory['timeRange'] = 'ALL'
+    timeRange: ResidentialGoldHistory['timeRange'] = 'ALL',
+    entityId?: string
   ): Promise<ResidentialGoldHistory> {
     return apiClient.get<ResidentialGoldHistory>(
       '/models/customer-bill-prediction/history',
-      { time_range: timeRange }
+      { time_range: timeRange, entity_id: entityId }
     );
   }
 

@@ -213,8 +213,12 @@ class AnalyticsService {
   }
 
   // --- Government & Utilities Dashboard Data ---
-  async getGovernmentRegions(): Promise<GovernmentRegionItem[]> {
-    return apiClient.get<GovernmentRegionItem[]>('/dashboard/government/regions');
+  async getGovernmentRegions(
+    timeRange: '1D' | '7D' | '1M' | '3M' | '1Y' = '1D'
+  ): Promise<GovernmentRegionItem[]> {
+    return apiClient.get<GovernmentRegionItem[]>('/dashboard/government/regions', {
+      time_range: timeRange,
+    });
   }
 
   async getGovernmentDashboard(
