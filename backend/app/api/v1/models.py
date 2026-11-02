@@ -11,6 +11,8 @@ from app.models.customer_bill_prediction import (
     CustomerBillPredictionError,
     CustomerBillPredictionService,
 )
+from app.models.registry import MODEL_REGISTRY
+from app.services.segmentation_service import SegmentationUnavailableError
 from app.utils.responses import success_response
 
 bp = Blueprint("models", __name__)
@@ -44,11 +46,62 @@ def _positive_int(value: str | None, name: str, default: int) -> int:
 def get_model_catalog():
     """Return real model metadata and data readiness for the model workbench."""
     try:
-        return success_response({"models": _service().get_model_catalog()})
+        forecast_provider = current_app.extensions["model_provider"]
+        if hasattr(forecast_provider, "get_horizon_model_status"):
+            forecast_status = forecast_provider.get_horizon_model_status()
+        else:
+            forecast_status = forecast_provider.get_model_status().get("models", {})
+        models = _service().get_model_catalog(forecast_status)
     except CustomerBillPredictionError as exc:
         raise AppError(
             str(exc), code="MODEL_UNAVAILABLE", status_code=503
         ) from exc
+    segmentation_service = current_app.extensions[
+        "government_segmentation_service"
+    ]
+    try:
+        metadata = segmentation_service.get_model_metadata()
+        models.append(
+            {
+                **MODEL_REGISTRY["government-customer-segmentation"].as_dict(),
+                "status": "configured",
+                "provider": "local_artifact",
+                "modelVersion": metadata.get("model_version", "unknown"),
+                "selectedModel": metadata.get("model_version", "unknown"),
+                "healthSummary": (
+                    f"{metadata.get('assignment_count', 0):,} buildings assigned "
+                    f"across {len(metadata.get('trained_models', []))} model groups."
+                ),
+                "assignmentCount": metadata.get("assignment_count", 0),
+                "trainedModelCount": len(metadata.get("trained_models", [])),
+                "observationStart": metadata.get("observation_start"),
+                "observationEndExclusive": metadata.get(
+                    "observation_end_exclusive"
+                ),
+                "features": sorted(
+                    {
+                        feature
+                        for trained_model in metadata.get("trained_models", [])
+                        for feature in trained_model.get(
+                            "transformed_feature_columns", []
+                        )
+                    }
+                ),
+            }
+        )
+    except SegmentationUnavailableError as exc:
+        models.append(
+            {
+                **MODEL_REGISTRY["government-customer-segmentation"].as_dict(),
+                "status": "unavailable",
+                "provider": "local_artifact",
+                "modelVersion": "not_deployed",
+                "selectedModel": "not_deployed",
+                "healthSummary": str(exc),
+                "error": str(exc),
+            }
+        )
+    return success_response({"models": models})
 
 
 @bp.route("/models/<model_id>/entities", methods=["GET"])

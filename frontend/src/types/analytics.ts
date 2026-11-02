@@ -362,9 +362,9 @@ export interface ModelRegistryItem {
   version: string;
   status: 'Active' | 'Monitoring' | 'Deprecated' | 'Configured' | 'Unavailable';
   lastInference: string;
-  mse: number;
-  rmse: number;
-  r2: number;
+  mse?: number;
+  rmse?: number;
+  r2?: number;
 }
 
 export interface PlatformHealthSummary {
@@ -422,6 +422,11 @@ export interface RegisteredModel {
   testMetrics?: CustomerBillModel['testMetrics'];
   features?: string[];
   tariffInrPerKwh?: number;
+  healthSummary?: string;
+  assignmentCount?: number;
+  trainedModelCount?: number;
+  observationStart?: string | null;
+  observationEndExclusive?: string | null;
 }
 
 export interface CustomerBillRecord {

@@ -62,7 +62,7 @@ def publish_geospatial_outputs(
 ) -> dict[str, Any]:
     settings.output_dir.mkdir(parents=True, exist_ok=True)
     assignments_path = assignments_path or settings.output_dir / "consumer_assignments.parquet"
-    feature_path = feature_path or settings.output_dir / "building_features.parquet"
+    feature_path = feature_path or settings.feature_path
     source = settings.source_path.expanduser().resolve()
     if not source.is_file() or not assignments_path.is_file() or not feature_path.is_file():
         raise FileNotFoundError("Source, building features, and assignments are required")
@@ -254,9 +254,8 @@ def publish_geospatial_outputs(
             "target_segments": sorted(targets),
             "priority_limitations": "Priority is based on building-consumption features only; it does not indicate transformer overload, voltage instability, or network inadequacy.",
         }
-        _atomic_json(settings.output_dir / "reports" / "geospatial_summary.json", report)
+        _atomic_json(settings.reports_dir / "geospatial_summary.json", report)
         logger.info("Published segmentation geospatial outputs: %s", report)
         return report
     finally:
         con.close()
-

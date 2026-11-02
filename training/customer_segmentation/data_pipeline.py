@@ -229,7 +229,7 @@ def validate_source(settings: SegmentationSettings) -> dict[str, Any]:
             "buildings_with_inconsistent_categories": coverage[9],
         }
         report["profiled_at_utc"] = con.execute("SELECT current_timestamp").fetchone()[0]
-        _atomic_json(settings.output_dir / "reports" / "source_profile.json", report)
+        _atomic_json(settings.reports_dir / "source_profile.json", report)
         logger.info("Completed segmentation source profile: %s", report)
         return report
     finally:
@@ -242,7 +242,7 @@ def generate_building_features(settings: SegmentationSettings) -> dict[str, Any]
     if profile["duplicate_building_timestamp_rows"]:
         raise ValueError(
             "Source has duplicate (OBJECTID, timestamp) rows; resolve source duplicate "
-            "semantics before feature generation. See reports/source_profile.json."
+            "semantics before feature generation. See the configured source profile report."
         )
     if profile["invalid_timestamp_rows"] or profile["missing_building_id_rows"]:
         raise ValueError("Source has invalid timestamps or building IDs")
@@ -252,7 +252,8 @@ def generate_building_features(settings: SegmentationSettings) -> dict[str, Any]
     if isinstance(timestamp_max, str):
         timestamp_max = datetime.fromisoformat(timestamp_max)
 
-    settings.output_dir.mkdir(parents=True, exist_ok=True)
+    settings.feature_path.parent.mkdir(parents=True, exist_ok=True)
+    settings.reports_dir.mkdir(parents=True, exist_ok=True)
     source = settings.source_path.expanduser().resolve()
     con = _connect(settings)
     try:
@@ -269,7 +270,7 @@ def generate_building_features(settings: SegmentationSettings) -> dict[str, Any]
             "SELECT date_diff('hour', CAST(? AS TIMESTAMP), CAST(? AS TIMESTAMP))",
             [start, end_exclusive],
         ).fetchone()[0]
-        output = settings.output_dir / "building_features.parquet"
+        output = settings.feature_path
         stage = output.with_suffix(".parquet.stage")
         read = _parquet_sql(source)
         sql = f"""
@@ -495,7 +496,7 @@ def generate_building_features(settings: SegmentationSettings) -> dict[str, Any]
             "missing_finer_grid_buildings": finer_grid_missing,
             "metadata_columns_excluded_from_clustering": sorted(IDENTIFIER_COLUMNS),
         }
-        _atomic_json(settings.output_dir / "reports" / "feature_generation.json", report)
+        _atomic_json(settings.reports_dir / "feature_generation.json", report)
         logger.info("Generated segmentation building features: %s", report)
         return report
     finally:
@@ -504,7 +505,7 @@ def generate_building_features(settings: SegmentationSettings) -> dict[str, Any]
 
 def load_or_validate_source_profile(settings: SegmentationSettings) -> dict[str, Any]:
     """Reuse a profile only when it describes the current immutable source file."""
-    profile_path = settings.output_dir / "reports" / "source_profile.json"
+    profile_path = settings.reports_dir / "source_profile.json"
     profile: dict[str, Any] | None = None
     if profile_path.is_file():
         try:
@@ -521,4 +522,3 @@ def load_or_validate_source_profile(settings: SegmentationSettings) -> dict[str,
     if profile is None:
         profile = validate_source(settings)
     return profile
-

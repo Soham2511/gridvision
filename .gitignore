@@ -22,6 +22,8 @@ htmlcov/
 /models/*.metadata.json
 /models/commercial/**
 !/models/commercial/.gitkeep
+/models/segmentation/**
+!/models/segmentation/.gitkeep
 *.duckdb
 *.sqlite
 *.sqlite3

@@ -74,6 +74,21 @@ class BaseConfig:
             PROJECT_ROOT / "data" / "segmentation",
         )
     )
+    SEGMENTATION_FEATURE_PATH = Path(
+        os.getenv(
+            "SEGMENTATION_FEATURE_PATH",
+            PROJECT_ROOT / "data" / "gold" / "customer_segmentation_features.parquet",
+        )
+    )
+    SEGMENTATION_MODEL_DIR = Path(
+        os.getenv("SEGMENTATION_MODEL_DIR", PROJECT_ROOT / "models" / "segmentation")
+    )
+    SEGMENTATION_REPORTS_DIR = Path(
+        os.getenv(
+            "SEGMENTATION_REPORTS_DIR",
+            PROJECT_ROOT / "docs" / "customer_segmentation" / "reports",
+        )
+    )
     SEGMENTATION_API_MAX_PAGE_SIZE = int(
         os.getenv("SEGMENTATION_API_MAX_PAGE_SIZE", "200")
     )

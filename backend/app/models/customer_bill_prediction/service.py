@@ -182,15 +182,22 @@ class CustomerBillPredictionService:
             summary["error"] = model_error
         return summary
 
-    def get_model_catalog(self) -> list[dict[str, Any]]:
+    def get_model_catalog(
+        self, forecast_status: dict[str, dict[str, Any]] | None = None
+    ) -> list[dict[str, Any]]:
         catalog = []
-        if hasattr(self.model_provider, "get_horizon_model_status"):
-            forecast_status = self.model_provider.get_horizon_model_status()
-        else:
-            forecast_status = self.model_provider.get_model_status().get("models", {})
+        if forecast_status is None:
+            if hasattr(self.model_provider, "get_horizon_model_status"):
+                forecast_status = self.model_provider.get_horizon_model_status()
+            else:
+                forecast_status = self.model_provider.get_model_status().get(
+                    "models", {}
+                )
         for model_id, definition in MODEL_REGISTRY.items():
             if model_id == "customer-bill-prediction":
                 catalog.append(self.get_summary())
+                continue
+            if model_id == "government-customer-segmentation":
                 continue
             provider_key = {
                 "commercial-building-forecast": "commercial",
