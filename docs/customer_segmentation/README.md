@@ -4,10 +4,12 @@ This guide covers the independent, behaviour-based segmentation workflow for
 all consumer categories in the Bronze source. It is separate from the existing
 residential customer bill-prediction workflow and does not alter that model.
 
-## Current published run
+## Latest run
 
 The latest completed Airflow run is recorded in
-`data/segmentation/reports/execution_summary.json`:
+`docs/customer_segmentation/reports/execution_summary.json`. The run details
+below describe the previous published sample run; the next pipeline run writes
+an updated execution summary to the new report location:
 
 - DAG: `government_customer_segmentation`
 - Airflow run: `manual__2026-11-01T19:08:16+00:00`
@@ -88,27 +90,33 @@ Airflow run ID and validation results to the execution summary.
 
 The equivalent local CLI is `python -m training.customer_segmentation.cli`.
 It supports `--source`, `--output-dir`, `--window-end`, `--window-months`,
-`--minimum-coverage`, `--profile-only`, and `--no-mlflow`. Do not use
+`--minimum-coverage`, `--profile-only`, and `--no-mlflow`. `--output-dir`
+changes the published API tables only. Feature, model, and report locations are
+configured independently with `SEGMENTATION_FEATURE_PATH`,
+`SEGMENTATION_MODEL_DIR`, and `SEGMENTATION_REPORTS_DIR`. Do not use
 `--no-mlflow` when the intent is to register the current models.
 
 ## Published artifacts
 
-Artifacts are written under `${GRIDVISION_DATA_DIR}/segmentation/` and mounted
-read-only into the backend. Core outputs include:
+Published API tables and serving metadata are written under
+`${GRIDVISION_DATA_DIR}/segmentation/` and mounted read-only into the backend.
+Other pipeline artifacts follow the project layout:
 
-- `building_features.parquet`, `consumer_assignments.parquet`
+- `data/gold/customer_segmentation_features.parquet` — engineered
+  building-level feature dataset
+- `models/segmentation/*_model.joblib` — fitted model bundles
+- `docs/customer_segmentation/reports/*.json` — source profile, feature
+  generation, model selection, diagnostics, geospatial, and execution reports
+- `consumer_assignments.parquet`
 - `cluster_profiles.parquet`, `segment_distribution.parquet`
 - `region_summary_coarse.parquet`, `region_summary_finer.parquet`
 - `cluster_hourly_profile.parquet`, `cluster_daily_profile.parquet`,
   `cluster_monthly_profile.parquet`, `survey_priority.parquet`
-- `model_metadata.json`, `model_selection_report.json`,
-  `feature_diagnostics.json`, `models/*_model.joblib`
-- `reports/source_profile.json`, `reports/feature_generation.json`,
-  `reports/geospatial_summary.json`, `reports/execution_summary.json`
+- `model_metadata.json`
 
 `execution_summary.json` is the authoritative run record. Its output validation
 contains each Parquet row count, assignment reconciliation, model categories,
-and status. Airflow's native task logs are available from the Airflow UI and
+resolved artifact paths, and status. Airflow's native task logs are available from the Airflow UI and
 inside its container under `/opt/airflow/logs/`; the standalone startup log is
 `logs/airflow/standalone.log`.
 

@@ -34,14 +34,28 @@ class SegmentationService:
         "finer": ("region_summary_finer.parquet", "id.grid.finer"),
     }
 
-    def __init__(self, output_dir: str | Path, max_page_size: int = 200) -> None:
+    def __init__(
+        self,
+        output_dir: str | Path,
+        max_page_size: int = 200,
+        reports_dir: str | Path | None = None,
+    ) -> None:
         self.output_dir = Path(output_dir).expanduser()
+        self.reports_dir = (
+            Path(reports_dir).expanduser()
+            if reports_dir is not None
+            else self.output_dir / "reports"
+        )
         self.max_page_size = max(1, int(max_page_size))
 
     def _ensure_ready(self) -> dict[str, Any]:
         try:
             return validate_outputs(
-                replace(SegmentationSettings.from_environment(), output_dir=self.output_dir)
+                replace(
+                    SegmentationSettings.from_environment(),
+                    output_dir=self.output_dir,
+                    reports_dir=self.reports_dir,
+                )
             )
         except (OSError, ValueError, KeyError) as exc:
             raise SegmentationUnavailableError(
@@ -50,7 +64,11 @@ class SegmentationService:
 
     def _json(self, filename: str) -> dict[str, Any]:
         self._ensure_ready()
-        path = self.output_dir / filename
+        path = (
+            self.reports_dir / filename.removeprefix("reports/")
+            if filename.startswith("reports/")
+            else self.output_dir / filename
+        )
         try:
             return json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:

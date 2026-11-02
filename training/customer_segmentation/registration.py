@@ -102,13 +102,13 @@ def register_models(settings: SegmentationSettings) -> dict[str, Any]:
                 "reused_existing_registration": True,
             }
     model_selection = json.loads(
-        (settings.output_dir / "model_selection_report.json").read_text()
+        (settings.reports_dir / "model_selection_report.json").read_text()
     )
     feature_report = json.loads(
-        (settings.output_dir / "reports" / "feature_generation.json").read_text()
+        (settings.reports_dir / "feature_generation.json").read_text()
     )
     source_profile = json.loads(
-        (settings.output_dir / "reports" / "source_profile.json").read_text()
+        (settings.reports_dir / "source_profile.json").read_text()
     )
     source_revision, source_dirty = _source_revision()
     bronze_manifest_path = (
@@ -193,7 +193,7 @@ def register_models(settings: SegmentationSettings) -> dict[str, Any]:
                     f"{model_category.lower()}.selected.cluster_count",
                     float(selected["cluster_count"]),
                 )
-            bundle_path = settings.output_dir / "models" / f"{model_category.lower()}_model.joblib"
+            bundle_path = settings.model_dir / f"{model_category.lower()}_model.joblib"
             import joblib
 
             bundle = joblib.load(bundle_path)
@@ -204,7 +204,7 @@ def register_models(settings: SegmentationSettings) -> dict[str, Any]:
                 ]
             )
             input_example = pd.read_parquet(
-                settings.output_dir / "building_features.parquet",
+                settings.feature_path,
                 columns=bundle["feature_columns"],
             ).head(3)
             model_info = mlflow.sklearn.log_model(
@@ -241,11 +241,11 @@ def register_models(settings: SegmentationSettings) -> dict[str, Any]:
             )
         for path in (
             settings.output_dir / "model_metadata.json",
-            settings.output_dir / "model_selection_report.json",
-            settings.output_dir / "feature_diagnostics.json",
-            settings.output_dir / "reports" / "source_profile.json",
-            settings.output_dir / "reports" / "feature_generation.json",
-            settings.output_dir / "reports" / "geospatial_summary.json",
+            settings.reports_dir / "model_selection_report.json",
+            settings.reports_dir / "feature_diagnostics.json",
+            settings.reports_dir / "source_profile.json",
+            settings.reports_dir / "feature_generation.json",
+            settings.reports_dir / "geospatial_summary.json",
         ):
             if path.is_file():
                 mlflow.log_artifact(str(path), artifact_path="segmentation_reports")
@@ -258,7 +258,7 @@ def register_models(settings: SegmentationSettings) -> dict[str, Any]:
             path = settings.output_dir / filename
             if path.is_file():
                 mlflow.log_artifact(str(path))
-        for path in sorted((settings.output_dir / "models").glob("*_model.joblib")):
+        for path in sorted(settings.model_dir.glob("*_model.joblib")):
             mlflow.log_artifact(str(path), artifact_path="fitted_model_bundles")
         result = {
             "experiment": EXPERIMENT_NAME,
@@ -267,4 +267,3 @@ def register_models(settings: SegmentationSettings) -> dict[str, Any]:
         }
         mlflow.log_dict(result, "registration_summary.json")
         return result
-

@@ -1,0 +1,443 @@
+{
+  "building_coverage_and_mapping": {
+    "building_groups_including_null_id": 50000,
+    "buildings_with_inconsistent_categories": 0,
+    "buildings_with_multiple_coarse_grids": 0,
+    "buildings_with_multiple_finer_grids": 0,
+    "buildings_with_multiple_tracts": 0,
+    "first_observation": "2018-01-01 01:00:00",
+    "last_observation": "2018-12-31 23:00:00",
+    "maximum_rows_per_building": 8395,
+    "median_rows_per_building_approx": 8395,
+    "minimum_rows_per_building": 8395
+  },
+  "category_values": {
+    "GeneralUseType": [
+      {
+        "buildings": 47568,
+        "rows": 399333360,
+        "value": "Residential"
+      },
+      {
+        "buildings": 1585,
+        "rows": 13306075,
+        "value": "Commercial"
+      },
+      {
+        "buildings": 819,
+        "rows": 6875505,
+        "value": "Industrial"
+      },
+      {
+        "buildings": 27,
+        "rows": 226665,
+        "value": "Institutional"
+      },
+      {
+        "buildings": 1,
+        "rows": 8395,
+        "value": "Recreational"
+      }
+    ],
+    "SpecificUseType": [
+      {
+        "buildings": 40562,
+        "rows": 340517990,
+        "value": "Single Family Residence"
+      },
+      {
+        "buildings": 3004,
+        "rows": 25218580,
+        "value": "Double, Duplex, or Two Units"
+      },
+      {
+        "buildings": 1907,
+        "rows": 16009265,
+        "value": "Five or More Units or Apartments (Any Combination)"
+      },
+      {
+        "buildings": 1053,
+        "rows": 8839935,
+        "value": "Three Units (Any Combination)"
+      },
+      {
+        "buildings": 1022,
+        "rows": 8579690,
+        "value": "Four Units  (Any Combination)"
+      },
+      {
+        "buildings": 499,
+        "rows": 4189105,
+        "value": "Light Manufacturing"
+      },
+      {
+        "buildings": 484,
+        "rows": 4063180,
+        "value": "Store"
+      },
+      {
+        "buildings": 328,
+        "rows": 2753560,
+        "value": "Store Combination"
+      },
+      {
+        "buildings": 292,
+        "rows": 2451340,
+        "value": "Warehousing, Distribution, Storage"
+      },
+      {
+        "buildings": 229,
+        "rows": 1922455,
+        "value": "Office Building"
+      },
+      {
+        "buildings": 159,
+        "rows": 1334805,
+        "value": "Auto, Recreation Equipment, Construction Equipment Sales and Service"
+      },
+      {
+        "buildings": 113,
+        "rows": 948635,
+        "value": "Restaurant, Cocktail Lounge"
+      },
+      {
+        "buildings": 92,
+        "rows": 772340,
+        "value": "Professional Building"
+      },
+      {
+        "buildings": 43,
+        "rows": 360985,
+        "value": "Hotel and Motel"
+      },
+      {
+        "buildings": 36,
+        "rows": 302220,
+        "value": "Shopping Center (Neighborhood, Community)"
+      },
+      {
+        "buildings": 32,
+        "rows": 268640,
+        "value": "Service Station"
+      },
+      {
+        "buildings": 26,
+        "rows": 218270,
+        "value": "Heavy Manufacturing"
+      },
+      {
+        "buildings": 23,
+        "rows": 193085,
+        "value": "Bank, Savings and Loan"
+      },
+      {
+        "buildings": 21,
+        "rows": 176295,
+        "value": "Supermarket"
+      },
+      {
+        "buildings": 20,
+        "rows": 167900,
+        "value": "Rooming/Boarding House"
+      },
+      {
+        "buildings": 16,
+        "rows": 134320,
+        "value": "Church"
+      },
+      {
+        "buildings": 16,
+        "rows": 134320,
+        "value": "Shopping Center (Regional)"
+      },
+      {
+        "buildings": 9,
+        "rows": 75555,
+        "value": "Department Store"
+      },
+      {
+        "buildings": 4,
+        "rows": 33580,
+        "value": "Homes for Aged and Others"
+      },
+      {
+        "buildings": 4,
+        "rows": 33580,
+        "value": "School (Private)"
+      },
+      {
+        "buildings": 2,
+        "rows": 16790,
+        "value": "Open Storage"
+      },
+      {
+        "buildings": 2,
+        "rows": 16790,
+        "value": "Hospital"
+      },
+      {
+        "buildings": 1,
+        "rows": 8395,
+        "value": "Club, Lodge Hall, Fraternal Organization"
+      },
+      {
+        "buildings": 1,
+        "rows": 8395,
+        "value": "College, University (Private)"
+      }
+    ],
+    "building.type": [
+      {
+        "buildings": 40562,
+        "rows": 340517990,
+        "value": "single-family"
+      },
+      {
+        "buildings": 6986,
+        "rows": 58647470,
+        "value": "multi-family"
+      },
+      {
+        "buildings": 873,
+        "rows": 7328835,
+        "value": "retail"
+      },
+      {
+        "buildings": 499,
+        "rows": 4189105,
+        "value": "light manufacturing"
+      },
+      {
+        "buildings": 485,
+        "rows": 4071575,
+        "value": "warehouse"
+      },
+      {
+        "buildings": 301,
+        "rows": 2526895,
+        "value": "small office"
+      },
+      {
+        "buildings": 113,
+        "rows": 948635,
+        "value": "full service restaurant"
+      },
+      {
+        "buildings": 62,
+        "rows": 520490,
+        "value": "small hotel"
+      },
+      {
+        "buildings": 26,
+        "rows": 218270,
+        "value": "heavy manufacturing"
+      },
+      {
+        "buildings": 23,
+        "rows": 193085,
+        "value": "medium office"
+      },
+      {
+        "buildings": 21,
+        "rows": 176295,
+        "value": "supermarket"
+      },
+      {
+        "buildings": 20,
+        "rows": 167900,
+        "value": "large office"
+      },
+      {
+        "buildings": 16,
+        "rows": 134320,
+        "value": "religious"
+      },
+      {
+        "buildings": 4,
+        "rows": 33580,
+        "value": "nursing home"
+      },
+      {
+        "buildings": 4,
+        "rows": 33580,
+        "value": "primary school"
+      },
+      {
+        "buildings": 2,
+        "rows": 16790,
+        "value": "hospital"
+      },
+      {
+        "buildings": 1,
+        "rows": 8395,
+        "value": "midrise apartment"
+      },
+      {
+        "buildings": 1,
+        "rows": 8395,
+        "value": "large hotel"
+      },
+      {
+        "buildings": 1,
+        "rows": 8395,
+        "value": "college"
+      }
+    ],
+    "usetype": [
+      {
+        "buildings": 40562,
+        "rows": 340517990,
+        "value": "single_family"
+      },
+      {
+        "buildings": 6986,
+        "rows": 58647470,
+        "value": "multi_family"
+      },
+      {
+        "buildings": 1586,
+        "rows": 13314470,
+        "value": "commercial"
+      },
+      {
+        "buildings": 819,
+        "rows": 6875505,
+        "value": "industrial"
+      },
+      {
+        "buildings": 24,
+        "rows": 201480,
+        "value": "residential_other"
+      },
+      {
+        "buildings": 23,
+        "rows": 193085,
+        "value": "institutional"
+      }
+    ]
+  },
+  "columns": [
+    {
+      "name": "OBJECTID",
+      "type": "BIGINT"
+    },
+    {
+      "name": "idf.kw",
+      "type": "VARCHAR"
+    },
+    {
+      "name": "id.grid.coarse",
+      "type": "BIGINT"
+    },
+    {
+      "name": "building.area.m2",
+      "type": "DOUBLE"
+    },
+    {
+      "name": "FootprintArea.m2",
+      "type": "DOUBLE"
+    },
+    {
+      "name": "GeneralUseType",
+      "type": "VARCHAR"
+    },
+    {
+      "name": "SpecificUseType",
+      "type": "VARCHAR"
+    },
+    {
+      "name": "EffectiveYearBuilt",
+      "type": "BIGINT"
+    },
+    {
+      "name": "building.type",
+      "type": "VARCHAR"
+    },
+    {
+      "name": "vintage",
+      "type": "VARCHAR"
+    },
+    {
+      "name": "usetype",
+      "type": "VARCHAR"
+    },
+    {
+      "name": "id.grid.finer",
+      "type": "DOUBLE"
+    },
+    {
+      "name": "id.tract",
+      "type": "VARCHAR"
+    },
+    {
+      "name": "latitude",
+      "type": "DOUBLE"
+    },
+    {
+      "name": "longitude",
+      "type": "DOUBLE"
+    },
+    {
+      "name": "timestamp",
+      "type": "TIMESTAMP_NS"
+    },
+    {
+      "name": "normalized_building_energy_kwh",
+      "type": "DOUBLE"
+    }
+  ],
+  "coordinate_bounds": {
+    "invalid_latitude_rows": 0,
+    "invalid_longitude_rows": 0,
+    "latitude_max": 34.62236912557854,
+    "latitude_min": 33.339493157811255,
+    "longitude_max": -117.6557757839122,
+    "longitude_min": -118.84633487891422
+  },
+  "distinct_buildings": 50000,
+  "distinct_coarse_grids": 53,
+  "distinct_finer_grids": 12556,
+  "distinct_timestamps": 8395,
+  "distinct_tracts": 2248,
+  "duplicate_building_timestamp_rows": 0,
+  "energy_semantics": "unverified; source values are validated, not reinterpreted",
+  "energy_summary": {
+    "maximum": 16579.54911619474,
+    "mean": 3.3396432944916334,
+    "median_approx": 0.7080395594452293,
+    "minimum": 0.025133295488449666,
+    "p95_approx": 5.7188632192552635,
+    "zero_reading_rows": 0
+  },
+  "invalid_energy_rows": 0,
+  "invalid_timestamp_rows": 0,
+  "missing_building_id_rows": 0,
+  "missing_coarse_grid_rows": 0,
+  "missing_coordinate_rows": 0,
+  "missingness_null_rows_by_column": {
+    "EffectiveYearBuilt": 0,
+    "FootprintArea.m2": 0,
+    "GeneralUseType": 0,
+    "OBJECTID": 0,
+    "SpecificUseType": 0,
+    "building.area.m2": 0,
+    "building.type": 0,
+    "id.grid.coarse": 0,
+    "id.grid.finer": 1309620,
+    "id.tract": 0,
+    "idf.kw": 0,
+    "latitude": 0,
+    "longitude": 0,
+    "normalized_building_energy_kwh": 0,
+    "timestamp": 0,
+    "usetype": 0,
+    "vintage": 0
+  },
+  "profiled_at_utc": "2026-11-01 17:38:19.469000+00:00",
+  "row_count": 419750000,
+  "source_bytes": 3601102310,
+  "source_mtime_ns": 1793335452152021109,
+  "source_path": "/opt/gridvision/data/bronze/training_sample_50000.parquet",
+  "timestamp_max": "2018-12-31 23:00:00",
+  "timestamp_min": "2018-01-01 01:00:00"
+}

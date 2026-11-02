@@ -28,6 +28,9 @@ class SegmentationSettings:
     random_seed: int = 42
     min_k: int = 2
     max_k: int = 10
+    feature_path: Path = PROJECT_ROOT / "data" / "gold" / "customer_segmentation_features.parquet"
+    model_dir: Path = PROJECT_ROOT / "models" / "segmentation"
+    reports_dir: Path = PROJECT_ROOT / "docs" / "customer_segmentation" / "reports"
 
     @classmethod
     def from_environment(cls) -> "SegmentationSettings":
@@ -49,6 +52,24 @@ class SegmentationSettings:
                 os.getenv(
                     "SEGMENTATION_OUTPUT_DIR",
                     PROJECT_ROOT / "data" / "segmentation",
+                )
+            ).expanduser(),
+            feature_path=Path(
+                os.getenv(
+                    "SEGMENTATION_FEATURE_PATH",
+                    data_root / "gold" / "customer_segmentation_features.parquet",
+                )
+            ).expanduser(),
+            model_dir=Path(
+                os.getenv(
+                    "SEGMENTATION_MODEL_DIR",
+                    PROJECT_ROOT / "models" / "segmentation",
+                )
+            ).expanduser(),
+            reports_dir=Path(
+                os.getenv(
+                    "SEGMENTATION_REPORTS_DIR",
+                    PROJECT_ROOT / "docs" / "customer_segmentation" / "reports",
                 )
             ).expanduser(),
             window_end=date.fromisoformat(end) if end else None,
@@ -92,4 +113,3 @@ class SegmentationSettings:
             raise ValueError("correlation_threshold must be in (0, 1]")
         if self.min_k < 2 or self.max_k < self.min_k:
             raise ValueError("cluster range must satisfy 2 <= min_k <= max_k")
-
