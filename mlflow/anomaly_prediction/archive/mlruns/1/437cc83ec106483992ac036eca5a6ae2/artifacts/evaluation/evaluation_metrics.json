@@ -1,0 +1,296 @@
+{
+  "source_profile": {
+    "path": "/Users/siddhantgupta/Downloads/Grid_Vision/untitled folder/data/processed/synthetic_2019_model_input.parquet",
+    "rows": 87600000,
+    "row_groups": 351,
+    "columns": [
+      "OBJECTID",
+      "timestamp",
+      "normalized_building_energy_kwh",
+      "latitude",
+      "longitude"
+    ],
+    "sample_customers": 10000,
+    "sample_time_min": "2019-01-01 00:00:00",
+    "sample_time_max": "2019-01-02 23:00:00",
+    "sample_energy_missing": 0,
+    "sample_energy_quantiles": {
+      "0.0": 0.004007173702120781,
+      "0.5": 0.6617991030216217,
+      "0.99": 37.02596942901618,
+      "1.0": 5432.08642578125
+    }
+  },
+  "split_integrity": {
+    "source_customer_count": 10000,
+    "complete_customer_partitions": {
+      "train": 8000,
+      "validation": 1000,
+      "test": 1000
+    },
+    "sampled_customer_partitions": {
+      "train": 200,
+      "validation": 100,
+      "test": 100
+    },
+    "customer_overlap": 0
+  },
+  "temporal_boundaries": {
+    "start": "2019-01-01T00:00:00",
+    "train_end": "2019-09-13T12:00:00",
+    "validation_end": "2019-11-07T06:00:00",
+    "stop": "2020-01-01T00:00:00"
+  },
+  "training_metadata": {
+    "train_rows": 1226400,
+    "detector_fit_rows": 203150,
+    "detector_positive_fit_rows": 3150,
+    "detector_normal_fit_rows": 200000,
+    "threshold_quantile": 0.995,
+    "threshold": 0.9997457909817843,
+    "detector_type": "binary RandomForest trained on synthetic events + normal data",
+    "rule_thresholds": {
+      "spike_relative_deviation": 3.8969011306762695,
+      "drop_relative_deviation": -0.8207067847251892,
+      "zero_block_minimum_hours": 3.0,
+      "flatline_minimum_hours": 6.0,
+      "flatline_minimum_pre_event_cv": 0.05,
+      "flatline_minimum_level_deviation": 0.001
+    },
+    "training_quantile_threshold": 0.9997457909817843,
+    "selected_validation_threshold": 0.5514993212374478,
+    "threshold_selection": "maximum validation F1 on held-out synthetic events"
+  },
+  "metrics": {
+    "training_quantile_threshold": 0.9997457909817843,
+    "validation_normal_false_alert_rate": 3.0441400304414e-05,
+    "validation_detection": {
+      "precision": 0.9962013295346629,
+      "recall": 0.9990476190476191,
+      "f1": 0.997622444127437,
+      "pr_auc": 0.999728170869545,
+      "false_alerts_per_customer": 0.04,
+      "threshold": 0.5514993212374478,
+      "test_points": 131400,
+      "positive_points": 1050,
+      "event_recall": 1.0,
+      "event_precision": 0.9803921568627451,
+      "event_detection_delay_hours": 0.005,
+      "ground_truth_events": 200,
+      "predicted_event_bursts": 204
+    },
+    "validation_classification": {
+      "macro_f1": 1.0,
+      "classification_report": {
+        "spike": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1-score": 1.0,
+          "support": 50.0
+        },
+        "drop": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1-score": 1.0,
+          "support": 50.0
+        },
+        "zero_block": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1-score": 1.0,
+          "support": 50.0
+        },
+        "flatline": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1-score": 1.0,
+          "support": 50.0
+        },
+        "accuracy": 1.0,
+        "macro avg": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1-score": 1.0,
+          "support": 200.0
+        },
+        "weighted avg": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1-score": 1.0,
+          "support": 200.0
+        }
+      },
+      "confusion_matrix": [
+        [
+          50,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          50,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          50,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          50
+        ]
+      ],
+      "class_order": [
+        "spike",
+        "drop",
+        "zero_block",
+        "flatline"
+      ],
+      "event_count": 200
+    },
+    "synthetic_event_counts": {
+      "train": {
+        "spike": 150,
+        "drop": 150,
+        "zero_block": 150,
+        "flatline": 150
+      },
+      "validation": {
+        "spike": 50,
+        "drop": 50,
+        "zero_block": 50,
+        "flatline": 50
+      },
+      "test": {
+        "spike": 50,
+        "drop": 50,
+        "zero_block": 50,
+        "flatline": 50
+      }
+    },
+    "test_detection": {
+      "precision": 0.9895337773549001,
+      "recall": 0.9904761904761905,
+      "f1": 0.9900047596382675,
+      "pr_auc": 0.9997489375944544,
+      "false_alerts_per_customer": 0.11,
+      "threshold": 0.5514993212374478,
+      "test_points": 131400,
+      "positive_points": 1050,
+      "event_recall": 1.0,
+      "event_precision": 0.9665071770334929,
+      "event_detection_delay_hours": 0.025,
+      "ground_truth_events": 200,
+      "predicted_event_bursts": 209
+    },
+    "test_classification": {
+      "macro_f1": 1.0,
+      "classification_report": {
+        "spike": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1-score": 1.0,
+          "support": 50.0
+        },
+        "drop": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1-score": 1.0,
+          "support": 50.0
+        },
+        "zero_block": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1-score": 1.0,
+          "support": 50.0
+        },
+        "flatline": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1-score": 1.0,
+          "support": 50.0
+        },
+        "accuracy": 1.0,
+        "macro avg": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1-score": 1.0,
+          "support": 200.0
+        },
+        "weighted avg": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1-score": 1.0,
+          "support": 200.0
+        }
+      },
+      "confusion_matrix": [
+        [
+          50,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          50,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          50,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          50
+        ]
+      ],
+      "class_order": [
+        "spike",
+        "drop",
+        "zero_block",
+        "flatline"
+      ],
+      "event_count": 200
+    },
+    "test_customer_count": 100,
+    "spatial_event_localization": {
+      "event_precision": 0.6571428571428571,
+      "event_recall": 0.575,
+      "event_f1": 0.6133333333333333,
+      "event_detection_delay_hours": -0.9478260869565217,
+      "cluster_event_purity": 0.5222380952380953,
+      "false_events": 60,
+      "missed_events": 85,
+      "matched_events": 115,
+      "ground_truth_event_count": 200,
+      "predicted_event_count": 175
+    }
+  },
+  "spatial_temporal_config": {
+    "h3_resolution": 8,
+    "spatial_radius_km": 5.0,
+    "spatial_dbscan_min_customers": 2,
+    "maximum_start_time_difference_minutes": 30,
+    "minimum_temporal_overlap": 0.25,
+    "maximum_interval_gap_minutes": 60,
+    "temporal_components_are_transitive": true
+  },
+  "limitations": [
+    "The source contains normal-only measurements; reported anomaly results use separately injected synthetic events.",
+    "The model was fit and evaluated on sampled complete customer groups; results are not a full-population deployment benchmark.",
+    "DBSCAN output is geographic correlation, not confirmed feeder or transformer localization.",
+    "Synthetic ground truth contains independent customer events rather than labeled common incidents, so it cannot validate local-area or multi-area scope accuracy."
+  ]
+}

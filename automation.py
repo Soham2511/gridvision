@@ -44,6 +44,7 @@ LOG_SUBDIRECTORIES = (
 DAG_ID = "customer_energy_data_pipeline"
 GOVERNMENT_DAG_ID = "government_load_forecasting"
 COMMERCIAL_DAG_ID = "commercial_building_forecasting_data_pipeline"
+ANOMALY_DAG_ID = "gridvision_anomaly_training"
 DEFAULT_MODEL_NAME = "customer-bill-prediction"
 DEFAULT_ALIAS = "champion"
 MLFLOW_HOST_PORT = os.getenv("GRIDVISION_MLFLOW_HOST_PORT", "15001")
@@ -117,6 +118,14 @@ def _airflow_command(compose_command: list[str] | None = None) -> list[str]:
 
 def _compose_command() -> list[str]:
     docker = shutil.which("docker")
+    if not docker and platform.system() == "Darwin":
+        for candidate in (
+            Path.home() / ".docker" / "bin" / "docker",
+            Path("/Applications/Docker.app/Contents/Resources/bin/docker"),
+        ):
+            if candidate.is_file() and os.access(candidate, os.X_OK):
+                docker = str(candidate)
+                break
     if not docker:
         raise FileNotFoundError(
             "Docker CLI was not found. Install and start Docker Desktop, or install "
@@ -193,6 +202,16 @@ def _stage_wsl_build_context() -> tempfile.TemporaryDirectory[str] | None:
     shutil.copytree(
         PROJECT_ROOT / "training" / "government_load",
         training / "government_load",
+        ignore=ignored_python_cache,
+    )
+    shutil.copytree(
+        PROJECT_ROOT / "training" / "anomaly_prediction",
+        training / "anomaly_prediction",
+        ignore=ignored_python_cache,
+    )
+    shutil.copytree(
+        PROJECT_ROOT / "airflow",
+        root / "airflow",
         ignore=ignored_python_cache,
     )
     shutil.copy2(PROJECT_ROOT / "backend" / "run.py", root / "backend" / "run.py")
@@ -370,6 +389,143 @@ def _run_commercial_workflow(
     return {"prepared_data": prepared, "training_stdout": training.stdout}
 
 
+def _run_anomaly_inference(env: dict[str, str]) -> dict[str, Any]:
+    """Run real saved-model inference and persist event-level application outputs."""
+    runtime_path = (
+        PROJECT_ROOT
+        / "backend"
+        / "app"
+        / "models"
+        / "anomaly_prediction"
+        / "runtime"
+    )
+    backend_path = PROJECT_ROOT / "backend"
+    if str(backend_path) not in sys.path:
+        sys.path.insert(0, str(backend_path))
+    if str(runtime_path) not in sys.path:
+        sys.path.insert(0, str(runtime_path))
+    from app.models.anomaly_prediction import AnomalyPredictionService
+
+    service = AnomalyPredictionService(
+        dataset_path=env["ANOMALY_DATASET_PATH"],
+        model_path=env["ANOMALY_MODEL_PATH"],
+        project_root=PROJECT_ROOT,
+        runs_path=env["ANOMALY_RUNS_PATH"],
+    )
+    model_metadata = service.get_model_metadata()
+    start_date = env.get("ANOMALY_START_DATE") or model_metadata["source_start"][:10]
+    end_date = env.get("ANOMALY_END_DATE") or start_date
+    configured_ids = env.get("ANOMALY_CUSTOMER_IDS", "").strip()
+    customer_ids = None
+    if configured_ids:
+        pieces = [value.strip() for value in configured_ids.split(",")]
+        if any(not value.isdigit() or int(value) < 1 for value in pieces):
+            raise ValueError("ANOMALY_CUSTOMER_IDS must contain positive integer IDs.")
+        customer_ids = [int(value) for value in pieces]
+    result = service.run_analysis(
+        {
+            "customer_ids": customer_ids,
+            "start_date": start_date,
+            "end_date": end_date,
+        }
+    )
+    return {
+        "run_id": result["run_id"],
+        "status": result["status"],
+        "metrics": result["metrics"],
+    }
+
+
+def _run_anomaly_training(env: dict[str, str]) -> dict[str, Any]:
+    command = [
+        sys.executable,
+        str(PROJECT_ROOT / "training" / "anomaly_prediction" / "train.py"),
+    ]
+    result = subprocess.run(
+        command, cwd=PROJECT_ROOT, env=env, check=False, capture_output=True, text=True
+    )
+    if result.stdout:
+        print(result.stdout.rstrip(), flush=True)
+    if result.stderr:
+        print(result.stderr.rstrip(), file=sys.stderr, flush=True)
+    if result.returncode:
+        raise RuntimeError(
+            "Anomaly preparation/training/MLflow tracking failed "
+            f"(exit {result.returncode})."
+        )
+    return {"command": command, "stdout": result.stdout}
+
+
+def _run_anomaly_only_mode(env: dict[str, str]) -> int:
+    """Run anomaly preparation, tracking, inference, and exports without other services."""
+    started = time.perf_counter()
+    run_started_at = datetime.now(timezone.utc).isoformat()
+    status = 0
+    try:
+        (LOG_ROOT / "automation").mkdir(parents=True, exist_ok=True)
+
+        def validate_anomaly_inputs() -> dict[str, str]:
+            dataset = Path(env["ANOMALY_DATASET_PATH"])
+            if not dataset.is_file():
+                raise FileNotFoundError(f"Anomaly source data is missing: {dataset}")
+            missing_modules = [
+                module
+                for module in ("h3", "pywt", "pyarrow", "sklearn")
+                if find_spec(module) is None
+            ]
+            if missing_modules:
+                raise RuntimeError(
+                    "Required anomaly modules are missing: "
+                    + ", ".join(missing_modules)
+                )
+            return {
+                "dataset": str(dataset),
+                "model": env["ANOMALY_MODEL_PATH"],
+                "tracking_uri": env["MLFLOW_TRACKING_URI"],
+            }
+
+        run_step(
+            "Validate anomaly model dependencies and source data",
+            validate_anomaly_inputs,
+        )
+        run_step(
+            "Prepare anomaly data, evaluate, and track/register the model",
+            lambda: _run_anomaly_training(env),
+        )
+        run_step(
+            "Run anomaly inference, spatial localization, event generation, and storage",
+            lambda: _run_anomaly_inference(env),
+        )
+    except Exception as exc:
+        print(f"\nAnomaly automation stopped: {exc}", flush=True)
+        status = 1
+    finally:
+        total = time.perf_counter() - started
+        summary_path = (
+            LOG_ROOT
+            / "automation"
+            / f"anomaly-automation-{datetime.now(timezone.utc):%Y%m%dT%H%M%S}-{os.getpid()}.json"
+        )
+        summary_path.write_text(
+            json.dumps(
+                {
+                    "started_at": run_started_at,
+                    "finished_at": datetime.now(timezone.utc).isoformat(),
+                    "elapsed_seconds": round(total, 3),
+                    "status": "SUCCESS" if status == 0 else "FAILED",
+                    "steps": steps,
+                },
+                indent=2,
+                sort_keys=True,
+                default=str,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        print(f"Anomaly automation summary: {summary_path}", flush=True)
+    return status
+
+
 def _http_healthy(url: str, timeout: float = 2.0) -> bool:
     try:
         with urllib.request.urlopen(url, timeout=timeout) as response:
@@ -467,6 +623,19 @@ def main(argv: list[str] | None = None) -> int:
             "and the latest passing Gold quality manifest; commercial training still runs."
         ),
     )
+    parser.add_argument(
+        "--anomaly-only",
+        action="store_true",
+        help=(
+            "Run only anomaly preparation/training or artifact reuse, MLflow tracking, "
+            "inference, localization, and result storage."
+        ),
+    )
+    parser.add_argument(
+        "--force-anomaly-retrain",
+        action="store_true",
+        help="Retrain the anomaly detector instead of reusing a valid saved artifact.",
+    )
     arguments = parser.parse_args(argv)
     steps.clear()
     started = time.perf_counter()
@@ -478,6 +647,42 @@ def main(argv: list[str] | None = None) -> int:
     env["GRIDVISION_LOG_DIR"] = str(LOG_ROOT)
     env["GRIDVISION_SOURCE_PATH"] = str(SOURCE_PATH)
     env["GRIDVISION_SOURCE_FILENAME"] = SOURCE_PATH.name
+    env.setdefault(
+        "GRIDVISION_SOURCE_DATA",
+        str(DATA_ROOT / "anomaly_prediction" / "synthetic_2019_normal.parquet"),
+    )
+    env.setdefault(
+        "GRIDVISION_SILVER_DATA",
+        str(DATA_ROOT / "anomaly_prediction" / "silver" / "synthetic_2019_silver.parquet"),
+    )
+    env.setdefault(
+        "GRIDVISION_GOLD_DATA",
+        str(DATA_ROOT / "anomaly_prediction" / "gold" / "gridvision_model_features.parquet"),
+    )
+    env.setdefault(
+        "GRIDVISION_MODEL_PATH",
+        str(PROJECT_ROOT / "models" / "anomaly_prediction" / "gridvision_anomaly_model.joblib"),
+    )
+    env.setdefault(
+        "GRIDVISION_REPORT_DIR",
+        str(PROJECT_ROOT / "reports" / "anomaly_prediction" / "training"),
+    )
+    env.setdefault(
+        "ANOMALY_DATASET_PATH",
+        str(DATA_ROOT / "anomaly_prediction" / "synthetic_2019_normal.parquet"),
+    )
+    env.setdefault(
+        "ANOMALY_MODEL_PATH",
+        str(PROJECT_ROOT / "models" / "anomaly_prediction" / "gridvision_anomaly_model.joblib"),
+    )
+    env.setdefault(
+        "ANOMALY_RUNS_PATH",
+        str(PROJECT_ROOT / "reports" / "anomaly_prediction" / "application_runs"),
+    )
+    env.setdefault("ANOMALY_MLFLOW_MODEL_NAME", "gridvision-anomaly-detection")
+    env.setdefault("ANOMALY_MLFLOW_MODEL_ALIAS", "champion")
+    if arguments.force_anomaly_retrain:
+        env["ANOMALY_FORCE_RETRAIN"] = "1"
     if hasattr(os, "getuid"):
         env.setdefault("AIRFLOW_UID", str(os.getuid()))
     env.setdefault("SECRET_KEY", secrets.token_urlsafe(48))
@@ -501,17 +706,26 @@ def main(argv: list[str] | None = None) -> int:
     env.setdefault("COMMERCIAL_SILVER_DATASET", str(DATA_ROOT / "silver" / "commercial_silver.parquet"))
     env.setdefault("COMMERCIAL_GOLD_DATASET", str(DATA_ROOT / "gold" / "commercial_gold.parquet"))
     env.setdefault("COMMERCIAL_GOLD_MANIFEST", str(DATA_ROOT / "metadata" / "commercial" / "dataset_versions" / "gold" / "latest.json"))
+    if arguments.anomaly_only:
+        steps.clear()
+        return _run_anomaly_only_mode(env)
 
     try:
         for directory in LOG_SUBDIRECTORIES:
             (LOG_ROOT / directory).mkdir(parents=True, exist_ok=True)
 
         def check_prerequisites() -> dict[str, Any]:
-            if not SOURCE_PATH.is_file():
+            if not arguments.skip_all_data_pipelines and not SOURCE_PATH.is_file():
                 raise FileNotFoundError(
                     f"Required raw source dataset is missing: {SOURCE_PATH}"
                 )
             compose = _compose_command()
+            docker_directory = str(Path(compose[0]).expanduser().resolve().parent)
+            path_entries = env.get("PATH", "").split(os.pathsep)
+            if docker_directory not in path_entries:
+                env["PATH"] = os.pathsep.join(
+                    [docker_directory, *path_entries]
+                )
             airflow = _airflow_command(compose)
             required_modules = [
                 "duckdb",
@@ -542,7 +756,7 @@ def main(argv: list[str] | None = None) -> int:
             return {
                 "airflow": airflow,
                 "docker_compose": compose,
-                "source": str(SOURCE_PATH),
+                "source": str(SOURCE_PATH) if SOURCE_PATH.is_file() else None,
             }
 
         prerequisites = run_step(
@@ -643,6 +857,16 @@ def main(argv: list[str] | None = None) -> int:
                 env=env,
                 check=True,
             ).returncode,
+        )
+        run_step(
+            "Prepare, evaluate, and register anomaly model through Airflow",
+            lambda: _run_airflow_dag_test(
+                airflow_command, ANOMALY_DAG_ID, env
+            ),
+        )
+        run_step(
+            "Run anomaly inference, spatial localization, event generation, and storage",
+            lambda: _run_anomaly_inference(env),
         )
 
         airflow_service = run_step(

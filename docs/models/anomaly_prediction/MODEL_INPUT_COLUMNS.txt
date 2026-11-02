@@ -1,0 +1,169 @@
+GRIDVISION MODEL - PREDICTION INPUT COLUMN CONTRACT
+==================================================
+
+This file documents the exact input fields and engineered features for:
+  - predict_point_anomalies(...)
+  - predict_anomaly_events(...)
+
+1. REQUIRED RAW INPUT COLUMNS
+-----------------------------
+The prediction dataframe must contain these five columns, with exact spelling:
+
+  OBJECTID
+    Stable customer/meter identifier. Used only to group each customer's time
+    series; it is not passed as a detector feature.
+
+  timestamp
+    Parseable timestamp for each measurement. Each customer's records must be
+    in hourly cadence and sorted chronologically. Used to build causal history
+    and calendar features.
+
+  normalized_building_energy_kwh
+    Numeric, finite normalized consumption reading. Used to calculate the
+    customer-specific baseline, residuals, FFT features, and wavelet features.
+
+  latitude
+    Numeric customer latitude. Retained for geographic localization; not a
+    detector feature.
+
+  longitude
+    Numeric customer longitude. Retained for geographic localization; not a
+    detector feature.
+
+Provide enough preceding history for the rolling baseline and signal windows.
+Keep each customer's history together. Do not provide future readings when
+using point detection.
+
+2. ENGINEERED FEATURES PASSED TO THE BINARY DETECTOR (30)
+---------------------------------------------------------
+These are calculated internally from the five raw input columns. Callers should
+provide raw columns, not precomputed versions of these features.
+
+Baseline, residual, temporal, and run features (15):
+  log_residual
+  relative_deviation
+  lag1_delta
+  lag24_delta
+  past_24h_cv
+  past_168h_cv
+  zero_streak
+  flatline_streak
+  hour_sin
+  hour_cos
+  weekday_sin
+  weekday_cos
+  month_sin
+  month_cos
+  is_weekend
+
+Trailing-window FFT features (7):
+  fft_dominant_frequency
+  fft_spectral_energy
+  fft_spectral_entropy
+  fft_spectral_centroid
+  fft_peak_magnitude
+  fft_low_band_energy
+  fft_high_band_energy
+
+Multi-scale Haar-wavelet features (8):
+  wavelet_energy_s1
+  wavelet_energy_s2
+  wavelet_energy_s3
+  wavelet_energy_s4
+  wavelet_coefficient_variance
+  wavelet_maximum_magnitude
+  wavelet_scale_entropy
+  wavelet_dominant_scale
+
+Only these 30 engineered features are passed to the binary normal-versus-
+anomaly Random Forest. OBJECTID, timestamp, latitude, and longitude are not
+model predictors.
+
+3. POST-DETECTION EVENT CHARACTERIZATION FEATURES (51)
+------------------------------------------------------
+These are calculated after point detection on an event signal window. They are
+used for event reports and deterministic anomaly-type rules. They are NOT
+inputs to a learned multiclass classifier; this implementation has no learned
+anomaly-type classifier.
+
+  baseline_log
+  window_mean
+  window_std
+  window_median
+  window_variance
+  window_min
+  window_max
+  window_range
+  window_rms
+  window_skew
+  window_kurtosis
+  relative_mean
+  relative_std
+  relative_min
+  relative_max
+  relative_range
+  relative_slope
+  maximum_rate_change
+  pre_event_mean
+  post_event_mean
+  anomaly_duration_hours
+  recovery_hours
+  zero_fraction
+  max_zero_run
+  max_flatline_run
+  flatline_level_deviation
+  pre_event_cv
+  unique_fraction
+  dominant_frequency
+  spectral_energy
+  spectral_entropy
+  spectral_centroid
+  spectral_peak_magnitude
+  spectral_low_band_energy
+  spectral_high_band_energy
+  wavelet_energy_1
+  wavelet_energy_2
+  wavelet_energy_3
+  wavelet_energy_4
+  wavelet_coefficient_variance
+  wavelet_maximum_magnitude
+  wavelet_coefficient_entropy
+  wavelet_energy_ratio_1
+  wavelet_energy_ratio_2
+  wavelet_energy_ratio_3
+  wavelet_energy_ratio_4
+  wavelet_dominant_scale
+  hour_sin
+  hour_cos
+  weekday_sin
+  weekday_cos
+
+4. NEVER USE THESE AS PREDICTION INPUTS
+----------------------------------------
+The following source labels, post-event values, or metadata are excluded:
+
+  is_anomaly
+  anomaly_type
+  anomaly_event_id
+  event_scope
+  area_id
+  start_time
+  end_time
+  severity
+  original_energy_kwh
+
+Building metadata (for example building area, building/use type, and vintage)
+is also excluded from the current detector.
+
+5. OUTPUTS
+----------
+Point prediction returns:
+  OBJECTID, timestamp, latitude, longitude,
+  normalized_building_energy_kwh, anomaly_score, is_anomaly, anomaly_type
+
+Event prediction returns detected event IDs, customer, start/end time, duration,
+detected point count, maximum score, coordinates, rule-based anomaly type, and
+the 51 post-detection characterization features above.
+
+The model was trained using normalized energy, so these inputs and learned
+thresholds must not be assumed to apply to raw kWh without recalibration.

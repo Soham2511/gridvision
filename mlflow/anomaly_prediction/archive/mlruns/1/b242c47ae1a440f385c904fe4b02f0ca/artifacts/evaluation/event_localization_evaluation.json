@@ -1,0 +1,12 @@
+{
+  "event_precision": 0.6571428571428571,
+  "event_recall": 0.575,
+  "event_f1": 0.6133333333333333,
+  "event_detection_delay_hours": -0.9478260869565217,
+  "cluster_event_purity": 0.5222380952380953,
+  "false_events": 60,
+  "missed_events": 85,
+  "matched_events": 115,
+  "ground_truth_event_count": 200,
+  "predicted_event_count": 175
+}

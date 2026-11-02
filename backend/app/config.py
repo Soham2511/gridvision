@@ -56,6 +56,24 @@ class BaseConfig:
             PROJECT_ROOT / "models" / "customer_bill_prediction.pkl",
         )
     )
+    ANOMALY_DATASET_PATH = Path(
+        os.getenv(
+            "ANOMALY_DATASET_PATH",
+            PROJECT_ROOT / "data" / "anomaly_prediction" / "synthetic_2019_normal.parquet",
+        )
+    )
+    ANOMALY_MODEL_PATH = Path(
+        os.getenv(
+            "ANOMALY_MODEL_PATH",
+            PROJECT_ROOT / "models" / "anomaly_prediction" / "gridvision_anomaly_model.joblib",
+        )
+    )
+    ANOMALY_RUNS_PATH = Path(
+        os.getenv(
+            "ANOMALY_RUNS_PATH",
+            PROJECT_ROOT / "reports" / "anomaly_prediction" / "application_runs",
+        )
+    )
     COMMERCIAL_FORECAST_DATA_PATH = Path(
         os.getenv("COMMERCIAL_FORECAST_DATA_PATH", PROJECT_ROOT / "data" / "gold" / "commercial_gold.parquet")
     )

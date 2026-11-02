@@ -1,0 +1,1 @@
+{"input_rows_scored": 1800000, "selected_customer_count": 10000, "anomaly_window_count": 60, "localized_event_count": 31, "affected_customer_count": 44, "anomaly_type_counts": {"drop": 34, "spike": 18, "zero_block": 8}, "event_scope_counts": {"SINGLE_CUSTOMER": 25, "MULTI_AREA": 4, "LOCAL_AREA": 2}}

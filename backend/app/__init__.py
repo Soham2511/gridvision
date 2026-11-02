@@ -27,6 +27,7 @@ from app.services.insight_service import InsightService
 from app.services.assistant_service import AssistantService
 from app.models.customer_bill_prediction import CustomerBillPredictionService
 from app.services.segmentation_service import SegmentationService
+from app.models.anomaly_prediction import AnomalyPredictionService
 
 
 def create_app(config_class: type[BaseConfig] | None = None) -> Flask:
@@ -121,6 +122,12 @@ def create_app(config_class: type[BaseConfig] | None = None) -> Flask:
         output_dir=app.config["SEGMENTATION_OUTPUT_DIR"],
         max_page_size=app.config["SEGMENTATION_API_MAX_PAGE_SIZE"],
     )
+    anomaly_prediction_svc = AnomalyPredictionService(
+        dataset_path=app.config["ANOMALY_DATASET_PATH"],
+        model_path=app.config["ANOMALY_MODEL_PATH"],
+        project_root=app.config["PROJECT_ROOT"],
+        runs_path=app.config["ANOMALY_RUNS_PATH"],
+    )
 
     # Attach to app extensions
     app.extensions["data_provider"] = data_provider
@@ -137,6 +144,7 @@ def create_app(config_class: type[BaseConfig] | None = None) -> Flask:
         customer_bill_prediction_svc
     )
     app.extensions["government_segmentation_service"] = government_segmentation_svc
+    app.extensions["anomaly_prediction_service"] = anomaly_prediction_svc
 
     # Register error handlers
     register_error_handlers(app)
