@@ -192,6 +192,8 @@ class CustomerBillPredictionService:
             if model_id == "customer-bill-prediction":
                 catalog.append(self.get_summary())
                 continue
+            if model_id == "anomaly-prediction":
+                continue
             provider_key = {
                 "commercial-building-forecast": "commercial",
                 "government-load-forecast": "government",

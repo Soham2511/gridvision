@@ -11,7 +11,7 @@ services:
       - -o
       - pipefail
       - -c
-      - umask 077; airflow standalone 2>&1 | tee -a /opt/gridvision/logs/airflow/standalone.log
+      - rm -f /opt/airflow/airflow-webserver.pid; umask 077; airflow standalone 2>&1 | tee -a /opt/gridvision/logs/airflow/standalone.log
     environment:
       AIRFLOW_HOME: /opt/airflow
       AIRFLOW__CORE__DAGS_FOLDER: /opt/gridvision/airflow
@@ -23,7 +23,16 @@ services:
       GRIDVISION_LOG_DIR: /opt/gridvision/logs
       GRIDVISION_SOURCE_PATH: /opt/gridvision/data/sample/${GRIDVISION_SOURCE_FILENAME:-training_sample_50000.parquet}
       GOVERNMENT_PIPELINE_INPUT: /opt/gridvision/data/sample/${GRIDVISION_SOURCE_FILENAME:-training_sample_50000.parquet}
+      GOVERNMENT_PIPELINE_REUSE_PREPARED: ${GOVERNMENT_PIPELINE_REUSE_PREPARED:-0}
       MLFLOW_TRACKING_URI: http://mlflow:5001
+      GRIDVISION_SOURCE_DATA: /opt/gridvision/data/anomaly_prediction/synthetic_2019_normal.parquet
+      GRIDVISION_SILVER_DATA: /opt/gridvision/data/anomaly_prediction/silver/synthetic_2019_silver.parquet
+      GRIDVISION_GOLD_DATA: /opt/gridvision/data/anomaly_prediction/gold/gridvision_model_features.parquet
+      GRIDVISION_MODEL_PATH: /opt/gridvision/models/anomaly_prediction/gridvision_anomaly_model.joblib
+      GRIDVISION_REPORT_DIR: /opt/gridvision/reports/anomaly_prediction/training
+      ANOMALY_MLFLOW_MODEL_NAME: ${ANOMALY_MLFLOW_MODEL_NAME:-gridvision-anomaly-detection}
+      ANOMALY_MLFLOW_MODEL_ALIAS: ${ANOMALY_MLFLOW_MODEL_ALIAS:-champion}
+      MLFLOW_EXPERIMENT_NAME: ${ANOMALY_MLFLOW_EXPERIMENT_NAME:-gridvision-anomaly-detection-container}
       MLFLOW_MODEL_NAME: ${MLFLOW_MODEL_NAME:-customer-bill-prediction}
       MLFLOW_MODEL_ALIAS: ${MLFLOW_MODEL_ALIAS:-champion}
       CUSTOMER_SAMPLE_BUILDINGS: ${CUSTOMER_SAMPLE_BUILDINGS:-100}
@@ -55,6 +64,9 @@ services:
     volumes:
       - airflow-home:/opt/airflow
       - ./airflow:/opt/gridvision/airflow:ro
+      - ./backend/app/models/anomaly_prediction/runtime:/opt/gridvision/backend/app/models/anomaly_prediction/runtime:ro
+      - ./models/anomaly_prediction:/opt/gridvision/models/anomaly_prediction
+      - ./reports/anomaly_prediction:/opt/gridvision/reports/anomaly_prediction
       - ./training:/opt/gridvision/training:ro
       - ./mlflow/government:/opt/gridvision/mlflow/government:ro
       - ${GRIDVISION_DATA_DIR:?Set GRIDVISION_DATA_DIR}:/opt/gridvision/data
@@ -136,16 +148,22 @@ services:
       COMMERCIAL_FORECAST_MODEL_PATH: /models/commercial/building_forecast.joblib
       GOVERNMENT_FORECAST_DATA_PATH: /data/government/training_ready_2018.parquet
       GOVERNMENT_FORECAST_MODEL_PATH: /data/government/hybrid_grid_2018.joblib
+      ANOMALY_DATASET_PATH: /data/anomaly_prediction/synthetic_2019_normal.parquet
+      ANOMALY_MODEL_PATH: /models/anomaly_prediction/gridvision_anomaly_model.joblib
+      ANOMALY_RUNS_PATH: /reports/anomaly_prediction/application_runs
       CORS_ORIGINS: http://localhost:8082,http://127.0.0.1:8082
     volumes:
       - ${GRIDVISION_DATA_DIR:?Set GRIDVISION_DATA_DIR}/mlflow:/mlflow:ro
       - ${GRIDVISION_DATA_DIR:?Set GRIDVISION_DATA_DIR}/gold:/data/gold:ro
+      - ${GRIDVISION_DATA_DIR:?Set GRIDVISION_DATA_DIR}/anomaly_prediction:/data/anomaly_prediction:ro
       - ${GRIDVISION_DATA_DIR:?Set GRIDVISION_DATA_DIR}/airflow/government:/data/government:ro
+      - ./models/anomaly_prediction:/models/anomaly_prediction:ro
+      - ./reports/anomaly_prediction:/reports/anomaly_prediction
       - ./models/commercial:/models/commercial:ro
       - ./models/customer_bill_prediction.metadata.json:/models/customer_bill_prediction.metadata.json:ro
       - ${GRIDVISION_LOG_DIR:-./logs}:/logs
     ports:
-      - "127.0.0.1:5000:5000"
+      - "127.0.0.1:${GRIDVISION_BACKEND_HOST_PORT:-5000}:5000"
     depends_on:
       mlflow:
         condition: service_healthy

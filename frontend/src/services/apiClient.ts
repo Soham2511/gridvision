@@ -63,7 +63,8 @@ class ApiClient {
   private async request<T>(
     path: string,
     options: RequestInit = {},
-    params?: Record<string, string | number | boolean | undefined | null>
+    params?: Record<string, string | number | boolean | undefined | null>,
+    timeoutMs = 15000,
   ): Promise<T> {
     const fullUrl = this.buildUrl(path, params);
     const headers: Record<string, string> = {
@@ -73,7 +74,7 @@ class ApiClient {
     };
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000);
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
       const response = await fetch(fullUrl, {
@@ -109,7 +110,7 @@ class ApiClient {
       if (err instanceof Error) {
         if (err.name === 'AbortError') {
           throw new ApiClientError(
-            `Request to ${path} timed out after 15s. Ensure backend is running.`,
+            `Request to ${path} timed out after ${Math.round(timeoutMs / 1000)}s. Ensure backend is running.`,
             'TIMEOUT_ERROR',
             408
           );
@@ -144,6 +145,35 @@ class ApiClient {
       },
       params
     );
+  }
+
+  public async postLong<T>(path: string, body?: unknown, timeoutMs = 300000): Promise<T> {
+    return this.request<T>(
+      path,
+      {
+        method: 'POST',
+        body: body ? JSON.stringify(body) : undefined,
+      },
+      undefined,
+      timeoutMs,
+    );
+  }
+
+  public async getBlob(path: string): Promise<Blob> {
+    const response = await fetch(this.buildUrl(path), {
+      headers: { Accept: 'application/octet-stream' },
+    });
+    if (!response.ok) {
+      let message = `Request failed with status ${response.status} (${response.statusText})`;
+      try {
+        const body = await response.json() as ApiResponse<unknown>;
+        message = body.error?.message || message;
+      } catch {
+        // Keep the HTTP diagnostic when the error body is not JSON.
+      }
+      throw new ApiClientError(message, `HTTP_${response.status}`, response.status);
+    }
+    return response.blob();
   }
 
   public async patch<T>(

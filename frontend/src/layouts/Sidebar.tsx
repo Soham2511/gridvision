@@ -16,6 +16,7 @@ import {
   Map,
   PieChart,
   Cpu,
+  ShieldAlert,
 } from 'lucide-react';
 
 export const Sidebar: React.FC = () => {
@@ -51,6 +52,15 @@ export const Sidebar: React.FC = () => {
       path: '/app/historical',
       label: 'Historical Insights',
       icon: <BarChart2 size={18} />,
+    },
+    {
+      path: '/anomalies',
+      label: currentPersona === 'government'
+        ? 'Anomaly Monitoring'
+        : currentPersona === 'commercial'
+        ? 'Building Alerts'
+        : 'Anomaly Alerts',
+      icon: <ShieldAlert size={18} />,
     },
     ...(currentPersona === 'government'
       ? [

@@ -3,10 +3,15 @@
 from __future__ import annotations
 
 from datetime import date
+from pathlib import Path
 
-from flask import Blueprint, current_app, request
+from flask import Blueprint, current_app, request, send_file
 
 from app.api.error_handlers import AppError, ResourceNotFoundError
+from app.models.anomaly_prediction import (
+    AnomalyPredictionError,
+    AnomalyPredictionService,
+)
 from app.models.customer_bill_prediction import (
     CustomerBillPredictionError,
     CustomerBillPredictionService,
@@ -18,6 +23,10 @@ bp = Blueprint("models", __name__)
 
 def _service() -> CustomerBillPredictionService:
     return current_app.extensions["customer_bill_prediction_service"]
+
+
+def _anomaly_service() -> AnomalyPredictionService:
+    return current_app.extensions["anomaly_prediction_service"]
 
 
 def _positive_int(value: str | None, name: str, default: int) -> int:
@@ -44,16 +53,24 @@ def _positive_int(value: str | None, name: str, default: int) -> int:
 def get_model_catalog():
     """Return real model metadata and data readiness for the model workbench."""
     try:
-        return success_response({"models": _service().get_model_catalog()})
+        catalog = _service().get_model_catalog()
+        catalog.append(_anomaly_service().get_summary())
+        return success_response({"models": catalog})
     except CustomerBillPredictionError as exc:
         raise AppError(
             str(exc), code="MODEL_UNAVAILABLE", status_code=503
         ) from exc
 
 
+@bp.route("/models/anomaly-prediction", methods=["GET"])
+def get_anomaly_model():
+    """Return anomaly model status without coupling it to other model datasets."""
+    return success_response(_anomaly_service().get_summary())
+
+
 @bp.route("/models/<model_id>/entities", methods=["GET"])
 def get_forecast_model_entities(model_id: str):
-    """List entity inputs supported by a commercial or government model."""
+    """List entity inputs supported by a commercial, government, or anomaly model."""
     service = current_app.extensions["forecast_service"]
     if model_id == "commercial-building-forecast":
         items = service.get_commercial_buildings()
@@ -61,6 +78,30 @@ def get_forecast_model_entities(model_id: str):
     if model_id == "government-load-forecast":
         items = service.get_regional_sites()
         return success_response({"items": items})
+    if model_id == "anomaly-prediction":
+        try:
+            offset = _positive_int(request.args.get("offset"), "offset", 0)
+            limit = _positive_int(request.args.get("limit"), "limit", 100)
+            if limit < 1 or limit > 10_000:
+                raise AppError(
+                    "limit must be between 1 and 10000.",
+                    code="INVALID_INPUT",
+                    status_code=422,
+                )
+            query = request.args.get("query", "")
+            if len(query) > 100:
+                raise AppError(
+                    "query must be no longer than 100 characters.",
+                    code="INVALID_INPUT",
+                    status_code=422,
+                )
+            return success_response(
+                _anomaly_service().get_entities(
+                    query=query, offset=offset, limit=limit
+                )
+            )
+        except AnomalyPredictionError as exc:
+            raise AppError(str(exc), code="MODEL_UNAVAILABLE", status_code=503) from exc
     raise ResourceNotFoundError(f"Forecast model '{model_id}' was not found.")
 
 
@@ -80,6 +121,28 @@ def predict_forecast_model(model_id: str):
         if not entity_id.isdigit() or int(entity_id) < 1:
             raise AppError("entity_id must be a positive integer.", code="INVALID_INPUT", status_code=422)
         sector = "government"
+    elif model_id == "anomaly-prediction":
+        if not isinstance(payload, dict):
+            raise AppError("Request body must be a JSON object.", code="INVALID_INPUT", status_code=422)
+        if "start_date" not in payload or "end_date" not in payload:
+            raise AppError("start_date and end_date are required for anomaly analysis.", code="INVALID_INPUT", status_code=422)
+        if payload.get("customer_ids") is not None and (
+            not isinstance(payload["customer_ids"], list)
+            or any(
+                isinstance(customer_id, bool) or not isinstance(customer_id, int)
+                for customer_id in payload["customer_ids"]
+            )
+        ):
+            raise AppError("customer_ids must be a list of integer IDs.", code="INVALID_INPUT", status_code=422)
+        if not isinstance(payload["start_date"], str) or not isinstance(payload["end_date"], str):
+            raise AppError("start_date and end_date must be ISO dates.", code="INVALID_INPUT", status_code=422)
+        try:
+            result = _anomaly_service().run_analysis(payload)
+            return success_response(result)
+        except AnomalyPredictionError as exc:
+            raise AppError(str(exc), code="MODEL_UNAVAILABLE", status_code=503) from exc
+        except (TypeError, ValueError) as exc:
+            raise AppError(str(exc), code="INVALID_INPUT", status_code=422) from exc
     else:
         raise ResourceNotFoundError(f"Forecast model '{model_id}' was not found.")
     horizon = payload.get("horizon_hours", 24)
@@ -93,6 +156,51 @@ def predict_forecast_model(model_id: str):
         "entity_id": entity_id,
         "horizon": provider.predict_horizon(sector, entity_id, horizon),
     })
+
+
+@bp.route("/models/anomaly-prediction/runs", methods=["GET"])
+def get_anomaly_runs():
+    """List persisted anomaly analysis runs."""
+    limit = _positive_int(request.args.get("limit"), "limit", 25)
+    if limit < 1 or limit > 100:
+        raise AppError("limit must be between 1 and 100.", code="INVALID_INPUT", status_code=422)
+    try:
+        return success_response({"items": _anomaly_service().list_runs(limit)})
+    except AnomalyPredictionError as exc:
+        raise AppError(str(exc), code="MODEL_UNAVAILABLE", status_code=503) from exc
+
+
+@bp.route("/models/anomaly-prediction/runs/<run_id>", methods=["GET"])
+def get_anomaly_run(run_id: str):
+    """Return one persisted anomaly analysis run."""
+    try:
+        run = _anomaly_service().get_run(run_id)
+    except ValueError as exc:
+        raise ResourceNotFoundError("Anomaly analysis run was not found.") from exc
+    if run is None:
+        raise ResourceNotFoundError("Anomaly analysis run was not found.")
+    return success_response(run)
+
+
+@bp.route(
+    "/models/anomaly-prediction/runs/<run_id>/download/<filename>",
+    methods=["GET"],
+)
+def download_anomaly_run_file(run_id: str, filename: str):
+    """Download an allow-listed artifact from a completed anomaly run."""
+    try:
+        run = _anomaly_service().get_run(run_id)
+        path = _anomaly_service().get_run_file(run_id, filename)
+    except ValueError as exc:
+        raise ResourceNotFoundError("Anomaly analysis run was not found.") from exc
+    if run is None or path is None or run.get("status") != "completed":
+        raise ResourceNotFoundError("Anomaly run artifact was not found.")
+    media_type = {
+        ".csv": "text/csv",
+        ".json": "application/json",
+        ".geojson": "application/geo+json",
+    }.get(Path(filename).suffix, "application/octet-stream")
+    return send_file(path, as_attachment=True, download_name=filename, mimetype=media_type)
 
 
 @bp.route("/models/customer-bill-prediction/records", methods=["GET"])

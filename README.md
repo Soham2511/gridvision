@@ -209,6 +209,19 @@ npm run lint
 | `GET` | `/api/v1/models/customer-bill-prediction/records/<entity_id>` | Get a customer's available gold records |
 | `GET` | `/api/v1/models/customer-bill-prediction/history` | Residential monthly usage and model projections from gold data |
 | `POST` | `/api/v1/models/customer-bill-prediction/predict` | Run a customer bill prediction against a gold record |
+| `GET` | `/api/v1/models/anomaly-prediction` | Anomaly model status and evaluation metrics |
+| `GET` | `/api/v1/models/anomaly-prediction/entities` | Inspect the available customer IDs for the saved anomaly detector |
+| `POST` | `/api/v1/models/anomaly-prediction/predict` | Run the saved detector, localize events, and persist the application run |
+| `GET` | `/api/v1/models/anomaly-prediction/runs` | List recent anomaly application runs |
+| `GET` | `/api/v1/models/anomaly-prediction/runs/{run_id}` | Retrieve a run manifest and completed results |
+| `GET` | `/api/v1/models/anomaly-prediction/runs/{run_id}/download/{filename}` | Download an allow-listed run CSV, JSON, GeoJSON, or evaluation report |
+
+The React `/anomalies` route provides persona-specific alerts and government
+monitoring with an interactive location map, event filters/timeline, analysis
+controls, and an **Application Results** tab. It uses model-backed API results;
+it does not display static mock predictions. See
+[`docs/models/anomaly_prediction/README.md`](docs/models/anomaly_prediction/README.md)
+for the integrated workflow and model limitations.
 
 ### Customer bill model workbench
 

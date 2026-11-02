@@ -46,4 +46,14 @@ MODEL_REGISTRY = {
         task="24_hour_grid_energy_forecast",
         description="Predicts hourly coarse-grid demand using the per-grid routed hybrid model.",
     ),
+    "anomaly-prediction": ModelDefinition(
+        model_id="anomaly-prediction",
+        name="Anomaly Prediction",
+        domain="grid",
+        task="spatial_anomaly_detection_and_localization",
+        description=(
+            "Runs the saved GridVision anomaly detector and spatially localizes "
+            "customer-level and area-level anomaly events from the project bundle."
+        ),
+    ),
 }
