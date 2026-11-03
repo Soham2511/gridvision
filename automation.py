@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 from collections import deque
+from dataclasses import replace
 import json
 import os
 import platform
@@ -44,6 +45,7 @@ LOG_SUBDIRECTORIES = (
 DAG_ID = "customer_energy_data_pipeline"
 GOVERNMENT_DAG_ID = "government_load_forecasting"
 COMMERCIAL_DAG_ID = "commercial_building_forecasting_data_pipeline"
+SEGMENTATION_DAG_ID = "government_customer_segmentation"
 DEFAULT_MODEL_NAME = "customer-bill-prediction"
 DEFAULT_ALIAS = "champion"
 MLFLOW_HOST_PORT = os.getenv("GRIDVISION_MLFLOW_HOST_PORT", "15001")
@@ -336,6 +338,36 @@ def _government_training_data_path(env: dict[str, str]) -> Path:
     return (DATA_ROOT / "airflow" / "government" / "training_ready_2018.parquet").resolve()
 
 
+def _segmentation_outputs_are_reusable(env: dict[str, str]) -> dict[str, Any]:
+    """Require a complete published segmentation run before skipping its DAG."""
+    from training.customer_segmentation.config import SegmentationSettings
+    from training.customer_segmentation.pipeline import validate_outputs
+
+    data_root = Path(env["GRIDVISION_DATA_DIR"]).expanduser().resolve()
+    settings = SegmentationSettings.from_environment()
+    settings = replace(
+        settings,
+        output_dir=data_root / "segmentation",
+        feature_path=data_root / "gold" / "customer_segmentation_features.parquet",
+        model_dir=PROJECT_ROOT / "models" / "segmentation",
+        reports_dir=PROJECT_ROOT / "docs" / "customer_segmentation" / "reports",
+    )
+    return validate_outputs(settings)
+
+
+def _run_segmentation_workflow(
+    airflow_command: list[str], env: dict[str, str], *, skip_data_pipeline: bool = False,
+) -> dict[str, Any]:
+    """Run segmentation after Bronze preparation, or validate outputs for reuse."""
+    if skip_data_pipeline:
+        validation = _segmentation_outputs_are_reusable(env)
+        print("[SKIPPED] Segmentation DAG; reusing validated outputs", flush=True)
+        return validation
+    run = _run_airflow_dag_test(airflow_command, SEGMENTATION_DAG_ID, env)
+    validation = _segmentation_outputs_are_reusable(env)
+    return {"airflow_run": run, "outputs": validation}
+
+
 def _airflow_process_log_path(env: dict[str, str]) -> Path:
     """Keep Airflow process logs and PID on Linux storage when the repo is on DrvFS."""
     if platform.system() == "Linux" and PROJECT_ROOT.as_posix().startswith("/mnt/"):
@@ -456,7 +488,7 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help=(
             "Reuse the existing customer gold dataset and skip its bronze-to-gold "
-            "DAG. The government load DAG still runs."
+            "DAG. The government load and segmentation DAGs still run."
         ),
     )
     parser.add_argument(
@@ -578,10 +610,12 @@ def main(argv: list[str] | None = None) -> int:
                     f"{government_data}"
                 )
             commercial_data = _commercial_gold_is_reusable(env)
+            segmentation_data = _segmentation_outputs_are_reusable(env)
             env["GOVERNMENT_PIPELINE_REUSE_PREPARED"] = "1"
             print(
                 "\n[REUSE] Validated prepared data for all personas: "
                 f"customer={customer_data['gold']}, government={government_data}, "
+                f"segmentation={segmentation_data['output_dir']}, "
                 f"commercial={commercial_data['gold']}",
                 flush=True,
             )
@@ -604,6 +638,14 @@ def main(argv: list[str] | None = None) -> int:
                 "Run customer bronze → silver → gold Airflow DAG",
                 lambda: _run_airflow_dag_test(airflow_command, DAG_ID, env),
             )
+        run_step(
+            "Run government customer segmentation Airflow DAG",
+            lambda: _run_segmentation_workflow(
+                airflow_command,
+                env,
+                skip_data_pipeline=arguments.skip_all_data_pipelines,
+            ),
+        )
         run_step(
             "Run government load forecasting Airflow DAG",
             lambda: _run_airflow_dag_test(

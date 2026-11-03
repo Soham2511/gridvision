@@ -24,6 +24,7 @@ htmlcov/
 !/models/commercial/.gitkeep
 /models/segmentation/**
 !/models/segmentation/.gitkeep
+/docs/customer_segmentation/reports/*.json
 *.duckdb
 *.sqlite
 *.sqlite3
@@ -80,3 +81,4 @@ frontend/.env
 .slingshot/
 .DS_Store
 Thumbs.db
+.agent

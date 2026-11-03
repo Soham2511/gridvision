@@ -27,7 +27,7 @@ services:
       SEGMENTATION_FEATURE_PATH: /opt/gridvision/data/gold/customer_segmentation_features.parquet
       SEGMENTATION_MODEL_DIR: /opt/gridvision/models/segmentation
       SEGMENTATION_REPORTS_DIR: /opt/gridvision/docs/customer_segmentation/reports
-      SEGMENTATION_DUCKDB_MEMORY_LIMIT: ${SEGMENTATION_DUCKDB_MEMORY_LIMIT:-1GB}
+      SEGMENTATION_DUCKDB_MEMORY_LIMIT: ${SEGMENTATION_DUCKDB_MEMORY_LIMIT:-4GB}
       SEGMENTATION_DUCKDB_THREADS: ${SEGMENTATION_DUCKDB_THREADS:-1}
       GOVERNMENT_PIPELINE_INPUT: /opt/gridvision/data/sample/${GRIDVISION_SOURCE_FILENAME:-training_sample_50000.parquet}
       MLFLOW_TRACKING_URI: http://mlflow:5001

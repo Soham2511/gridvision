@@ -85,7 +85,7 @@ that distribution or install the Compose plugin before continuing.
 `automation.py` sets the Compose variables for its own run. If you start the
 services with `docker compose` yourself, create a root `.env` file first so
 Compose knows where the data directory is and the backend has a private signing
-key. From the repository root in WSL/Linux, run:
+key. From the repository root in macOS, Linux, or WSL, run:
 
 ```bash
 printf 'GRIDVISION_DATA_DIR=%s/data\nSECRET_KEY=%s\n' "$PWD" "$(openssl rand -hex 32)" > .env
@@ -97,6 +97,12 @@ between restarts. Then start the services with:
 ```bash
 docker compose up -d --build
 ```
+
+For the 50,000-building source, segmentation may need up to 4 GB for its exact
+duplicate check when the source profile must be rebuilt. Compose uses that as
+the default DuckDB limit. If Docker Desktop has less memory available, set a
+lower `SEGMENTATION_DUCKDB_MEMORY_LIMIT` in `.env` only if the machine can handle
+the resulting slower scan; a 1 GB limit can fail with an out-of-memory error.
 
 ## 4. Run the complete setup
 

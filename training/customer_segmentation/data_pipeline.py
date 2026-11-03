@@ -6,6 +6,7 @@ import json
 import logging
 from datetime import datetime
 from pathlib import Path
+import uuid
 from typing import Any
 
 import duckdb
@@ -271,7 +272,11 @@ def generate_building_features(settings: SegmentationSettings) -> dict[str, Any]
             [start, end_exclusive],
         ).fetchone()[0]
         output = settings.feature_path
-        stage = output.with_suffix(".parquet.stage")
+        # Airflow retries or overlapping automation runs must not share a stage
+        # file: one writer can otherwise rename it while another is publishing.
+        stage = output.with_name(
+            f"{output.name}.{uuid.uuid4().hex}.stage"
+        )
         read = _parquet_sql(source)
         sql = f"""
         COPY (
@@ -391,8 +396,11 @@ def generate_building_features(settings: SegmentationSettings) -> dict[str, Any]
             AND "id.grid.coarse" IS NOT NULL
         ) TO '{stage.as_posix()}' (FORMAT PARQUET, COMPRESSION ZSTD)
         """
-        con.execute(sql, [start, end_exclusive])
-        stage.replace(output)
+        try:
+            con.execute(sql, [start, end_exclusive])
+            stage.replace(output)
+        finally:
+            stage.unlink(missing_ok=True)
         result = con.execute(
             f"""SELECT COUNT(*), COUNT(DISTINCT OBJECTID), MIN(coverage_ratio),
                        AVG(coverage_ratio), MAX(coverage_ratio)
