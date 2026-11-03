@@ -476,11 +476,30 @@ class ResidentialAssistantOrchestrator:
                     exc,
                 )
 
-        # 6. Fallback to Agentic Multi-Knowledge Orchestrator for knowledge-intensive queries if LLM Agent did not produce an answer
+        # 6. Direct LLM completion fallback (if tool agent encountered socket/tool exception)
+        if not answer and self.llm_provider and self.llm_provider.is_available():
+            try:
+                answer = self.llm_provider.generate_chat_completion(
+                    messages=messages,
+                    temperature=self.temperature,
+                    max_tokens=self.max_tokens,
+                )
+                is_llm_generated = True
+            except LLMInferenceError as exc:
+                logger.warning("LLM inference unavailable, using verified context fallback: %s", exc)
+            except Exception as exc:
+                logger.error("Unexpected error during LLM generation: %s", exc)
+
+        # 7. Specialized Multi-Knowledge Orchestrator (for dedicated house planning, appliance analysis, or standards)
         contract = None
         p_low = clean_user_prompt.lower()
-        is_telemetry_billing_query = any(k in p_low for k in ["my bill", "explain my bill", "my consumption", "estimated bill", "current usage", "reading", "tariff rate", "all-time", "all time", "historically"])
-        if (not answer) and (not is_telemetry_billing_query) and (self.agentic_orchestrator is not None):
+        is_knowledge_mode = any(k in p_low for k in [
+            "plan house", "new house", "electrical layout", "connected load", "room", "bedroom",
+            "appliance", "replace", "upgrade", "bldc", "iseer", "inverter ac", "fan", "geyser", "refrigerator", "payback",
+            "reduce bill", "cost management", "saving", "lower consumption", "balanced efficiency",
+            "standard", "code", "regulation", "is 732", "is732", "nec", "bee", "cea", "wiring", "clause"
+        ])
+        if (not answer) and is_knowledge_mode and (self.agentic_orchestrator is not None):
             try:
                 contract = self.agentic_orchestrator.process_query(
                     prompt=clean_user_prompt,
@@ -510,20 +529,8 @@ class ResidentialAssistantOrchestrator:
                 "missing_information": contract.missing_information,
                 "structured_data": contract.structured_data,
             }
-        if not answer and self.llm_provider and self.llm_provider.is_available():
-            try:
-                answer = self.llm_provider.generate_chat_completion(
-                    messages=messages,
-                    temperature=self.temperature,
-                    max_tokens=self.max_tokens,
-                )
-                is_llm_generated = True
-            except LLMInferenceError as exc:
-                logger.warning("LLM inference unavailable, using verified context fallback: %s", exc)
-            except Exception as exc:
-                logger.error("Unexpected error during LLM generation: %s", exc)
 
-        # Final fallback to deterministic domain fallback
+        # 8. Deterministic domain fallback (telemetry, billing, usage trends, or verified assistance)
         if not answer:
             answer = self._generate_fallback_response(clean_user_prompt, context)
 
