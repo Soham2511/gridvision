@@ -50,6 +50,9 @@ class MockChatModel(BaseChatModel):
         return self
 
 
+from app.services.assistant.dialogue_state import compact_history_for_llm
+
+
 class ResidentialAgentFactory:
     """Factory responsible for creating configured LangChain models and tool-calling agents."""
 
@@ -173,37 +176,30 @@ class ResidentialAgentFactory:
         prompt: str,
         history: list[dict[str, Any]] | None = None,
         max_prompt_chars: int = 2000,
-        max_history_turns: int = 8,
+        max_history_turns: int = 4,
     ) -> list[BaseMessage]:
-        """Sanitize conversation history and prompt to prevent prompt injection and token overflow.
+        """Sanitize and compact conversation history and prompt to prevent prompt injection and token overflow.
 
-        - Rejects client-supplied system/developer messages.
-        - Truncates oversized messages.
-        - Limits history to recent turns.
+        - Uses compact_history_for_llm to prune bulky prior markdown tables and disclaimers.
+        - Guarantees the prompt + history remains well within Groq ITPM (7,000) token ceilings.
         """
         clean_prompt = (prompt or "").strip()[:max_prompt_chars]
         messages: list[BaseMessage] = []
 
         if history:
-            sanitized_turns = []
-            for item in history:
-                if not isinstance(item, dict):
-                    continue
-                role = str(item.get("role", "")).lower().strip()
-                content = str(item.get("content", "")).strip()[:max_prompt_chars]
-
-                # Drop spoofed system or developer roles
-                if role in ["system", "developer"]:
-                    logger.warning("Dropped unauthorized role injection in history: %s", role)
-                    continue
-
-                if role == "user" and content:
-                    sanitized_turns.append(HumanMessage(content=content))
-                elif role == "assistant" and content:
-                    sanitized_turns.append(AIMessage(content=content))
-
-            # Bounded sliding window
-            messages.extend(sanitized_turns[-max_history_turns:])
+            compacted = compact_history_for_llm(
+                history,
+                max_turns=max_history_turns,
+                max_assistant_chars=350,
+                max_user_chars=400,
+            )
+            for item in compacted:
+                role = item["role"]
+                content = item["content"]
+                if role == "user":
+                    messages.append(HumanMessage(content=content))
+                elif role == "assistant":
+                    messages.append(AIMessage(content=content))
 
         if clean_prompt:
             messages.append(HumanMessage(content=clean_prompt))

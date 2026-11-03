@@ -98,6 +98,11 @@ class GroqLLMAdapter(BaseLLMProvider):
             except Exception as exc:
                 last_exc = exc
                 err_str = str(exc).lower()
+                is_token_overflow = "limit" in err_str and ("requested" in err_str or "itpm" in err_str or "tpm" in err_str)
+                if is_token_overflow:
+                    logger.warning("Groq input token rate limit overflow detected. Aborting retry loop immediately.")
+                    break
+
                 is_transient = any(
                     k in err_str
                     for k in ["rate limit", "429", "timeout", "connection", "503", "temporarily"]

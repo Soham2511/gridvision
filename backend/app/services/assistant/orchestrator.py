@@ -12,6 +12,11 @@ from typing import Any
 
 from app.providers.data_provider import BaseDataProvider
 from app.providers.llm.base import BaseLLMProvider, LLMInferenceError
+from app.services.assistant.dialogue_state import (
+    compact_history_for_llm,
+    is_affirmative_or_continuation,
+    resolve_dialogue_context,
+)
 from app.services.assistant.agent_factory import ResidentialAgentFactory
 from app.services.assistant.context_builder import HouseholdContextBuilder
 from app.services.assistant.prompts import build_system_prompt
@@ -99,7 +104,7 @@ class ResidentialAssistantOrchestrator:
             )
 
         # Check for dedicated feature workflows in fallback
-        if any(w in p for w in ["plan house", "new house", "house planning", "electrical layout", "electrical plan", "connected load"]):
+        if any(w in p for w in ["plan house", "new house", "house planning", "electrical layout", "electrical plan", "connected load", "yes generate", "generate plan", "optimize"]):
             try:
                 from app.application.residential.plan_house_energy import PlanHouseEnergyUseCase
                 from app.domain.residential.schemas import HouseEnergyPlanningRequest
@@ -318,9 +323,13 @@ class ResidentialAssistantOrchestrator:
         )
 
     @staticmethod
-    def _is_energy_related_query(prompt: str) -> bool:
+    def _is_energy_related_query(prompt: str, history: list[dict[str, Any]] | None = None) -> bool:
         """Evaluate if user prompt relates to household energy, billing, power, appliances, or standards."""
         p = prompt.lower().strip()
+        # Conversational continuation or affirmative command in active session
+        if is_affirmative_or_continuation(prompt):
+            return True
+
         # Common arithmetic or numbers (e.g. 2+2)
         if all(c in "0123456789+-*/. ()?" for c in p) and any(c in "+-*/" for c in p):
             return True
@@ -351,7 +360,11 @@ class ResidentialAssistantOrchestrator:
         return "balanced_core"
 
     def _calculate_adaptive_timeout(self, prompt: str) -> float:
-        """Calculate dynamic timeout: generous for complex/lengthy queries, baseline for short queries."""
+        """Calculate dynamic timeout: generous for complex/lengthy queries, baseline for short queries.
+        
+        Capped strictly at 20.0s so that any upstream LLM latency failure always leaves ample
+        time (≥ 25s) for instant deterministic fallback before the frontend's 45s timer fires.
+        """
         p_len = len(prompt.strip())
         is_complex = (
             p_len > 120
@@ -361,11 +374,11 @@ class ResidentialAssistantOrchestrator:
                 "step by step", "bedroom", "built-up", "ac", "refrigerator"
             ])
         )
-        base = getattr(self.agent_factory, "timeout", 18.0) if self.agent_factory else 18.0
-        complex_timeout = getattr(self.agent_factory, "complex_timeout", 35.0) if self.agent_factory else 35.0
+        base = getattr(self.agent_factory, "timeout", 12.0) if self.agent_factory else 12.0
+        complex_timeout = getattr(self.agent_factory, "complex_timeout", 18.0) if self.agent_factory else 18.0
         if is_complex or p_len > 250:
-            return max(complex_timeout, base + 15.0)
-        return base
+            return min(complex_timeout, 18.0)
+        return min(base, 12.0)
 
     def answer_query(
         self,
@@ -446,40 +459,40 @@ class ResidentialAssistantOrchestrator:
             last_recorded_date=last_recorded,
         )
 
-        # 4. Assemble chat message history (limit to last 6 turns for sliding window)
-        messages: list[dict[str, str]] = [
-            {"role": "system", "content": system_prompt}
-        ]
-
-        if history:
-            recent_history = history[-6:]
-            for item in recent_history:
-                role = str(item.get("role", "user")).lower()
-                # Security rule: Never allow client-supplied history to inject 'system' messages
-                if role not in ("user", "assistant"):
-                    continue
-                content = str(item.get("content", "")).strip()
-                if not content:
-                    continue
-                # Truncate overly long history content to prevent token abuse
-                if len(content) > 2000:
-                    content = content[:2000] + "... [truncated]"
-                messages.append({"role": role, "content": content})
-
-        # Add current user prompt (capped at 2000 chars)
         clean_user_prompt = prompt.strip()
         if len(clean_user_prompt) > 2000:
             clean_user_prompt = clean_user_prompt[:2000]
-        messages.append({"role": "user", "content": clean_user_prompt})
+
+        # Resolve dialogue state, tracking conversational continuity, affirmative answers, and anaphora
+        resolved_state = resolve_dialogue_context(
+            clean_user_prompt,
+            history=history,
+        )
+        effective_prompt = resolved_state.effective_prompt
+        tool_scope = resolved_state.tool_scope
+        is_continuation = resolved_state.is_continuation
+
+        # 4. Assemble chat message history (compacted to prevent Groq 7,000 ITPM rate limit)
+        messages: list[dict[str, str]] = [
+            {"role": "system", "content": system_prompt}
+        ]
+        compacted_history = compact_history_for_llm(
+            history,
+            max_turns=4,
+            max_assistant_chars=350,
+            max_user_chars=400,
+        )
+        messages.extend(compacted_history)
+        messages.append({"role": "user", "content": effective_prompt})
 
         # 5. Attempt Autonomous LangChain Tool-Calling Agent first
         answer = None
         is_llm_generated = False
+        rate_limit_encountered = False
 
         if self.agent_factory and (self.agent_factory.custom_chat_model is not None or self.agent_factory.is_groq_available()):
             try:
-                tool_scope = self._determine_tool_scope(clean_user_prompt)
-                effective_timeout = self._calculate_adaptive_timeout(clean_user_prompt)
+                effective_timeout = self._calculate_adaptive_timeout(effective_prompt)
 
                 agent = self.agent_factory.create_agent_for_household(
                     meter_id=meter_id,
@@ -493,8 +506,8 @@ class ResidentialAssistantOrchestrator:
                     timeout=effective_timeout,
                 )
                 agent_messages = self.agent_factory.sanitize_history_and_prompt(
-                    prompt=clean_user_prompt,
-                    history=history,
+                    prompt=effective_prompt,
+                    history=compacted_history,
                 )
                 res = agent.invoke({"messages": agent_messages})
                 if res and "messages" in res and res["messages"]:
@@ -506,13 +519,16 @@ class ResidentialAssistantOrchestrator:
                         answer = raw_ans.strip()
                         is_llm_generated = True
             except Exception as exc:
+                err_text = str(exc).lower()
                 logger.warning(
                     "LangChain agent execution failed or timed out: %s; falling back to agentic knowledge orchestrator or deterministic fallback",
                     exc,
                 )
+                if any(w in err_text for w in ["rate limit", "429", "rate_limit_exceeded"]):
+                    rate_limit_encountered = True
 
-        # 6. Direct LLM completion fallback (if tool agent encountered socket/tool exception)
-        if not answer and self.llm_provider and self.llm_provider.is_available():
+        # 6. Direct LLM completion fallback (ONLY if not rate-limited)
+        if not answer and not rate_limit_encountered and self.llm_provider and self.llm_provider.is_available():
             try:
                 answer = self.llm_provider.generate_chat_completion(
                     messages=messages,
@@ -527,20 +543,22 @@ class ResidentialAssistantOrchestrator:
 
         # 7. Specialized Multi-Knowledge Orchestrator (for dedicated house planning, appliance analysis, or standards)
         contract = None
-        p_low = clean_user_prompt.lower()
-        is_knowledge_mode = any(k in p_low for k in [
+        p_low = effective_prompt.lower()
+        is_knowledge_mode = is_continuation or any(k in p_low for k in [
             "plan house", "new house", "electrical layout", "connected load", "room", "bedroom",
             "appliance", "replace", "upgrade", "bldc", "iseer", "inverter ac", "fan", "geyser", "refrigerator", "payback",
             "reduce bill", "cost management", "saving", "lower consumption", "balanced efficiency",
-            "standard", "code", "regulation", "is 732", "is732", "nec", "bee", "cea", "wiring", "clause"
+            "standard", "code", "regulation", "is 732", "is732", "nec", "bee", "cea", "wiring", "clause",
+            "yes", "generate", "proceed", "do it"
         ])
         if (not answer) and is_knowledge_mode and (self.agentic_orchestrator is not None):
             try:
                 contract = self.agentic_orchestrator.process_query(
-                    prompt=clean_user_prompt,
+                    prompt=effective_prompt,
                     meter_id=meter_id,
                     customer_name=customer_name,
                     history=history,
+                    explicit_mode=resolved_state.resolved_mode if is_continuation else None,
                 )
             except Exception as e:
                 logger.warning("AgenticKnowledgeOrchestrator failed: %s", e)
