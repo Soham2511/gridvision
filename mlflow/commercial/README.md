@@ -75,6 +75,12 @@ The test set also receives metrics by forecast horizon and by `OBJECTID`.
 A persistence baseline (`energy_at_origin`) is evaluated with the same splits.
 The model is clipped at zero for the non-negative energy domain.
 
+The shared `scikit-learn==1.6.1` pin in `requirements.txt` is intentional:
+the registered preprocessing pipeline is serialized with scikit-learn, so the
+training environment and serving image must use the same version. After
+changing this pin, reinstall the model-serving dependencies, retrain/register
+the commercial model, and rebuild the backend image together.
+
 Every run logs its evaluation, feature order, split ranges, dataset version,
 quality manifest/report, model bundle, model card, and training summary to the
 `gridvision-commercial-building-forecasting` MLflow experiment. It also writes
@@ -109,8 +115,8 @@ Common environment overrides include `COMMERCIAL_GOLD_DATASET`,
 
 ## Automation, serving, and logs
 
-`python automation.py` runs customer and government data workflows, the
-commercial DAG and training, then customer training and service startup. The
+`python automation.py` runs customer, government, commercial, and customer
+segmentation data workflows, then model training and service startup. The
 commercial DAG id is `commercial_building_forecasting_data_pipeline`. To reuse
 prepared commercial data while still training, run
 `python automation.py --skip-commercial-data-pipeline`. Reuse verifies Silver,

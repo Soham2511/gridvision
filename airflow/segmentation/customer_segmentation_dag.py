@@ -37,7 +37,7 @@ logger = logging.getLogger("gridvision.segmentation.airflow")
     schedule=None,
     catchup=False,
     max_active_runs=1,
-    default_args={"retries": 2},
+    default_args={"retries": 0},
     tags=["gridvision", "government", "segmentation", "energy"],
 )
 def government_customer_segmentation():
@@ -138,4 +138,3 @@ def government_customer_segmentation():
 
 
 government_customer_segmentation()
-

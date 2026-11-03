@@ -41,13 +41,13 @@ SOURCE_DATA = Path(
 SILVER_DATA = Path(
     os.environ.get(
         "GRIDVISION_SILVER_DATA",
-        ROOT / "data" / "anomaly_prediction" / "silver" / "synthetic_2019_silver.parquet",
+        ROOT / "data" / "silver" / "synthetic_2019_silver.parquet",
     )
 )
 GOLD_DATA = Path(
     os.environ.get(
         "GRIDVISION_GOLD_DATA",
-        ROOT / "data" / "anomaly_prediction" / "gold" / "gridvision_model_features.parquet",
+        ROOT / "data" / "gold" / "gridvision_model_features.parquet",
     )
 )
 MODEL_PATH = Path(
@@ -72,10 +72,15 @@ REPORT_DIRECTORY = Path(
     tags=["gridvision", "anomaly-detection", "mlflow"],
 )
 def gridvision_anomaly_training() -> None:
+    force_prepare = (
+        os.environ.get("ANOMALY_FORCE_PREPARE", "").strip().lower()
+        in {"1", "true", "yes"}
+    )
+
     @task
     def parse_to_silver() -> dict[str, Any]:
         logger_path = configure_logging()
-        if SILVER_DATA.is_file():
+        if SILVER_DATA.is_file() and not force_prepare:
             from gridvision_pipeline import inspect_parquet
 
             result = inspect_parquet(SILVER_DATA)
@@ -100,7 +105,7 @@ def gridvision_anomaly_training() -> None:
     @task
     def engineer_gold(silver: dict[str, Any]) -> dict[str, Any]:
         configure_logging()
-        if GOLD_DATA.is_file():
+        if GOLD_DATA.is_file() and not force_prepare:
             from gridvision_pipeline import inspect_parquet
 
             result = inspect_parquet(GOLD_DATA)

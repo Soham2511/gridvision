@@ -361,10 +361,10 @@ export interface ModelRegistryItem {
   personaUsed: string;
   version: string;
   status: 'Active' | 'Monitoring' | 'Deprecated' | 'Configured' | 'Unavailable';
-  lastInference: string;
-  mse: number;
-  rmse: number;
-  r2: number;
+  runSummary: string;
+  mse: number | null;
+  rmse: number | null;
+  r2: number | null;
 }
 
 export interface PlatformHealthSummary {
@@ -418,6 +418,7 @@ export interface RegisteredModel {
   modelVersion: string;
   selectedModel: string;
   error?: string;
+  runSummary?: string;
   dataset?: CustomerBillModel['dataset'];
   testMetrics?: CustomerBillModel['testMetrics'];
   features?: string[];

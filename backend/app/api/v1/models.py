@@ -54,6 +54,9 @@ def get_model_catalog():
     """Return real model metadata and data readiness for the model workbench."""
     try:
         catalog = _service().get_model_catalog()
+        catalog.append(
+            current_app.extensions["government_segmentation_service"].get_model_status()
+        )
         catalog.append(_anomaly_service().get_summary())
         return success_response({"models": catalog})
     except CustomerBillPredictionError as exc:

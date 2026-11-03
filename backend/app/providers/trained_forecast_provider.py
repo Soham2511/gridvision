@@ -35,6 +35,8 @@ class TrainedForecastProvider(BaseModelProvider):
         commercial_model_name: str = "gridvision-commercial-building-forecast",
         government_model_name: str = "gridvision-government-load-forecast",
         model_alias: str = "champion",
+        commercial_model_alias: str | None = None,
+        government_model_alias: str | None = None,
     ) -> None:
         self.customer_provider = customer_provider
         self.commercial_data = Path(commercial_data)
@@ -45,6 +47,8 @@ class TrainedForecastProvider(BaseModelProvider):
         self.commercial_model_name = commercial_model_name
         self.government_model_name = government_model_name
         self.model_alias = model_alias
+        self.commercial_model_alias = commercial_model_alias or model_alias
+        self.government_model_alias = government_model_alias or model_alias
         self._mlflow_models: dict[str, tuple[Any, str]] = {}
         self._commercial_bundle: dict[str, Any] | None = None
         self._government_bundle: dict[str, Any] | None = None
@@ -1674,18 +1678,23 @@ class TrainedForecastProvider(BaseModelProvider):
         if not self.tracking_uri:
             raise RuntimeError("MLFLOW_TRACKING_URI is required for forecast model serving.")
         name = self.commercial_model_name if sector == "commercial" else self.government_model_name
+        alias = self._model_alias(sector)
         try:
             import mlflow
             from mlflow.tracking import MlflowClient
 
             mlflow.set_tracking_uri(self.tracking_uri)
-            version = MlflowClient().get_model_version_by_alias(name, self.model_alias)
-            model = mlflow.pyfunc.load_model(f"models:/{name}@{self.model_alias}")
+            version = MlflowClient(
+                tracking_uri=self.tracking_uri
+            ).get_model_version_by_alias(name, alias)
+            model = mlflow.pyfunc.load_model(f"models:/{name}@{alias}")
             loaded = (model, str(version.version))
             self._mlflow_models[sector] = loaded
             return loaded
         except Exception as exc:
-            raise RuntimeError(f"Unable to load registered {sector} model {name}@{self.model_alias}: {exc}") from exc
+            raise RuntimeError(
+                f"Unable to load registered {sector} model {name}@{alias}: {exc}"
+            ) from exc
 
     def predict_horizon(
         self, sector: str, entity_id: str, horizon_count: int = 24
@@ -1764,39 +1773,104 @@ class TrainedForecastProvider(BaseModelProvider):
         )
 
     def get_horizon_model_status(self) -> dict[str, dict[str, Any]]:
-        artifacts = {
-            "commercial": self.commercial_data,
-            "government": self.government_data,
-        }
-        return {
-            name: {
-                "status": "ready" if data.is_file() and self._model_is_registered(name) else "unavailable",
+        status: dict[str, dict[str, Any]] = {}
+        for sector, data_path, model_name in (
+            ("commercial", self.commercial_data, self.commercial_model_name),
+            ("government", self.government_data, self.government_model_name),
+        ):
+            model_alias = self._model_alias(sector)
+            version, registry_error = self._registered_model_version(sector)
+            data_available = data_path.is_file()
+            local_model_available = (
+                self.government_model_path.is_file()
+                if sector == "government"
+                else True
+            )
+            reasons = []
+            if not data_available:
+                reasons.append(f"Forecast dataset is missing: {data_path}")
+            if version is None:
+                reasons.append(registry_error or (
+                    f"Registered model alias is unavailable: {model_name}@{model_alias}"
+                ))
+            elif sector == "commercial":
+                try:
+                    self._load_mlflow_model(sector)
+                except RuntimeError as exc:
+                    reasons.append(str(exc))
+            if not local_model_available:
+                reasons.append(
+                    f"Government model artifact is missing: {self.government_model_path}"
+                )
+            status[sector] = {
+                "status": (
+                    "ready"
+                    if data_available
+                    and version is not None
+                    and local_model_available
+                    and not reasons
+                    else "unavailable"
+                ),
                 "is_demo": False,
-                "model_name": self.commercial_model_name if name == "commercial" else self.government_model_name,
-                "model_alias": self.model_alias,
-                "model_version": self._registered_version(name),
-                "provider": "mlflow_registered_alias",
-                "data_available": data.is_file(),
-                **self._registered_metadata(name),
+                "model_name": model_name,
+                "model_alias": model_alias,
+                "model_version": version,
+                "provider": (
+                    "mlflow_registered_alias+local_bundle"
+                    if sector == "government"
+                    else "mlflow_registered_alias"
+                ),
+                "data_available": data_available,
+                "error": "; ".join(reasons) if reasons else None,
+                **self._registered_metadata(sector),
             }
-            for name, data in artifacts.items()
-        }
+        return status
 
     def _registered_version(self, sector: str) -> str | None:
+        version, _ = self._registered_model_version(sector)
+        return version
+
+    def _model_alias(self, sector: str) -> str:
+        return (
+            self.commercial_model_alias
+            if sector == "commercial"
+            else self.government_model_alias
+        )
+
+    def _registered_model_version(
+        self, sector: str
+    ) -> tuple[str | None, str | None]:
+        """Resolve the configured alias without loading a serving artifact."""
+        model_name = (
+            self.commercial_model_name
+            if sector == "commercial"
+            else self.government_model_name
+        )
+        model_alias = self._model_alias(sector)
+        if not self.tracking_uri:
+            return None, "MLFLOW_TRACKING_URI is not configured."
         try:
-            return self._load_mlflow_model(sector)[1]
-        except Exception:
-            return None
+            from mlflow.tracking import MlflowClient
+
+            client = MlflowClient(tracking_uri=self.tracking_uri)
+            version = client.get_model_version_by_alias(model_name, model_alias)
+            return str(version.version), None
+        except Exception as exc:
+            return (
+                None,
+                f"Unable to resolve MLflow alias {model_name}@{model_alias} "
+                f"at {self.tracking_uri}: {exc}",
+            )
 
     def _registered_metadata(self, sector: str) -> dict[str, Any]:
         try:
-            import mlflow
             from mlflow.tracking import MlflowClient
 
             model_name = self.commercial_model_name if sector == "commercial" else self.government_model_name
-            mlflow.set_tracking_uri(self.tracking_uri)
-            client = MlflowClient()
-            version = client.get_model_version_by_alias(model_name, self.model_alias)
+            client = MlflowClient(tracking_uri=self.tracking_uri)
+            version = client.get_model_version_by_alias(
+                model_name, self._model_alias(sector)
+            )
             metrics = client.get_run(version.run_id).data.metrics
             if sector == "commercial":
                 candidates = [
@@ -1852,12 +1926,30 @@ class TrainedForecastProvider(BaseModelProvider):
             "government": self.government_data,
         }[sector]
         version = self._registered_version(sector)
+        model_alias = self._model_alias(sector)
+        local_model_available = (
+            self.government_model_path.is_file()
+            if sector == "government"
+            else True
+        )
+        data_available = data_path.is_file()
+        ready = version is not None and local_model_available and data_available
         return {
             "model_name": names[sector],
-            "model_version": version or "unavailable",
-            "model_alias": self.model_alias,
-            "provider": "mlflow_registered_alias",
-            "is_demo": version is None,
+            "model_version": version or "not_deployed",
+            "model_alias": model_alias,
+            "provider": (
+                "mlflow_registered_alias+local_bundle"
+                if sector == "government"
+                else "mlflow_registered_alias"
+            ),
+            "is_demo": not ready,
             "evaluation_status": "historical_holdout_replay",
+            "data_available": data_available,
+            "error": (
+                "Government forecast data, local model bundle, or registered alias is unavailable."
+                if not ready and sector == "government"
+                else None
+            ),
             **self._registered_metadata(sector),
         }

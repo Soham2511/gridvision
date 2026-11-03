@@ -10,6 +10,7 @@ from typing import Any
 import pandas as pd
 
 from app.api.error_handlers import AppError
+from app.models.registry import MODEL_REGISTRY
 from training.customer_segmentation.config import SegmentationSettings
 from training.customer_segmentation.pipeline import validate_outputs
 
@@ -191,6 +192,51 @@ class SegmentationService:
                     "survey_priority_regions", geo.get("survey_priority_rows")
                 ),
             },
+        }
+
+    def get_model_status(self) -> dict[str, Any]:
+        definition = MODEL_REGISTRY["government-customer-segmentation"].as_dict()
+        try:
+            validation = self._ensure_ready()
+            metadata = json.loads(
+                (self.output_dir / "model_metadata.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            profile = json.loads(
+                (self.output_dir / "reports" / "source_profile.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+        except (OSError, json.JSONDecodeError, SegmentationUnavailableError) as exc:
+            return {
+                **definition,
+                "status": "unavailable",
+                "provider": "published_artifacts",
+                "modelVersion": "not_deployed",
+                "selectedModel": "not_deployed",
+                "runSummary": "Published segmentation outputs are unavailable.",
+                "error": str(exc),
+            }
+
+        model_count = len(metadata.get("trained_models", []))
+        assignment_count = int(validation["assignment_count"])
+        sample_fraction = profile.get("building_sample_fraction")
+        sample_summary = (
+            f" · {sample_fraction:.0%} deterministic building sample"
+            if isinstance(sample_fraction, (int, float))
+            else ""
+        )
+        return {
+            **definition,
+            "status": "configured",
+            "provider": "published_artifacts",
+            "modelVersion": str(metadata.get("model_version") or "unknown"),
+            "selectedModel": f"{model_count} category models",
+            "runSummary": (
+                f"{assignment_count:,} building assignments across "
+                f"{model_count} category models{sample_summary}"
+            ),
         }
 
     @staticmethod

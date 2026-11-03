@@ -32,8 +32,14 @@ class BaseConfig:
     COMMERCIAL_MLFLOW_MODEL_NAME = os.getenv(
         "COMMERCIAL_MLFLOW_MODEL_NAME", "gridvision-commercial-building-forecast"
     )
+    COMMERCIAL_MLFLOW_MODEL_ALIAS = os.getenv(
+        "COMMERCIAL_MLFLOW_MODEL_ALIAS", MLFLOW_MODEL_ALIAS
+    )
     GOVERNMENT_MLFLOW_MODEL_NAME = os.getenv(
         "GOVERNMENT_MLFLOW_MODEL_NAME", "gridvision-government-load-forecast"
+    )
+    GOVERNMENT_MLFLOW_MODEL_ALIAS = os.getenv(
+        "GOVERNMENT_MLFLOW_MODEL_ALIAS", MLFLOW_MODEL_ALIAS
     )
     CUSTOMER_TARIFF_INR_PER_KWH = float(
         os.getenv("CUSTOMER_TARIFF_INR_PER_KWH", "10.0")

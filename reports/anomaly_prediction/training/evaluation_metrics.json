@@ -1,6 +1,6 @@
 {
   "source_profile": {
-    "path": "/Users/siddhantgupta/Downloads/Grid_Vision/untitled folder/data/silver/synthetic_2019_silver.parquet",
+    "path": "/mnt/d/GridVision/data/silver/synthetic_2019_silver.parquet",
     "rows": 87600000,
     "row_groups": 351,
     "columns": [
@@ -77,30 +77,30 @@
     "detector_positive_fit_rows": 3150,
     "detector_normal_fit_rows": 200000,
     "threshold_quantile": 0.995,
-    "threshold": 0.9997457909817843,
+    "threshold": 0.9997453338637964,
     "detector_type": "binary RandomForest trained on synthetic events + normal data",
     "rule_thresholds": {
-      "spike_relative_deviation": 3.8969011306762695,
-      "drop_relative_deviation": -0.8207067847251892,
+      "spike_relative_deviation": 3.8969010567665254,
+      "drop_relative_deviation": -0.8207067962288856,
       "zero_block_minimum_hours": 3.0,
       "flatline_minimum_hours": 6.0,
       "flatline_minimum_pre_event_cv": 0.05,
       "flatline_minimum_level_deviation": 0.001
     },
-    "training_quantile_threshold": 0.9997457909817843,
-    "selected_validation_threshold": 0.5514993212374478,
+    "training_quantile_threshold": 0.9997453338637964,
+    "selected_validation_threshold": 0.5481659879041145,
     "threshold_selection": "maximum validation F1 on held-out synthetic events"
   },
   "metrics": {
-    "training_quantile_threshold": 0.9997457909817843,
+    "training_quantile_threshold": 0.9997453338637964,
     "validation_normal_false_alert_rate": 3.0441400304414e-05,
     "validation_detection": {
       "precision": 0.9962013295346629,
       "recall": 0.9990476190476191,
       "f1": 0.997622444127437,
-      "pr_auc": 0.999728170869545,
+      "pr_auc": 0.9997312633552445,
       "false_alerts_per_customer": 0.04,
-      "threshold": 0.5514993212374478,
+      "threshold": 0.5481659879041145,
       "test_points": 131400,
       "positive_points": 1050,
       "event_recall": 1.0,
@@ -205,17 +205,17 @@
       }
     },
     "test_detection": {
-      "precision": 0.9895337773549001,
-      "recall": 0.9904761904761905,
-      "f1": 0.9900047596382675,
-      "pr_auc": 0.9997489375944544,
+      "precision": 0.9895635673624289,
+      "recall": 0.9933333333333333,
+      "f1": 0.9914448669201521,
+      "pr_auc": 0.999751544689718,
       "false_alerts_per_customer": 0.11,
-      "threshold": 0.5514993212374478,
+      "threshold": 0.5481659879041145,
       "test_points": 131400,
       "positive_points": 1050,
       "event_recall": 1.0,
       "event_precision": 0.9665071770334929,
-      "event_detection_delay_hours": 0.025,
+      "event_detection_delay_hours": 0.02,
       "ground_truth_events": 200,
       "predicted_event_bursts": 209
     },
@@ -296,16 +296,16 @@
     },
     "test_customer_count": 100,
     "spatial_event_localization": {
-      "event_precision": 0.6571428571428571,
+      "event_precision": 0.6534090909090909,
       "event_recall": 0.575,
-      "event_f1": 0.6133333333333333,
-      "event_detection_delay_hours": -0.9478260869565217,
-      "cluster_event_purity": 0.5222380952380953,
-      "false_events": 60,
+      "event_f1": 0.6117021276595743,
+      "event_detection_delay_hours": -0.9565217391304348,
+      "cluster_event_purity": 0.5192708333333335,
+      "false_events": 61,
       "missed_events": 85,
       "matched_events": 115,
       "ground_truth_event_count": 200,
-      "predicted_event_count": 175
+      "predicted_event_count": 176
     }
   },
   "spatial_temporal_config": {

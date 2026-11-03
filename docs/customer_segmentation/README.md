@@ -66,7 +66,28 @@ in the root README, then start the required services:
 docker compose up -d airflow mlflow
 ```
 
-The DAG is manually triggered. If it is paused, unpause it once, then trigger:
+The full `python automation.py` workflow runs this DAG after the Government load
+DAG, using the existing Bronze source and publishing to
+`${GRIDVISION_DATA_DIR}/segmentation/`. Automation skips the DAG when the
+source and validated outputs are unchanged; missing or changed data causes a
+new run. By default, segmentation deterministically selects 10% of buildings
+(about 5,000 of the 50,000-building source) before profiling, feature generation, and
+clustering. Every hourly row for selected buildings is retained, and
+Institutional and Recreational buildings are explicitly preserved because
+those categories are rare. The feature schema and downstream outputs are
+unchanged. Set `SEGMENTATION_BUILDING_SAMPLE_FRACTION` to a value in `(0, 1]`
+to change the sample size; `1` processes the full source. The first sample
+creation still scans the 3.6 GB Bronze Parquet once, but it caches the selected
+rows in `source_sample.parquet`. Subsequent profiling and DAG runs reuse that
+sample and its source/config manifest instead of scanning all 419 million
+meter rows. The source profile is also cached. DuckDB defaults to 1 GB of memory
+and one thread, spilling temporary work under
+`/tmp/gridvision-segmentation-duckdb`; the limits can be adjusted with
+`SEGMENTATION_DUCKDB_MEMORY_LIMIT` and
+`SEGMENTATION_DUCKDB_THREADS`. Segmentation tasks do not retry automatically
+after a failure, because retrying a memory-allocation failure without changing
+resource limits cannot resolve it. To run segmentation by itself, the DAG can
+also be triggered manually. If it is paused, unpause it once, then trigger:
 
 ```bash
 docker compose exec airflow airflow dags unpause government_customer_segmentation
@@ -80,16 +101,23 @@ docker compose exec airflow airflow dags list-runs -d government_customer_segmen
 docker compose exec airflow airflow tasks states-for-dag-run government_customer_segmentation <RUN_ID>
 ```
 
-The DAG profiles the source, builds building-level features, fits category
-models (pooling small categories), publishes regional/time/priority outputs,
+The DAG profiles the sampled source, builds building-level features, fits
+category models (pooling small categories), publishes regional/time/priority outputs,
 validates the complete output set, and registers model bundles in MLflow. The
-DAG has retries and one active run at a time. A successful run writes its
+DAG has no automatic retries and allows one active run at a time. A successful run writes its
 Airflow run ID and validation results to the execution summary.
 
 The equivalent local CLI is `python -m training.customer_segmentation.cli`.
 It supports `--source`, `--output-dir`, `--window-end`, `--window-months`,
 `--minimum-coverage`, `--profile-only`, and `--no-mlflow`. Do not use
 `--no-mlflow` when the intent is to register the current models.
+
+The CLI prints timestamped progress for each major phase, periodic
+"still working" messages during long phases, per-category clustering progress,
+and elapsed/rough remaining-time estimates. The ETA is only a rough estimate
+based on completed phases, whose durations can vary significantly; on the first
+phase it is unavailable until timing data exists. A `--profile-only` run only
+validates and profiles the source; it does not generate segmentation outputs.
 
 ## Published artifacts
 
@@ -103,6 +131,7 @@ read-only into the backend. Core outputs include:
   `cluster_monthly_profile.parquet`, `survey_priority.parquet`
 - `model_metadata.json`, `model_selection_report.json`,
   `feature_diagnostics.json`, `models/*_model.joblib`
+- `source_sample.parquet`, `reports/source_sample.json`,
 - `reports/source_profile.json`, `reports/feature_generation.json`,
   `reports/geospatial_summary.json`, `reports/execution_summary.json`
 

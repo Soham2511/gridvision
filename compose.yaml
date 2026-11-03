@@ -23,14 +23,17 @@ services:
       GRIDVISION_LOG_DIR: /opt/gridvision/logs
       GRIDVISION_SOURCE_PATH: /opt/gridvision/data/sample/${GRIDVISION_SOURCE_FILENAME:-training_sample_50000.parquet}
       SEGMENTATION_SOURCE_PATH: /opt/gridvision/data/bronze/${GRIDVISION_SOURCE_FILENAME:-training_sample_50000.parquet}
+      SEGMENTATION_BUILDING_SAMPLE_FRACTION: ${SEGMENTATION_BUILDING_SAMPLE_FRACTION:-0.1}
       SEGMENTATION_DUCKDB_MEMORY_LIMIT: ${SEGMENTATION_DUCKDB_MEMORY_LIMIT:-1GB}
       SEGMENTATION_DUCKDB_THREADS: ${SEGMENTATION_DUCKDB_THREADS:-1}
       GOVERNMENT_PIPELINE_INPUT: /opt/gridvision/data/sample/${GRIDVISION_SOURCE_FILENAME:-training_sample_50000.parquet}
       GOVERNMENT_PIPELINE_REUSE_PREPARED: ${GOVERNMENT_PIPELINE_REUSE_PREPARED:-0}
       MLFLOW_TRACKING_URI: http://mlflow:5001
+      GOVERNMENT_MLFLOW_MODEL_NAME: ${GOVERNMENT_MLFLOW_MODEL_NAME:-gridvision-government-load-forecast}
+      GOVERNMENT_MLFLOW_MODEL_ALIAS: ${GOVERNMENT_MLFLOW_MODEL_ALIAS:-${MLFLOW_MODEL_ALIAS:-champion}}
       GRIDVISION_SOURCE_DATA: /opt/gridvision/data/anomaly_prediction/synthetic_2019_normal.parquet
-      GRIDVISION_SILVER_DATA: /opt/gridvision/data/anomaly_prediction/silver/synthetic_2019_silver.parquet
-      GRIDVISION_GOLD_DATA: /opt/gridvision/data/anomaly_prediction/gold/gridvision_model_features.parquet
+      GRIDVISION_SILVER_DATA: /opt/gridvision/data/silver/synthetic_2019_silver.parquet
+      GRIDVISION_GOLD_DATA: /opt/gridvision/data/gold/gridvision_model_features.parquet
       GRIDVISION_MODEL_PATH: /opt/gridvision/models/anomaly_prediction/gridvision_anomaly_model.joblib
       GRIDVISION_REPORT_DIR: /opt/gridvision/reports/anomaly_prediction/training
       ANOMALY_MLFLOW_MODEL_NAME: ${ANOMALY_MLFLOW_MODEL_NAME:-gridvision-anomaly-detection}
@@ -143,7 +146,9 @@ services:
       MLFLOW_MODEL_NAME: ${MLFLOW_MODEL_NAME:-customer-bill-prediction}
       MLFLOW_MODEL_ALIAS: ${MLFLOW_MODEL_ALIAS:-champion}
       COMMERCIAL_MLFLOW_MODEL_NAME: ${COMMERCIAL_MLFLOW_MODEL_NAME:-gridvision-commercial-building-forecast}
+      COMMERCIAL_MLFLOW_MODEL_ALIAS: ${COMMERCIAL_MLFLOW_MODEL_ALIAS:-${MLFLOW_MODEL_ALIAS:-champion}}
       GOVERNMENT_MLFLOW_MODEL_NAME: ${GOVERNMENT_MLFLOW_MODEL_NAME:-gridvision-government-load-forecast}
+      GOVERNMENT_MLFLOW_MODEL_ALIAS: ${GOVERNMENT_MLFLOW_MODEL_ALIAS:-${MLFLOW_MODEL_ALIAS:-champion}}
       CUSTOMER_TARIFF_INR_PER_KWH: ${CUSTOMER_TARIFF_INR_PER_KWH:-10.0}
       CUSTOMER_GOLD_DATASET_PATH: /data/gold/customer_gold.parquet
       CUSTOMER_MODEL_METADATA_PATH: /models/customer_bill_prediction.metadata.json

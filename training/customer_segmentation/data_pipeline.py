@@ -65,11 +65,106 @@ def _atomic_json(path: Path, value: dict[str, Any]) -> None:
     stage.replace(path)
 
 
-def validate_source(settings: SegmentationSettings) -> dict[str, Any]:
+def _prepare_segmentation_source(
+    settings: SegmentationSettings,
+) -> tuple[Path, dict[str, Any]]:
+    """Create or reuse a deterministic building sample before expensive stages."""
     settings.validate()
     source = settings.source_path.expanduser().resolve()
     if not source.is_file():
         raise FileNotFoundError(f"Segmentation source Parquet not found: {source}")
+    source_stat = source.stat()
+    sample_fraction = settings.building_sample_fraction
+    manifest: dict[str, Any] = {
+        "source_path": str(source),
+        "source_bytes": source_stat.st_size,
+        "source_mtime_ns": source_stat.st_mtime_ns,
+        "building_sample_fraction": sample_fraction,
+    }
+    if sample_fraction >= 1:
+        manifest["processed_source_path"] = str(source)
+        return source, manifest
+
+    sample_path = settings.output_dir / "source_sample.parquet"
+    manifest_path = settings.output_dir / "reports" / "source_sample.json"
+    if sample_path.is_file() and manifest_path.is_file():
+        try:
+            cached = json.loads(manifest_path.read_text(encoding="utf-8"))
+            if all(cached.get(key) == value for key, value in manifest.items()):
+                manifest["processed_source_path"] = str(sample_path.resolve())
+                manifest["sampled_buildings"] = cached.get("sampled_buildings")
+                manifest["sampled_rows"] = cached.get("sampled_rows")
+                return sample_path.resolve(), manifest
+        except (OSError, json.JSONDecodeError):
+            pass
+
+    settings.output_dir.mkdir(parents=True, exist_ok=True)
+    sample_path.parent.mkdir(parents=True, exist_ok=True)
+    stage = sample_path.with_name(f".{sample_path.name}.stage")
+    stage.unlink(missing_ok=True)
+    threshold = max(1, int(sample_fraction * 1_000_000))
+    logger.info(
+        "Creating deterministic segmentation sample at %.1f%% of buildings "
+        "from %s; first preparation scans the source once",
+        sample_fraction * 100,
+        source,
+    )
+    con = _connect(settings)
+    try:
+        schema = con.execute(
+            f"DESCRIBE SELECT * FROM {_parquet_sql(source)}"
+        ).fetchall()
+        missing = sorted(REQUIRED_COLUMNS - {row[0] for row in schema})
+        if missing:
+            raise ValueError(f"Segmentation source missing required columns: {missing}")
+        con.execute(
+            f"""
+            COPY (
+              SELECT *
+              FROM {_parquet_sql(source)}
+              WHERE OBJECTID IS NULL
+                 OR hash(OBJECTID) % 1000000 < {threshold}
+                 OR GeneralUseType IN ('Institutional', 'Recreational')
+            ) TO '{stage.as_posix()}' (FORMAT PARQUET, COMPRESSION ZSTD)
+            """
+        )
+        sample_info = con.execute(
+            f"""SELECT COUNT(*), COUNT(DISTINCT OBJECTID)
+                FROM {_parquet_sql(stage)}"""
+        ).fetchone()
+        if not sample_info or sample_info[0] == 0:
+            raise ValueError(
+                "Deterministic segmentation sampling produced no rows; "
+                "increase SEGMENTATION_BUILDING_SAMPLE_FRACTION."
+            )
+        stage.replace(sample_path)
+    except Exception:
+        stage.unlink(missing_ok=True)
+        raise
+    finally:
+        con.close()
+
+    manifest.update(
+        {
+            "processed_source_path": str(sample_path.resolve()),
+            "sampled_buildings": int(sample_info[1]),
+            "sampled_rows": int(sample_info[0]),
+        }
+    )
+    _atomic_json(manifest_path, manifest)
+    logger.info(
+        "Created segmentation source sample: %s buildings, %s rows at %s",
+        manifest["sampled_buildings"],
+        manifest["sampled_rows"],
+        sample_path,
+    )
+    return sample_path.resolve(), manifest
+
+
+def validate_source(settings: SegmentationSettings) -> dict[str, Any]:
+    settings.validate()
+    original_source = settings.source_path.expanduser().resolve()
+    source, sample_manifest = _prepare_segmentation_source(settings)
     con = _connect(settings)
     try:
         schema = con.execute(f"DESCRIBE SELECT * FROM {_parquet_sql(source)}").fetchall()
@@ -82,6 +177,11 @@ def validate_source(settings: SegmentationSettings) -> dict[str, Any]:
             f'COUNT(*) FILTER (WHERE "{name.replace(chr(34), chr(34) * 2)}" IS NULL) AS "missing__{index}"'
             for index, row in enumerate(schema)
             for name in (row[0],)
+        )
+        logger.info(
+            "Profiling segmentation input (%s bytes): validating sampled rows, "
+            "energy values, coordinates, categories, and coverage",
+            source.stat().st_size,
         )
         checks = con.execute(
             f"""
@@ -125,9 +225,15 @@ def validate_source(settings: SegmentationSettings) -> dict[str, Any]:
             for position, row in enumerate(schema)
         }
         report = {
-            "source_path": str(source),
-            "source_bytes": source.stat().st_size,
-            "source_mtime_ns": source.stat().st_mtime_ns,
+            "source_path": str(original_source),
+            "source_bytes": sample_manifest["source_bytes"],
+            "source_mtime_ns": sample_manifest["source_mtime_ns"],
+            "processed_source_path": str(source),
+            "building_sample_fraction": sample_manifest[
+                "building_sample_fraction"
+            ],
+            "sampled_buildings": sample_manifest.get("sampled_buildings"),
+            "sampled_rows": sample_manifest.get("sampled_rows"),
             "columns": [{"name": row[0], "type": row[1]} for row in schema],
             "row_count": checks[0],
             "missing_building_id_rows": checks[1],
@@ -164,6 +270,7 @@ def validate_source(settings: SegmentationSettings) -> dict[str, Any]:
             "energy_semantics": "unverified; source values are validated, not reinterpreted",
         }
         for category in PROFILE_CATEGORIES:
+            logger.info("Counting source buildings by %s", category)
             report["category_values"][category] = [
                 {"value": row[0], "rows": row[1], "buildings": row[2]}
                 for row in con.execute(
@@ -174,6 +281,7 @@ def validate_source(settings: SegmentationSettings) -> dict[str, Any]:
                     """
                 ).fetchall()
             ]
+        logger.info("Checking duplicate building/timestamp records")
         duplicate_count = con.execute(
             f"""
             SELECT COALESCE(SUM(n - 1), 0)
@@ -186,6 +294,7 @@ def validate_source(settings: SegmentationSettings) -> dict[str, Any]:
             """
         ).fetchone()[0]
         report["duplicate_building_timestamp_rows"] = duplicate_count
+        logger.info("Calculating observation coverage by building")
         coverage = con.execute(
             f"""
             WITH by_building AS (
@@ -253,7 +362,7 @@ def generate_building_features(settings: SegmentationSettings) -> dict[str, Any]
         timestamp_max = datetime.fromisoformat(timestamp_max)
 
     settings.output_dir.mkdir(parents=True, exist_ok=True)
-    source = settings.source_path.expanduser().resolve()
+    source = Path(profile["processed_source_path"]).expanduser().resolve()
     con = _connect(settings)
     try:
         window_end = settings.window_end or timestamp_max.date()
@@ -390,6 +499,12 @@ def generate_building_features(settings: SegmentationSettings) -> dict[str, Any]
             AND "id.grid.coarse" IS NOT NULL
         ) TO '{stage.as_posix()}' (FORMAT PARQUET, COMPRESSION ZSTD)
         """
+        logger.info(
+              "Aggregating hourly readings into building features for %s through %s; "
+              "this is a full-source DuckDB query",
+              start,
+              end_exclusive,
+        )
         con.execute(sql, [start, end_exclusive])
         stage.replace(output)
         result = con.execute(
@@ -469,7 +584,8 @@ def generate_building_features(settings: SegmentationSettings) -> dict[str, Any]
             '"id.grid.finer" IS NULL'
         ).fetchone()[0]
         report = {
-            "source_path": str(source),
+            "source_path": profile["source_path"],
+            "processed_source_path": str(source),
             "observation_start": str(start),
             "observation_end_exclusive": str(end_exclusive),
             "window_months": settings.window_months,
@@ -505,15 +621,14 @@ def generate_building_features(settings: SegmentationSettings) -> dict[str, Any]
 def load_or_validate_source_profile(settings: SegmentationSettings) -> dict[str, Any]:
     """Reuse a profile only when it describes the current immutable source file."""
     profile_path = settings.output_dir / "reports" / "source_profile.json"
+    _, sample_manifest = _prepare_segmentation_source(settings)
     profile: dict[str, Any] | None = None
     if profile_path.is_file():
         try:
             cached = json.loads(profile_path.read_text(encoding="utf-8"))
-            stat = settings.source_path.expanduser().resolve().stat()
-            if (
-                cached.get("source_path") == str(settings.source_path.expanduser().resolve())
-                and cached.get("source_bytes") == stat.st_size
-                and cached.get("source_mtime_ns") == stat.st_mtime_ns
+            if all(
+                cached.get(key) == value
+                for key, value in sample_manifest.items()
             ):
                 profile = cached
         except (OSError, json.JSONDecodeError):
@@ -521,4 +636,3 @@ def load_or_validate_source_profile(settings: SegmentationSettings) -> dict[str,
     if profile is None:
         profile = validate_source(settings)
     return profile
-

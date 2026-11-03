@@ -285,13 +285,13 @@ def main() -> None:
     prepared_path = Path(
         os.environ.get(
             "GRIDVISION_SILVER_DATA",
-            PROJECT_ROOT / "data" / "anomaly_prediction" / "silver" / "synthetic_2019_silver.parquet",
+            PROJECT_ROOT / "data" / "silver" / "synthetic_2019_silver.parquet",
         )
     )
     gold_path = Path(
         os.environ.get(
             "GRIDVISION_GOLD_DATA",
-            PROJECT_ROOT / "data" / "anomaly_prediction" / "gold" / "gridvision_model_features.parquet",
+            PROJECT_ROOT / "data" / "gold" / "gridvision_model_features.parquet",
         )
     )
     logger.info("Preparing GridVision model inputs from %s", source_path)

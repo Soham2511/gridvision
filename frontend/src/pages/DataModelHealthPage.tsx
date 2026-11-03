@@ -16,23 +16,30 @@ import {
   FileCode,
   Activity,
   Layers,
+  RefreshCw,
 } from 'lucide-react';
 
 const mapRegistryModel = (model: RegisteredModel): ModelRegistryItem => {
-  const rmse = model.testMetrics?.rmse_kwh ?? 0;
+  const rmse = model.testMetrics?.rmse_kwh ?? null;
   return {
     id: model.modelId,
     modelName: model.name,
     personaUsed: model.domain,
-    version: model.modelVersion === 'not_deployed' ? 'Not deployed' : `v${model.modelVersion}`,
+    version:
+      model.modelVersion === 'not_deployed'
+        ? 'Not deployed'
+        : /^\d+$/.test(model.modelVersion)
+        ? `v${model.modelVersion}`
+        : model.modelVersion,
     status: model.status === 'configured' ? 'Configured' : 'Unavailable',
-    lastInference:
-      model.status === 'configured'
+    runSummary:
+      model.runSummary ??
+      (model.status === 'configured'
         ? 'Ready for on-demand inference'
-        : model.error ?? 'Unavailable',
-    mse: Math.pow(rmse, 2),
+        : model.error ?? 'Unavailable'),
+    mse: rmse === null ? null : Math.pow(rmse, 2),
     rmse,
-    r2: model.testMetrics?.r2 ?? 0,
+    r2: model.testMetrics?.r2 ?? null,
   };
 };
 
@@ -41,6 +48,7 @@ export const DataModelHealthPage: React.FC = () => {
   const [data, setData] = useState<PlatformHealthSummary | null>(null);
   const [customerModel, setCustomerModel] = useState<CustomerBillModel | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
+  const [refreshKey, setRefreshKey] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
   const [actionNotice, setActionNotice] = useState<string | null>(null);
@@ -48,6 +56,7 @@ export const DataModelHealthPage: React.FC = () => {
   useEffect(() => {
     let mounted = true;
     setLoading(true);
+    setError(null);
     Promise.all([
       analyticsService.getPlatformHealthSummary(),
       modelService.getModelCatalog(),
@@ -99,7 +108,7 @@ export const DataModelHealthPage: React.FC = () => {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [refreshKey]);
 
   const handleActionClick = (model: ModelRegistryItem, actionType: string) => {
     setActiveMenuId(null);
@@ -177,29 +186,61 @@ export const DataModelHealthPage: React.FC = () => {
         }}
       >
         {/* Page Title & Subtitle */}
-        <div>
-          <h1
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'flex-start',
+            gap: '1rem',
+            flexWrap: 'wrap',
+          }}
+        >
+          <div>
+            <h1
+              style={{
+                fontSize: '2.1rem',
+                fontWeight: 800,
+                color: '#0F172A',
+                letterSpacing: '-0.025em',
+                margin: '0 0 0.35rem 0',
+                lineHeight: 1.15,
+              }}
+            >
+              Data & Model Health
+            </h1>
+            <p
+              style={{
+                fontSize: '0.95rem',
+                color: '#64748B',
+                margin: 0,
+                fontWeight: 500,
+              }}
+            >
+              Monitor data availability, pipeline health and model performance across the GridVision platform.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setRefreshKey((current) => current + 1)}
+            disabled={loading}
             style={{
-              fontSize: '2.1rem',
-              fontWeight: 800,
-              color: '#0F172A',
-              letterSpacing: '-0.025em',
-              margin: '0 0 0.35rem 0',
-              lineHeight: 1.15,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              border: '1px solid #CBD5E1',
+              borderRadius: '8px',
+              background: '#FFFFFF',
+              color: '#334155',
+              padding: '0.65rem 0.9rem',
+              fontSize: '0.84rem',
+              fontWeight: 600,
+              cursor: loading ? 'wait' : 'pointer',
+              opacity: loading ? 0.65 : 1,
             }}
           >
-            Data & Model Health
-          </h1>
-          <p
-            style={{
-              fontSize: '0.95rem',
-              color: '#64748B',
-              margin: 0,
-              fontWeight: 500,
-            }}
-          >
-            Monitor data availability, pipeline health and model performance across the GridVision platform.
-          </p>
+            <RefreshCw size={15} />
+            {loading ? 'Refreshing…' : 'Refresh status'}
+          </button>
         </div>
 
         {/* Action feedback toast */}
@@ -510,7 +551,7 @@ export const DataModelHealthPage: React.FC = () => {
                       <th style={{ padding: '0.85rem 1rem' }}>Persona Used</th>
                       <th style={{ padding: '0.85rem 1rem' }}>Version</th>
                       <th style={{ padding: '0.85rem 1rem' }}>Status</th>
-                      <th style={{ padding: '0.85rem 1rem' }}>Last Inference</th>
+                      <th style={{ padding: '0.85rem 1rem' }}>Runtime / Output</th>
                       <th
                         colSpan={3}
                         style={{
@@ -632,7 +673,7 @@ export const DataModelHealthPage: React.FC = () => {
 
                         {/* Last Inference */}
                         <td style={{ padding: '1rem', color: '#334155', fontWeight: 500 }}>
-                          {model.lastInference}
+                          {model.runSummary}
                         </td>
 
                         {/* MSE */}
@@ -646,7 +687,7 @@ export const DataModelHealthPage: React.FC = () => {
                             fontWeight: 600,
                           }}
                         >
-                          {model.mse.toFixed(3)}
+                          {model.mse === null ? '—' : model.mse.toFixed(3)}
                         </td>
 
                         {/* RMSE */}
@@ -659,7 +700,7 @@ export const DataModelHealthPage: React.FC = () => {
                             fontWeight: 600,
                           }}
                         >
-                          {model.rmse.toFixed(3)}
+                          {model.rmse === null ? '—' : model.rmse.toFixed(3)}
                         </td>
 
                         {/* R² */}
@@ -673,7 +714,7 @@ export const DataModelHealthPage: React.FC = () => {
                             fontWeight: 600,
                           }}
                         >
-                          {model.r2.toFixed(2)}
+                          {model.r2 === null ? '—' : model.r2.toFixed(2)}
                         </td>
 
                         {/* Actions */}

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -186,8 +187,22 @@ def fit_and_publish(
     skipped_categories: list[dict[str, Any]] = []
     feature_diagnostics: dict[str, Any] = {}
 
-    for category, mask in groups:
+    logger.info(
+        "Clustering %d buildings across %d model group(s): %s",
+        len(feature_rows),
+        len(groups),
+        [category for category, _ in groups],
+    )
+    for group_index, (category, mask) in enumerate(groups, start=1):
+        category_started = time.monotonic()
         group = feature_rows.loc[mask].copy()
+        logger.info(
+            "Model group %d/%d: %s (%d buildings); evaluating cluster candidates",
+            group_index,
+            len(groups),
+            category,
+            len(group),
+        )
         if len(group) < max(4, settings.min_k + 1):
             skipped_categories.append(
                 {"GeneralUseType": category, "building_count": len(group), "reason": "too few buildings for clustering"}
@@ -242,6 +257,15 @@ def fit_and_publish(
             include_hdbscan=True,
             minimum_cluster_size=settings.minimum_cluster_size,
             minimum_cluster_fraction=settings.minimum_cluster_fraction,
+        )
+        logger.info(
+            "Model group %d/%d: %s candidate evaluation finished in %.1f seconds; "
+            "selected algorithm=%s",
+            group_index,
+            len(groups),
+            category,
+            time.monotonic() - category_started,
+            selected.get("algorithm") if selected else "none",
         )
         evaluation_by_model[_slug(category)] = evaluation
         engineered_values = preprocessor.named_steps["behaviour_features"].transform(x_raw)
@@ -509,4 +533,3 @@ def _write_parquet(frame: pd.DataFrame, output_path: Path) -> None:
     stage_path = output_path.with_suffix(output_path.suffix + ".stage")
     frame.to_parquet(stage_path, index=False)
     stage_path.replace(output_path)
-

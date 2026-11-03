@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
+import sys
 from dataclasses import replace
 from datetime import date
 from pathlib import Path
@@ -13,6 +15,12 @@ from .pipeline import run_pipeline
 
 
 def main() -> None:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        stream=sys.stdout,
+        force=True,
+    )
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", type=Path)
     parser.add_argument("--output-dir", type=Path)
@@ -38,6 +46,9 @@ def main() -> None:
     if args.profile_only:
         from .data_pipeline import validate_source
 
+        logging.getLogger("gridvision.segmentation").info(
+            "Starting source-profile-only run; this does not create segmentation charts."
+        )
         result = validate_source(settings)
     else:
         result = run_pipeline(settings, register_mlflow=not args.no_mlflow)
@@ -46,4 +57,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

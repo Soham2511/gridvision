@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
+import time
 from dataclasses import asdict
-from typing import Any
+from pathlib import Path
+from typing import Any, Callable, TypeVar
 
 import pyarrow.parquet as pq
 
@@ -19,6 +22,103 @@ from .data_pipeline import (
 from .geospatial import publish_geospatial_outputs
 
 logger = logging.getLogger("gridvision.segmentation")
+T = TypeVar("T")
+
+
+def _format_duration(seconds: float) -> str:
+    total_seconds = max(0, int(seconds))
+    minutes, seconds = divmod(total_seconds, 60)
+    hours, minutes = divmod(minutes, 60)
+    if hours:
+        return f"{hours}h {minutes:02d}m"
+    if minutes:
+        return f"{minutes}m {seconds:02d}s"
+    return f"{seconds}s"
+
+
+def _run_stage(
+    name: str,
+    index: int,
+    total: int,
+    operation: Callable[[], T],
+    pipeline_started: float,
+    completed_durations: list[float],
+) -> tuple[T, float]:
+    stage_started = time.monotonic()
+    average_stage_seconds = (
+        sum(completed_durations) / len(completed_durations)
+        if completed_durations
+        else None
+    )
+    if average_stage_seconds is None:
+        eta = "not available until a stage completes"
+    else:
+        eta = _format_duration(average_stage_seconds * (total - index + 1))
+    logger.info(
+        "Progress %d/%d | Starting: %s | elapsed %s | rough ETA %s "
+        "(estimated from completed stages; stage durations vary)",
+        index,
+        total,
+        name,
+        _format_duration(stage_started - pipeline_started),
+        eta,
+    )
+
+    finished = threading.Event()
+
+    def report_heartbeat() -> None:
+        while not finished.wait(30):
+            elapsed = time.monotonic() - stage_started
+            if average_stage_seconds is None:
+                eta_text = "pending first completed stage"
+            else:
+                remaining = max(
+                    0,
+                    average_stage_seconds * (total - index + 1) - elapsed,
+                )
+                eta_text = _format_duration(remaining)
+            logger.info(
+                "Progress %d/%d | Still working: %s | stage elapsed %s | "
+                "rough ETA %s",
+                index,
+                total,
+                name,
+                _format_duration(elapsed),
+                eta_text,
+            )
+
+    heartbeat = threading.Thread(target=report_heartbeat, daemon=True)
+    heartbeat.start()
+    try:
+        result = operation()
+    except Exception:
+        logger.exception(
+            "Progress %d/%d | Failed: %s after %s",
+            index,
+            total,
+            name,
+            _format_duration(time.monotonic() - stage_started),
+        )
+        raise
+    finally:
+        finished.set()
+        heartbeat.join()
+
+    duration = time.monotonic() - stage_started
+    completed_durations.append(duration)
+    average_stage_seconds = sum(completed_durations) / len(completed_durations)
+    remaining_stages = total - index
+    eta = _format_duration(average_stage_seconds * remaining_stages)
+    logger.info(
+        "Progress %d/%d | Completed: %s in %s | total elapsed %s | rough ETA %s",
+        index,
+        total,
+        name,
+        _format_duration(duration),
+        _format_duration(time.monotonic() - pipeline_started),
+        eta,
+    )
+    return result, duration
 
 
 def validate_outputs(settings: SegmentationSettings) -> dict[str, Any]:
@@ -109,16 +209,61 @@ def write_execution_summary(settings: SegmentationSettings, summary: dict[str, A
 def run_pipeline(settings: SegmentationSettings, *, register_mlflow: bool = True) -> dict[str, Any]:
     settings.validate()
     logger.info("Starting segmentation pipeline settings=%s", asdict(settings))
-    source_report = load_or_validate_source_profile(settings)
-    feature_report = generate_building_features(settings)
-    model_report = fit_and_publish(settings.output_dir / "building_features.parquet", settings)
-    geo_report = publish_geospatial_outputs(settings)
-    output_validation = validate_outputs(settings)
+    pipeline_started = time.monotonic()
+    stage_durations: list[float] = []
+    total_stages = 6 if register_mlflow else 5
+    source_report, _ = _run_stage(
+        "Profile and validate source dataset",
+        1,
+        total_stages,
+        lambda: load_or_validate_source_profile(settings),
+        pipeline_started,
+        stage_durations,
+    )
+    feature_report, _ = _run_stage(
+        "Generate building-level features",
+        2,
+        total_stages,
+        lambda: generate_building_features(settings),
+        pipeline_started,
+        stage_durations,
+    )
+    model_report, _ = _run_stage(
+        "Cluster buildings and write segment assignments",
+        3,
+        total_stages,
+        lambda: fit_and_publish(settings.output_dir / "building_features.parquet", settings),
+        pipeline_started,
+        stage_durations,
+    )
+    geo_report, _ = _run_stage(
+        "Generate regional and time-series outputs",
+        4,
+        total_stages,
+        lambda: publish_geospatial_outputs(settings),
+        pipeline_started,
+        stage_durations,
+    )
+    output_validation, _ = _run_stage(
+        "Validate all published outputs",
+        5,
+        total_stages,
+        lambda: validate_outputs(settings),
+        pipeline_started,
+        stage_durations,
+    )
     mlflow_result = None
     if register_mlflow:
         from .registration import register_models
 
-        mlflow_result = register_models(settings)
+        mlflow_result, _ = _run_stage(
+            "Register segmentation models in MLflow",
+            6,
+            total_stages,
+            lambda: register_models(settings),
+            pipeline_started,
+            stage_durations,
+        )
     summary = {
         "source_profile": source_report,
         "feature_generation": feature_report,
@@ -126,6 +271,12 @@ def run_pipeline(settings: SegmentationSettings, *, register_mlflow: bool = True
         "geospatial": geo_report,
         "mlflow": mlflow_result,
         "output_validation": output_validation,
+        "progress": {
+            "total_elapsed_seconds": round(time.monotonic() - pipeline_started, 3),
+            "stage_durations_seconds": [
+                round(duration, 3) for duration in stage_durations
+            ],
+        },
         "execution_summary_path": str(
             (settings.output_dir / "reports" / "execution_summary.json").resolve()
         ),
@@ -133,4 +284,3 @@ def run_pipeline(settings: SegmentationSettings, *, register_mlflow: bool = True
     write_execution_summary(settings, summary)
     logger.info("Segmentation pipeline complete: %s", output_validation)
     return summary
-

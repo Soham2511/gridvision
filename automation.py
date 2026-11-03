@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 from collections import deque
+from dataclasses import replace
 import json
 import os
 import platform
@@ -44,6 +45,7 @@ LOG_SUBDIRECTORIES = (
 DAG_ID = "customer_energy_data_pipeline"
 GOVERNMENT_DAG_ID = "government_load_forecasting"
 COMMERCIAL_DAG_ID = "commercial_building_forecasting_data_pipeline"
+SEGMENTATION_DAG_ID = "government_customer_segmentation"
 ANOMALY_DAG_ID = "gridvision_anomaly_training"
 DEFAULT_MODEL_NAME = "customer-bill-prediction"
 DEFAULT_ALIAS = "champion"
@@ -52,6 +54,7 @@ MLFLOW_HOST_URI = os.getenv("MLFLOW_TRACKING_URI", f"http://127.0.0.1:{MLFLOW_HO
 MLFLOW_CONTAINER_URI = "http://mlflow:5001"
 FRONTEND_URL = "http://127.0.0.1:8082"
 BACKEND_HEALTH_URL = "http://127.0.0.1:5000/api/v1/health"
+BACKEND_MODEL_CATALOG_URL = "http://127.0.0.1:5000/api/v1/models"
 AIRFLOW_HOST_PORT = os.getenv("GRIDVISION_AIRFLOW_HOST_PORT", "8081")
 AIRFLOW_URL = f"http://127.0.0.1:{AIRFLOW_HOST_PORT}"
 steps: list[dict[str, Any]] = []
@@ -62,6 +65,18 @@ def run_step(name: str, action: Callable[[], Any]) -> Any:
     print(f"\n[RUNNING] {name}", flush=True)
     try:
         result = action()
+    except KeyboardInterrupt:
+        elapsed = time.perf_counter() - started
+        steps.append(
+            {
+                "name": name,
+                "status": "INTERRUPTED",
+                "seconds": round(elapsed, 2),
+                "error": "Cancelled by user.",
+            }
+        )
+        print(f"[INTERRUPTED] {name} after {elapsed:.2f}s", flush=True)
+        raise
     except Exception as exc:
         elapsed = time.perf_counter() - started
         steps.append(
@@ -140,6 +155,18 @@ def _compose_command() -> list[str]:
         text=True,
     )
     if result.returncode:
+        if platform.system() == "Linux":
+            docker_exe = shutil.which("docker.exe")
+            if docker_exe and docker_exe != docker:
+                windows_result = subprocess.run(
+                    [docker_exe, "compose", "version"],
+                    cwd=PROJECT_ROOT,
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+                if windows_result.returncode == 0:
+                    return [docker_exe, "compose"]
         standalone = shutil.which("docker-compose")
         if standalone:
             standalone_result = subprocess.run(
@@ -210,6 +237,11 @@ def _stage_wsl_build_context() -> tempfile.TemporaryDirectory[str] | None:
         ignore=ignored_python_cache,
     )
     shutil.copytree(
+        PROJECT_ROOT / "training" / "customer_segmentation",
+        training / "customer_segmentation",
+        ignore=ignored_python_cache,
+    )
+    shutil.copytree(
         PROJECT_ROOT / "airflow",
         root / "airflow",
         ignore=ignored_python_cache,
@@ -260,6 +292,35 @@ def _compose(compose: list[str], arguments: list[str], env: dict[str, str]) -> N
         )
 
 
+def _compose_service_url(
+    compose: list[str],
+    service: str,
+    container_port: int,
+    env: dict[str, str],
+) -> str:
+    command = compose + ["port", service, str(container_port)]
+    result = subprocess.run(
+        command,
+        cwd=PROJECT_ROOT,
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    address = result.stdout.strip()
+    if result.returncode or not address or "\n" in address:
+        details = "\n".join(
+            output.strip()
+            for output in (result.stdout, result.stderr)
+            if output.strip()
+        ) or "Docker Compose returned no published port."
+        raise RuntimeError(
+            f"Unable to resolve the published port for {service}:{container_port} "
+            f"(exit {result.returncode}): {details}"
+        )
+    return f"http://{address}"
+
+
 def _run_airflow_dag_test(
     airflow_command: list[str],
     dag_id: str,
@@ -295,6 +356,441 @@ def _run_airflow_dag_test(
         flush=True,
     )
     return result
+
+
+def _dag_dataset_paths(
+    dag_id: str, env: dict[str, str]
+) -> tuple[list[Path], list[Path]]:
+    """Resolve source and generated dataset paths for a data-producing DAG."""
+    data_root = Path(env.get("GRIDVISION_DATA_DIR", DATA_ROOT)).expanduser().resolve()
+    if dag_id == DAG_ID:
+        source = Path(env.get("GRIDVISION_SOURCE_PATH", SOURCE_PATH)).expanduser().resolve()
+        return [source], [
+            data_root / "bronze" / source.name,
+            data_root / "silver" / "customer_silver.parquet",
+            data_root / "gold" / "customer_gold.parquet",
+        ]
+    if dag_id == GOVERNMENT_DAG_ID:
+        source = Path(
+            env.get(
+                "GOVERNMENT_PIPELINE_INPUT",
+                data_root / "sample" / SOURCE_PATH.name,
+            )
+        ).expanduser().resolve()
+        return [source], [
+            Path(
+                env.get(
+                    "GOVERNMENT_PIPELINE_OUTPUT",
+                    data_root / "airflow" / "government" / "training_ready_2018.parquet",
+                )
+            ).expanduser().resolve(),
+            Path(
+                env.get(
+                    "GOVERNMENT_PIPELINE_MODEL",
+                    data_root / "airflow" / "government" / "hybrid_grid_2018.joblib",
+                )
+            ).expanduser().resolve(),
+        ]
+    if dag_id == COMMERCIAL_DAG_ID:
+        source = Path(env.get("GRIDVISION_SOURCE_PATH", SOURCE_PATH)).expanduser().resolve()
+        return [source], [
+            Path(
+                env.get(
+                    "COMMERCIAL_SILVER_DATASET",
+                    data_root / "silver" / "commercial_silver.parquet",
+                )
+            ).expanduser().resolve(),
+            Path(
+                env.get(
+                    "COMMERCIAL_GOLD_DATASET",
+                    data_root / "gold" / "commercial_gold.parquet",
+                )
+            ).expanduser().resolve(),
+        ]
+    if dag_id == SEGMENTATION_DAG_ID:
+        source = Path(
+            env.get(
+                "SEGMENTATION_SOURCE_PATH",
+                data_root / "bronze" / SOURCE_PATH.name,
+            )
+        ).expanduser().resolve()
+        output_dir = Path(
+            env.get("SEGMENTATION_OUTPUT_DIR", data_root / "segmentation")
+        ).expanduser().resolve()
+        outputs = [
+            output_dir / "building_features.parquet",
+            output_dir / "consumer_assignments.parquet",
+            output_dir / "cluster_profiles.parquet",
+            output_dir / "segment_distribution.parquet",
+            output_dir / "region_summary_coarse.parquet",
+            output_dir / "region_summary_finer.parquet",
+            output_dir / "survey_priority.parquet",
+            output_dir / "cluster_hourly_profile.parquet",
+            output_dir / "cluster_daily_profile.parquet",
+            output_dir / "cluster_monthly_profile.parquet",
+            output_dir / "model_metadata.json",
+            output_dir / "model_selection_report.json",
+            output_dir / "feature_diagnostics.json",
+            output_dir / "reports" / "source_profile.json",
+            output_dir / "reports" / "feature_generation.json",
+            output_dir / "reports" / "geospatial_summary.json",
+        ]
+        if float(env.get("SEGMENTATION_BUILDING_SAMPLE_FRACTION", "0.1")) < 1:
+            outputs.extend(
+                [
+                    output_dir / "source_sample.parquet",
+                    output_dir / "reports" / "source_sample.json",
+                ]
+            )
+        metadata_path = output_dir / "model_metadata.json"
+        if metadata_path.is_file():
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            outputs.extend(
+                output_dir
+                / "models"
+                / f"{model['model_category'].lower()}_model.joblib"
+                for model in metadata.get("trained_models", [])
+            )
+        return [source], outputs
+    if dag_id == ANOMALY_DAG_ID:
+        source = Path(
+            env.get(
+                "GRIDVISION_SOURCE_DATA",
+                data_root / "anomaly_prediction" / "synthetic_2019_normal.parquet",
+            )
+        ).expanduser().resolve()
+        return [source], [
+            Path(
+                env.get(
+                    "GRIDVISION_SILVER_DATA",
+                    data_root / "silver" / "synthetic_2019_silver.parquet",
+                )
+            ).expanduser().resolve(),
+            Path(
+                env.get(
+                    "GRIDVISION_GOLD_DATA",
+                    data_root / "gold" / "gridvision_model_features.parquet",
+                )
+            ).expanduser().resolve(),
+            Path(
+                env.get(
+                    "GRIDVISION_MODEL_PATH",
+                    PROJECT_ROOT
+                    / "models"
+                    / "anomaly_prediction"
+                    / "gridvision_anomaly_model.joblib",
+                )
+            ).expanduser().resolve(),
+        ]
+    raise ValueError(f"No dataset freshness configuration for Airflow DAG {dag_id!r}.")
+
+
+def _file_fingerprint(path: Path) -> dict[str, int | str]:
+    stat = path.stat()
+    return {
+        "path": str(path.resolve()),
+        "size_bytes": stat.st_size,
+        "modified_ns": stat.st_mtime_ns,
+    }
+
+
+def _anomaly_prepared_data_error(
+    source: Path, silver: Path, gold: Path
+) -> str | None:
+    """Return why anomaly layers cannot be reused for this source, if any."""
+    import pyarrow.parquet as pq
+
+    source_parquet = pq.ParquetFile(source)
+    silver_parquet = pq.ParquetFile(silver)
+    gold_parquet = pq.ParquetFile(gold)
+
+    if source_parquet.metadata.num_rows != silver_parquet.metadata.num_rows:
+        return (
+            "Silver row count does not match the anomaly source "
+            f"({silver_parquet.metadata.num_rows} != "
+            f"{source_parquet.metadata.num_rows})"
+        )
+    if source_parquet.schema.names != silver_parquet.schema.names:
+        return "Silver columns do not match the anomaly source"
+
+    def timestamp_bounds(parquet: Any) -> tuple[Any, Any] | None:
+        column_index = parquet.schema_arrow.get_field_index("timestamp")
+        if column_index < 0:
+            return None
+        statistics = [
+            row_group.column(column_index).statistics
+            for row_group in (
+                parquet.metadata.row_group(index)
+                for index in range(parquet.metadata.num_row_groups)
+            )
+        ]
+        bounds = [
+            (stats.min, stats.max)
+            for stats in statistics
+            if stats is not None and stats.has_min_max
+        ]
+        if not bounds:
+            return None
+        return min(bound[0] for bound in bounds), max(bound[1] for bound in bounds)
+
+    source_bounds = timestamp_bounds(source_parquet)
+    silver_bounds = timestamp_bounds(silver_parquet)
+    gold_bounds = timestamp_bounds(gold_parquet)
+    if source_bounds is None:
+        return "Anomaly source has no usable timestamp statistics"
+    if silver_bounds is None:
+        return "Silver has no usable timestamp statistics"
+    if gold_bounds is None:
+        return "Gold has no usable timestamp statistics"
+    if source_bounds != silver_bounds:
+        return (
+            "Silver timestamp range does not match the anomaly source "
+            f"({silver_bounds} != {source_bounds})"
+        )
+    if gold_bounds != source_bounds:
+        return (
+            "Gold timestamp range does not match the anomaly source "
+            f"({gold_bounds} != {source_bounds})"
+        )
+    return None
+
+
+def _existing_dag_outputs_are_reusable(
+    dag_id: str,
+    env: dict[str, str],
+    outputs: list[Path],
+) -> bool:
+    """Adopt complete outputs from earlier automation runs as the initial baseline."""
+    if not outputs or any(not path.is_file() or path.stat().st_size == 0 for path in outputs):
+        return False
+    if dag_id == DAG_ID:
+        try:
+            _customer_gold_is_reusable(env)
+        except (FileNotFoundError, ValueError, json.JSONDecodeError):
+            return False
+    elif dag_id == COMMERCIAL_DAG_ID:
+        try:
+            _commercial_gold_is_reusable(env)
+        except (FileNotFoundError, ValueError, json.JSONDecodeError):
+            return False
+    elif dag_id == SEGMENTATION_DAG_ID:
+        try:
+            source, _ = _dag_dataset_paths(dag_id, env)
+            source_path = source[0].resolve()
+            source_stat = source_path.stat()
+            source_profile = Path(
+                env.get(
+                    "SEGMENTATION_OUTPUT_DIR",
+                    Path(env.get("GRIDVISION_DATA_DIR", DATA_ROOT))
+                    / "segmentation",
+                )
+            ).expanduser().resolve() / "reports" / "source_profile.json"
+            profile = json.loads(source_profile.read_text(encoding="utf-8"))
+            if (
+                profile.get("source_path") != str(source_path)
+                or profile.get("source_bytes") != source_stat.st_size
+                or profile.get("source_mtime_ns") != source_stat.st_mtime_ns
+                or profile.get("building_sample_fraction")
+                != float(env.get("SEGMENTATION_BUILDING_SAMPLE_FRACTION", "0.1"))
+            ):
+                return False
+            from training.customer_segmentation.config import SegmentationSettings
+            from training.customer_segmentation.pipeline import validate_outputs
+
+            validate_outputs(
+                replace(
+                    SegmentationSettings.from_environment(),
+                    output_dir=Path(
+                        env.get(
+                            "SEGMENTATION_OUTPUT_DIR",
+                            Path(env.get("GRIDVISION_DATA_DIR", DATA_ROOT))
+                            / "segmentation",
+                        )
+                    )
+                    .expanduser()
+                    .resolve(),
+                )
+            )
+        except (FileNotFoundError, ValueError, KeyError, json.JSONDecodeError):
+            return False
+    elif dag_id == ANOMALY_DAG_ID:
+        source, _ = _dag_dataset_paths(dag_id, env)
+        if _anomaly_prepared_data_error(source[0], outputs[0], outputs[1]):
+            return False
+        report = Path(
+            env.get(
+                "GRIDVISION_REPORT_DIR",
+                PROJECT_ROOT / "reports" / "anomaly_prediction" / "training",
+            )
+        ).expanduser().resolve() / "evaluation_metrics.json"
+        if not report.is_file() or report.stat().st_size == 0:
+            return False
+    elif dag_id == GOVERNMENT_DAG_ID:
+        feature_columns = Path(
+            env.get(
+                "GOVERNMENT_PIPELINE_FEATURES",
+                PROJECT_ROOT / "mlflow" / "government" / "feature_columns_2018.joblib",
+            )
+        ).expanduser().resolve()
+        if not feature_columns.is_file():
+            return False
+    else:
+        raise ValueError(f"No dataset freshness configuration for Airflow DAG {dag_id!r}.")
+    return True
+
+
+def _write_dag_dataset_state(
+    state_path: Path,
+    state: dict[str, Any],
+    dag_id: str,
+    inputs: list[dict[str, int | str]],
+    outputs: list[Path],
+) -> None:
+    state[dag_id] = {
+        "inputs": inputs,
+        "outputs": [_file_fingerprint(path) for path in outputs],
+    }
+    state_path.parent.mkdir(parents=True, exist_ok=True)
+    staged_state = state_path.with_name(f"{state_path.name}.{os.getpid()}.stage")
+    staged_state.write_text(
+        json.dumps(state, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    os.replace(staged_state, state_path)
+
+
+def _run_airflow_dag_if_dataset_changed(
+    airflow_command: list[str],
+    dag_id: str,
+    env: dict[str, str],
+    *,
+    force: bool = False,
+) -> dict[str, Any]:
+    """Skip a DAG when its recorded input and generated datasets are unchanged."""
+    inputs, outputs = _dag_dataset_paths(dag_id, env)
+    missing_inputs = [str(path) for path in inputs if not path.is_file()]
+    if missing_inputs:
+        raise FileNotFoundError(
+            f"Cannot check freshness for {dag_id}; source dataset is missing: "
+            + ", ".join(missing_inputs)
+        )
+
+    input_fingerprints = [_file_fingerprint(path) for path in inputs]
+    if dag_id == SEGMENTATION_DAG_ID:
+        input_fingerprints.append(
+            {
+                "path": "SEGMENTATION_BUILDING_SAMPLE_FRACTION",
+                "size": int(
+                    float(env.get("SEGMENTATION_BUILDING_SAMPLE_FRACTION", "0.1"))
+                    * 1_000_000_000
+                ),
+                "mtime_ns": 0,
+            }
+        )
+    state_path = (
+        Path(env.get("GRIDVISION_DATA_DIR", DATA_ROOT)).expanduser().resolve()
+        / "metadata"
+        / "automation"
+        / "airflow_dataset_state.json"
+    )
+    state: dict[str, Any] = {}
+    if state_path.is_file():
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+    previous = state.get(dag_id, {})
+    outputs_exist = all(path.is_file() for path in outputs)
+    current_output_fingerprints = (
+        [_file_fingerprint(path) for path in outputs] if outputs_exist else []
+    )
+    inputs_unchanged = previous.get("inputs") == input_fingerprints
+    outputs_unchanged = previous.get("outputs") == current_output_fingerprints
+    if dag_id == ANOMALY_DAG_ID:
+        inputs_unchanged = inputs_unchanged or _fingerprints_match_after_relocation(
+            previous.get("inputs", []), input_fingerprints
+        )
+        outputs_unchanged = outputs_unchanged or _fingerprints_match_after_relocation(
+            previous.get("outputs", []), current_output_fingerprints
+        )
+        if outputs_exist:
+            source_mismatch = _anomaly_prepared_data_error(
+                inputs[0], outputs[0], outputs[1]
+            )
+            if source_mismatch:
+                outputs_unchanged = False
+                print(
+                    f"[STALE] Anomaly prepared data will be rebuilt: "
+                    f"{source_mismatch}",
+                    flush=True,
+                )
+
+    if (
+        not force
+        and not previous
+        and outputs_exist
+        and _existing_dag_outputs_are_reusable(dag_id, env, outputs)
+    ):
+        _write_dag_dataset_state(
+            state_path, state, dag_id, input_fingerprints, outputs
+        )
+        print(
+            f"[SKIPPED] Airflow DAG {dag_id}: adopting existing validated "
+            "datasets as the freshness baseline",
+            flush=True,
+        )
+        return {
+            "dag_id": dag_id,
+            "skipped": True,
+            "reason": "existing datasets adopted as the freshness baseline",
+        }
+
+    if (
+        not force
+        and outputs_exist
+        and inputs_unchanged
+        and outputs_unchanged
+    ):
+        _write_dag_dataset_state(
+            state_path, state, dag_id, input_fingerprints, outputs
+        )
+        print(
+            f"[SKIPPED] Airflow DAG {dag_id}: source and generated datasets "
+            "are unchanged",
+            flush=True,
+        )
+        return {
+            "dag_id": dag_id,
+            "skipped": True,
+            "reason": "source and generated datasets are unchanged",
+        }
+
+    dag_env = env.copy()
+    if dag_id == ANOMALY_DAG_ID:
+        dag_env["ANOMALY_FORCE_PREPARE"] = "1"
+        dag_env["ANOMALY_FORCE_RETRAIN"] = "1"
+    result = _run_airflow_dag_test(airflow_command, dag_id, dag_env)
+    if dag_id == SEGMENTATION_DAG_ID:
+        _, outputs = _dag_dataset_paths(dag_id, env)
+    missing_outputs = [str(path) for path in outputs if not path.is_file()]
+    if missing_outputs:
+        raise FileNotFoundError(
+            f"Airflow DAG {dag_id} succeeded but expected datasets are missing: "
+            + ", ".join(missing_outputs)
+        )
+    _write_dag_dataset_state(
+        state_path, state, dag_id, input_fingerprints, outputs
+    )
+    return {**result, "skipped": False}
+
+
+def _fingerprints_match_after_relocation(
+    previous: list[dict[str, Any]], current: list[dict[str, Any]]
+) -> bool:
+    """Match moved files by stable basename, size, and mtime during path migrations."""
+    return bool(previous) and len(previous) == len(current) and all(
+        Path(old.get("path", "")).name == Path(new.get("path", "")).name
+        and old.get("size_bytes") == new.get("size_bytes")
+        and old.get("modified_ns") == new.get("modified_ns")
+        for old, new in zip(previous, current)
+    )
 
 
 def _commercial_gold_is_reusable(env: dict[str, str]) -> dict[str, str]:
@@ -363,14 +859,23 @@ def _airflow_process_log_path(env: dict[str, str]) -> Path:
 
 
 def _run_commercial_workflow(
-    airflow_command: list[str], env: dict[str, str], *, skip_data_pipeline: bool = False,
+    airflow_command: list[str],
+    env: dict[str, str],
+    *,
+    skip_data_pipeline: bool = False,
+    force_airflow: bool = False,
 ) -> dict[str, Any]:
     """Prepare commercial Gold (or validate it for reuse), then train its model."""
     if skip_data_pipeline:
         prepared = _commercial_gold_is_reusable(env)
         print("[SKIPPED] Commercial DAG; reusing validated prepared Silver/Gold", flush=True)
     else:
-        prepared = _run_airflow_dag_test(airflow_command, COMMERCIAL_DAG_ID, env)
+        prepared = _run_airflow_dag_if_dataset_changed(
+            airflow_command,
+            COMMERCIAL_DAG_ID,
+            env,
+            force=force_airflow,
+        )
     training = subprocess.run(
         [sys.executable, str(PROJECT_ROOT / "mlflow" / "commercial" / "train_and_log.py")],
         cwd=PROJECT_ROOT, env=env, check=False, capture_output=True, text=True,
@@ -470,7 +975,7 @@ def _run_anomaly_only_mode(env: dict[str, str]) -> int:
                 raise FileNotFoundError(f"Anomaly source data is missing: {dataset}")
             missing_modules = [
                 module
-                for module in ("h3", "pywt", "pyarrow", "sklearn")
+                for module in ("flask_cors", "h3", "pywt", "pyarrow", "sklearn")
                 if find_spec(module) is None
             ]
             if missing_modules:
@@ -545,6 +1050,70 @@ def _wait_for_http(url: str, label: str, timeout: float = 180.0) -> str:
     )
 
 
+def _verify_model_catalog(
+    catalog_url: str = BACKEND_MODEL_CATALOG_URL,
+) -> dict[str, Any]:
+    """Fail automation if the deployed API does not expose every trained model."""
+    with urllib.request.urlopen(catalog_url, timeout=30) as response:
+        payload = json.load(response)
+    models = payload.get("data", {}).get("models")
+    if not isinstance(models, list):
+        raise RuntimeError("Backend model catalog response has no models list.")
+
+    required_ids = {
+        "customer-bill-prediction",
+        "commercial-building-forecast",
+        "government-load-forecast",
+        "government-customer-segmentation",
+        "anomaly-prediction",
+    }
+    catalog = {
+        str(model.get("modelId")): model
+        for model in models
+        if isinstance(model, dict) and model.get("modelId")
+    }
+    missing = sorted(required_ids.difference(catalog))
+    unavailable = {
+        model_id: (
+            f"{catalog[model_id].get('error', 'status is unavailable')} "
+            f"(provider={catalog[model_id].get('provider', 'unknown')}, "
+            f"version={catalog[model_id].get('modelVersion', 'unknown')}, "
+            f"selected={catalog[model_id].get('selectedModel', 'unknown')})"
+        )
+        for model_id in sorted(required_ids.intersection(catalog))
+        if catalog[model_id].get("status") != "configured"
+    }
+    if missing or unavailable:
+        details = []
+        if missing:
+            details.append(f"missing model entries: {', '.join(missing)}")
+        if unavailable:
+            details.append(
+                "unavailable models: "
+                + "; ".join(
+                    f"{model_id}: {reason}"
+                    for model_id, reason in unavailable.items()
+                )
+            )
+        raise RuntimeError(
+            "The deployed model catalog does not match the completed pipelines ("
+            + " | ".join(details)
+            + ")."
+        )
+
+    return {
+        "configured_models": [
+            {
+                "model_id": model_id,
+                "name": catalog[model_id].get("name"),
+                "model_version": catalog[model_id].get("modelVersion"),
+                "run_summary": catalog[model_id].get("runSummary"),
+            }
+            for model_id in sorted(required_ids)
+        ]
+    }
+
+
 def _start_airflow_ui(
     airflow_command: list[str],
     env: dict[str, str],
@@ -603,8 +1172,9 @@ def main(argv: list[str] | None = None) -> int:
         "--skip-all-data-pipelines",
         action="store_true",
         help=(
-            "Reuse validated prepared data for customer, government, and commercial; "
-            "still train/register all models and start services."
+            "Reuse validated prepared data for customer, government, commercial, "
+            "and segmentation; still train/register customer and commercial models "
+            "and start services."
         ),
     )
     parser.add_argument(
@@ -612,7 +1182,7 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help=(
             "Reuse the existing customer gold dataset and skip its bronze-to-gold "
-            "DAG. The government load DAG still runs."
+            "DAG. Government load forecasting and customer segmentation still run."
         ),
     )
     parser.add_argument(
@@ -622,6 +1192,11 @@ def main(argv: list[str] | None = None) -> int:
             "Reuse existing commercial Silver/Gold data after verifying both files "
             "and the latest passing Gold quality manifest; commercial training still runs."
         ),
+    )
+    parser.add_argument(
+        "--force-airflow-dags",
+        action="store_true",
+        help="Run data-producing Airflow DAGs even when their datasets are unchanged.",
     )
     parser.add_argument(
         "--anomaly-only",
@@ -648,16 +1223,21 @@ def main(argv: list[str] | None = None) -> int:
     env["GRIDVISION_SOURCE_PATH"] = str(SOURCE_PATH)
     env["GRIDVISION_SOURCE_FILENAME"] = SOURCE_PATH.name
     env.setdefault(
+        "SEGMENTATION_SOURCE_PATH",
+        str(DATA_ROOT / "bronze" / SOURCE_PATH.name),
+    )
+    env.setdefault("SEGMENTATION_OUTPUT_DIR", str(DATA_ROOT / "segmentation"))
+    env.setdefault(
         "GRIDVISION_SOURCE_DATA",
         str(DATA_ROOT / "anomaly_prediction" / "synthetic_2019_normal.parquet"),
     )
     env.setdefault(
         "GRIDVISION_SILVER_DATA",
-        str(DATA_ROOT / "anomaly_prediction" / "silver" / "synthetic_2019_silver.parquet"),
+        str(DATA_ROOT / "silver" / "synthetic_2019_silver.parquet"),
     )
     env.setdefault(
         "GRIDVISION_GOLD_DATA",
-        str(DATA_ROOT / "anomaly_prediction" / "gold" / "gridvision_model_features.parquet"),
+        str(DATA_ROOT / "gold" / "gridvision_model_features.parquet"),
     )
     env.setdefault(
         "GRIDVISION_MODEL_PATH",
@@ -688,6 +1268,20 @@ def main(argv: list[str] | None = None) -> int:
     env.setdefault("SECRET_KEY", secrets.token_urlsafe(48))
     env.setdefault("MLFLOW_MODEL_NAME", DEFAULT_MODEL_NAME)
     env.setdefault("MLFLOW_MODEL_ALIAS", DEFAULT_ALIAS)
+    env.setdefault(
+        "COMMERCIAL_MLFLOW_MODEL_NAME",
+        "gridvision-commercial-building-forecast",
+    )
+    env.setdefault(
+        "COMMERCIAL_MLFLOW_MODEL_ALIAS", env["MLFLOW_MODEL_ALIAS"]
+    )
+    env.setdefault(
+        "GOVERNMENT_MLFLOW_MODEL_NAME",
+        "gridvision-government-load-forecast",
+    )
+    env.setdefault(
+        "GOVERNMENT_MLFLOW_MODEL_ALIAS", env["MLFLOW_MODEL_ALIAS"]
+    )
     env.setdefault("AIRFLOW_HOME", str(Path.home() / ".gridvision-airflow"))
     if platform.system() == "Linux" and PROJECT_ROOT.as_posix().startswith("/mnt/"):
         airflow_home = Path(env["AIRFLOW_HOME"]).expanduser()
@@ -733,6 +1327,7 @@ def main(argv: list[str] | None = None) -> int:
                 "mlflow",
                 "pandas",
                 "pyarrow",
+                "pywt",
                 "sklearn",
             ]
             if platform.system() != "Darwin":
@@ -792,6 +1387,16 @@ def main(argv: list[str] | None = None) -> int:
                     f"{government_data}"
                 )
             commercial_data = _commercial_gold_is_reusable(env)
+            if not _existing_dag_outputs_are_reusable(
+                SEGMENTATION_DAG_ID,
+                env,
+                _dag_dataset_paths(SEGMENTATION_DAG_ID, env)[1],
+            ):
+                raise FileNotFoundError(
+                    "Cannot reuse customer segmentation data; published "
+                    "segmentation outputs are missing or incomplete. Run "
+                    "automation.py without --skip-all-data-pipelines to create them."
+                )
             env["GOVERNMENT_PIPELINE_REUSE_PREPARED"] = "1"
             print(
                 "\n[REUSE] Validated prepared data for all personas: "
@@ -816,21 +1421,37 @@ def main(argv: list[str] | None = None) -> int:
         else:
             run_step(
                 "Run customer bronze → silver → gold Airflow DAG",
-                lambda: _run_airflow_dag_test(airflow_command, DAG_ID, env),
+                lambda: _run_airflow_dag_if_dataset_changed(
+                    airflow_command,
+                    DAG_ID,
+                    env,
+                    force=arguments.force_airflow_dags,
+                ),
             )
         run_step(
             "Run government load forecasting Airflow DAG",
-            lambda: _run_airflow_dag_test(
+            lambda: _run_airflow_dag_if_dataset_changed(
                 airflow_command,
                 GOVERNMENT_DAG_ID,
                 env,
+                force=arguments.force_airflow_dags,
             )
+        )
+        run_step(
+            "Generate and publish Government customer segmentation outputs",
+            lambda: _run_airflow_dag_if_dataset_changed(
+                airflow_command,
+                SEGMENTATION_DAG_ID,
+                env,
+                force=arguments.force_airflow_dags,
+            ),
         )
         run_step(
             "Prepare commercial Gold and train/evaluate/register commercial champion",
             lambda: _run_commercial_workflow(
                 airflow_command, env,
                 skip_data_pipeline=skip_commercial_pipeline,
+                force_airflow=arguments.force_airflow_dags,
             ),
         )
         run_step(
@@ -860,8 +1481,11 @@ def main(argv: list[str] | None = None) -> int:
         )
         run_step(
             "Prepare, evaluate, and register anomaly model through Airflow",
-            lambda: _run_airflow_dag_test(
-                airflow_command, ANOMALY_DAG_ID, env
+            lambda: _run_airflow_dag_if_dataset_changed(
+                airflow_command,
+                ANOMALY_DAG_ID,
+                env,
+                force=arguments.force_airflow_dags,
             ),
         )
         run_step(
@@ -884,11 +1508,21 @@ def main(argv: list[str] | None = None) -> int:
                 stack_env,
             ),
         )
+        backend_base_url = run_step(
+            "Resolve the deployed backend endpoint",
+            lambda: _compose_service_url(compose, "backend", 5000, stack_env),
+        )
         run_step(
             "Verify backend health",
             lambda: _wait_for_http(
-                BACKEND_HEALTH_URL, "GridVision backend", timeout=180
+                f"{backend_base_url}/api/v1/health",
+                "GridVision backend",
+                timeout=180,
             ),
+        )
+        run_step(
+            "Verify configured models are published in the backend catalog",
+            lambda: _verify_model_catalog(f"{backend_base_url}/api/v1/models"),
         )
         run_step(
             "Verify frontend",
@@ -897,7 +1531,7 @@ def main(argv: list[str] | None = None) -> int:
 
         print("\nGridVision services are running:", flush=True)
         print(f"  Frontend: {FRONTEND_URL}", flush=True)
-        print(f"  Backend API health: {BACKEND_HEALTH_URL}", flush=True)
+        print(f"  Backend API health: {backend_base_url}/api/v1/health", flush=True)
         print(f"  Airflow UI: {AIRFLOW_URL}", flush=True)
         print(
             "  Airflow login details: "
@@ -916,6 +1550,9 @@ def main(argv: list[str] | None = None) -> int:
             flush=True,
         )
         print("  Stop containers with: docker compose down", flush=True)
+    except KeyboardInterrupt:
+        print("\nAutomation interrupted by user.", flush=True)
+        result_code = 130
     except Exception as exc:
         print(f"\nAutomation stopped: {exc}", flush=True)
         result_code = 1
@@ -930,7 +1567,13 @@ def main(argv: list[str] | None = None) -> int:
                 "started_at": run_started_at,
                 "finished_at": datetime.now(timezone.utc).isoformat(),
                 "elapsed_seconds": round(total, 3),
-                "status": "SUCCESS" if result_code == 0 else "FAILED",
+                "status": (
+                    "SUCCESS"
+                    if result_code == 0
+                    else "INTERRUPTED"
+                    if result_code == 130
+                    else "FAILED"
+                ),
                 "steps": steps,
             }, indent=2, sort_keys=True, default=str) + "\n",
             encoding="utf-8",
@@ -946,7 +1589,14 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Total elapsed time: {total:.2f}s", flush=True)
         print(f"Structured automation summary: {summary_path}", flush=True)
         print(
-            f"Overall result: {'SUCCESS' if result_code == 0 else 'FAILED'}",
+            "Overall result: "
+            + (
+                "SUCCESS"
+                if result_code == 0
+                else "INTERRUPTED"
+                if result_code == 130
+                else "FAILED"
+            ),
             flush=True,
         )
     return result_code

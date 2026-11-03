@@ -16,6 +16,17 @@ python automation.py
 python automation.py --anomaly-only --force-anomaly-retrain
 ```
 
+The anomaly workflow requires both the `backend` and `model-serving`
+requirements groups: inference initializes the Flask application, while model
+preparation and training use the model-serving packages. Install both groups
+into the active Python environment:
+
+```bash
+python scripts/filter_requirements.py requirements.txt /tmp/gridvision-anomaly-requirements.txt \
+  --groups backend model-serving
+python -m pip install -r /tmp/gridvision-anomaly-requirements.txt
+```
+
 Set `MLFLOW_TRACKING_URI` to the existing GridVision tracking service. The
 anomaly experiment is `gridvision-anomaly-detection`; its registered model is
 `gridvision-anomaly-detection` with the `champion` alias. Automation logs
@@ -27,9 +38,9 @@ the normal structured automation summary under `logs/automation/`.
 The immutable source is
 `data/anomaly_prediction/synthetic_2019_normal.parquet`. Preparation writes:
 
-- `data/anomaly_prediction/silver/synthetic_2019_silver.parquet` — bounded
+- `data/silver/synthetic_2019_silver.parquet` — bounded
   Arrow-batch copy with the complete original schema retained for audit.
-- `data/anomaly_prediction/gold/gridvision_model_features.parquet` — sampled,
+- `data/gold/gridvision_model_features.parquet` — sampled,
   causal model features, including time-domain, FFT, and Haar-wavelet features.
 
 The data and feature code lives in
@@ -66,6 +77,19 @@ mode uses the same root training entry point and executes real inference,
 spatial localization, event-scope classification, and persisted result
 generation without starting the other workflows or services.
 
+In the complete workflow, data-producing Airflow DAGs are skipped when their
+source file fingerprint (resolved path, size, and modification time) and
+previously generated outputs are unchanged. The successful fingerprints are
+stored in `data/metadata/automation/airflow_dataset_state.json`. A missing
+output or changed source causes the corresponding DAG to run again. Use
+`python automation.py --force-airflow-dags` to rerun those DAGs explicitly.
+On the first run, complete existing outputs with their required quality
+manifests or evaluation reports are adopted as the baseline rather than rebuilt.
+Before reusing anomaly layers, automation also verifies that Silver matches
+the source row count, schema, and timestamp range, and that Gold covers the
+same timestamp range. Stale layers are rebuilt even when their file
+fingerprints have not changed.
+
 ## Tracking and artifacts
 
 Training/reuse logs finite evaluation metrics, configuration and source
@@ -86,8 +110,8 @@ directory is not used as a tracking store.
 | Variable | Default | Purpose |
 |---|---|---|
 | `GRIDVISION_SOURCE_DATA` | `data/anomaly_prediction/synthetic_2019_normal.parquet` | Bronze source |
-| `GRIDVISION_SILVER_DATA` | `data/anomaly_prediction/silver/synthetic_2019_silver.parquet` | Prepared source |
-| `GRIDVISION_GOLD_DATA` | `data/anomaly_prediction/gold/gridvision_model_features.parquet` | Engineered features |
+| `GRIDVISION_SILVER_DATA` | `data/silver/synthetic_2019_silver.parquet` | Prepared source |
+| `GRIDVISION_GOLD_DATA` | `data/gold/gridvision_model_features.parquet` | Engineered features |
 | `GRIDVISION_MODEL_PATH` | `models/anomaly_prediction/gridvision_anomaly_model.joblib` | Saved model bundle |
 | `GRIDVISION_REPORT_DIR` | `reports/anomaly_prediction/training` | Training reports |
 | `ANOMALY_DATASET_PATH` | `data/anomaly_prediction/synthetic_2019_normal.parquet` | Flask inference source |

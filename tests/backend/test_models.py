@@ -4,16 +4,90 @@ from __future__ import annotations
 
 from flask.testing import FlaskClient
 
+from app import create_app
+from app.config import TestingConfig
+from app.providers.trained_forecast_provider import TrainedForecastProvider
+
 
 def test_model_catalog_reports_gold_dataset(client: FlaskClient):
     response = client.get("/api/v1/models")
 
     assert response.status_code == 200
-    model = response.get_json()["data"]["models"][0]
+    models = response.get_json()["data"]["models"]
+    model = models[0]
     assert model["modelId"] == "customer-bill-prediction"
     assert model["dataset"]["rows"] == 3600
     assert model["dataset"]["entities"] == 100
     assert model["status"] == "configured"
+    segmentation = next(
+        model
+        for model in models
+        if model["modelId"] == "government-customer-segmentation"
+    )
+    assert [
+        model["modelId"]
+        for model in models
+        if model["modelId"] == "government-customer-segmentation"
+    ] == ["government-customer-segmentation"]
+    assert segmentation["status"] in {"configured", "unavailable"}
+    assert segmentation["provider"] == "published_artifacts"
+    forecasts = {
+        model["modelId"]: model
+        for model in models
+        if model["modelId"]
+        in {"commercial-building-forecast", "government-load-forecast"}
+    }
+    assert set(forecasts) == {
+        "commercial-building-forecast",
+        "government-load-forecast",
+    }
+    assert all(
+        model["provider"] == "development_mock_v1"
+        and "Not connected to MLflow" in model["error"]
+        for model in forecasts.values()
+    )
+
+
+def test_model_catalog_uses_trained_forecast_provider(monkeypatch):
+    class MLflowTestingConfig(TestingConfig):
+        MODEL_PROVIDER = "mlflow"
+        MLFLOW_TRACKING_URI = "http://mlflow.test"
+
+    monkeypatch.setattr(
+        TrainedForecastProvider,
+        "get_horizon_model_status",
+        lambda self: {
+            "commercial": {
+                "status": "ready",
+                "provider": "mlflow_registered_alias",
+                "model_version": "3",
+                "model_alias": "champion",
+            },
+            "government": {
+                "status": "ready",
+                "provider": "mlflow_registered_alias+local_bundle",
+                "model_version": "7",
+                "model_alias": "champion",
+            },
+        },
+    )
+    app = create_app(config_class=MLflowTestingConfig)
+
+    response = app.test_client().get("/api/v1/models")
+
+    assert response.status_code == 200
+    forecasts = {
+        model["modelId"]: model
+        for model in response.get_json()["data"]["models"]
+        if model["modelId"]
+        in {"commercial-building-forecast", "government-load-forecast"}
+    }
+    assert forecasts["commercial-building-forecast"]["status"] == "configured"
+    assert forecasts["commercial-building-forecast"]["modelVersion"] == "3"
+    assert forecasts["commercial-building-forecast"]["selectedModel"] == "champion"
+    assert forecasts["government-load-forecast"]["status"] == "configured"
+    assert forecasts["government-load-forecast"]["modelVersion"] == "7"
+    assert forecasts["government-load-forecast"]["selectedModel"] == "champion"
 
 
 def test_customer_bill_model_replays_gold_record(client: FlaskClient):

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
@@ -190,3 +191,94 @@ def test_government_historical_insights_aggregate_actual_grid_observations(
     assert history["peakConsumption"] == 4.0
     assert history["unit"] == "MW"
     assert history["historyCurve"][-1]["totalConsumption"] == 96.0
+
+
+def test_government_registered_version_does_not_load_registry_pyfunc(
+    tmp_path: Path, monkeypatch
+) -> None:
+    import mlflow.tracking
+
+    provider, _ = _provider(tmp_path)
+    provider.tracking_uri = "http://mlflow.test"
+    provider.government_model_alias = "validated"
+
+    class FakeMlflowClient:
+        def __init__(self, tracking_uri: str) -> None:
+            assert tracking_uri == provider.tracking_uri
+
+        def get_model_version_by_alias(self, name: str, alias: str):
+            assert name == provider.government_model_name
+            assert alias == "validated"
+            return SimpleNamespace(version="7")
+
+    monkeypatch.setattr(mlflow.tracking, "MlflowClient", FakeMlflowClient)
+    provider._load_mlflow_model = lambda _: (_ for _ in ()).throw(
+        AssertionError("Government status should use its local bundle")
+    )
+
+    assert provider._registered_version("government") == "7"
+
+
+def test_government_status_requires_published_data_local_bundle_and_alias(
+    tmp_path: Path,
+) -> None:
+    provider, _ = _provider(tmp_path)
+    provider.government_data.touch()
+    provider.government_model_path.touch()
+    provider._registered_model_version = lambda _: ("7", None)
+    provider._registered_metadata = lambda _: {
+        "test_metrics": {"rmse_kwh": 12.0},
+        "features": ["energy_lag_1h"],
+    }
+
+    status = provider.get_horizon_model_status()["government"]
+
+    assert status["status"] == "ready"
+    assert status["model_version"] == "7"
+    assert status["provider"] == "mlflow_registered_alias+local_bundle"
+    assert status["error"] is None
+
+
+def test_forecast_status_exposes_mlflow_alias_lookup_error(
+    tmp_path: Path,
+) -> None:
+    provider, _ = _provider(tmp_path)
+    provider.tracking_uri = "http://mlflow.test"
+    provider.commercial_data.touch()
+    provider._registered_model_version = lambda _: (
+        None,
+        "Unable to resolve MLflow alias gridvision-commercial-building-forecast"
+        "@champion at http://mlflow.test: RESOURCE_DOES_NOT_EXIST",
+    )
+    provider._registered_metadata = lambda _: {
+        "test_metrics": {},
+        "features": [],
+    }
+
+    status = provider.get_horizon_model_status()["commercial"]
+
+    assert status["status"] == "unavailable"
+    assert "RESOURCE_DOES_NOT_EXIST" in status["error"]
+    assert status["model_alias"] == "champion"
+
+
+def test_commercial_status_uses_runtime_alias_loading_error(
+    tmp_path: Path,
+) -> None:
+    provider, _ = _provider(tmp_path)
+    provider.tracking_uri = "http://mlflow.test"
+    provider.commercial_data.touch()
+    provider._registered_model_version = lambda _: ("4", None)
+    provider._load_mlflow_model = lambda _: (_ for _ in ()).throw(
+        RuntimeError("Unable to deserialize serving pipeline")
+    )
+    provider._registered_metadata = lambda _: {
+        "test_metrics": {},
+        "features": [],
+    }
+
+    status = provider.get_horizon_model_status()["commercial"]
+
+    assert status["status"] == "unavailable"
+    assert status["model_version"] == "4"
+    assert "Unable to deserialize serving pipeline" in status["error"]

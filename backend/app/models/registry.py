@@ -46,6 +46,16 @@ MODEL_REGISTRY = {
         task="24_hour_grid_energy_forecast",
         description="Predicts hourly coarse-grid demand using the per-grid routed hybrid model.",
     ),
+    "government-customer-segmentation": ModelDefinition(
+        model_id="government-customer-segmentation",
+        name="Government Customer Segmentation",
+        domain="government",
+        task="building_behaviour_clustering",
+        description=(
+            "Groups buildings by energy-use behaviour and publishes regional "
+            "and time-profile outputs."
+        ),
+    ),
     "anomaly-prediction": ModelDefinition(
         model_id="anomaly-prediction",
         name="Anomaly Prediction",

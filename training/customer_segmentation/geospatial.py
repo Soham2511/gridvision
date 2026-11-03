@@ -72,6 +72,7 @@ def publish_geospatial_outputs(
     con = _connect(settings)
     try:
         for region_column, label in (("id.grid.coarse", "coarse"), ("id.grid.finer", "finer")):
+            logger.info("Generating %s-region segmentation summary", label)
             query = f"""
             COPY (
               SELECT
@@ -115,6 +116,7 @@ def publish_geospatial_outputs(
             ("daily", "EXTRACT(dow FROM CAST(s.timestamp AS TIMESTAMP))", "cluster_daily_profile.parquet"),
             ("monthly", "EXTRACT(month FROM CAST(s.timestamp AS TIMESTAMP))", "cluster_monthly_profile.parquet"),
         ):
+            logger.info("Generating %s segment energy profiles", kind)
             intermediate = f"""
               SELECT a.segment_id, a.model_category, a.GeneralUseType, a.OBJECTID,
                      {date_expr} AS period_index,
@@ -259,4 +261,3 @@ def publish_geospatial_outputs(
         return report
     finally:
         con.close()
-

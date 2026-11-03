@@ -134,7 +134,20 @@ gridvision-app/
    python automation.py
    ```
 
-The script runs the customer, government, and commercial ETL/training workflows, then starts the MLflow, Airflow, backend, and frontend services. It prints a timed summary and leaves the services running. When all three ETL outputs are already prepared, run `python automation.py --skip-all-data-pipelines` to validate and reuse them while still training/registering each model and starting the services. See [Customer Bill Prediction: Data, Training, and Automation](#customer-bill-prediction-data-training-and-automation) for environment setup, output paths, and EC2 deployment steps.
+The script runs the customer, government, commercial, and customer-segmentation ETL/training workflows, then starts the MLflow, Airflow, backend, and frontend services. It verifies that the backend model catalog exposes all five models as configured before reporting success. The Data & Model Health page reads that live catalog and can refresh statuses after a new run. It prints a timed summary and leaves the services running. When the data outputs are already prepared, run `python automation.py --skip-all-data-pipelines` to validate and reuse them while still training/registering each model and starting the services. See [Customer Bill Prediction: Data, Training, and Automation](#customer-bill-prediction-data-training-and-automation) for environment setup, output paths, and EC2 deployment steps.
+
+Before each data-producing Airflow DAG, automation compares its source dataset
+path, size, and modification time with the last successful run, and verifies
+that the generated outputs have not changed. Unchanged inputs and outputs skip
+That DAG; changed or missing data reruns it. This includes Government customer
+segmentation, whose published outputs are stored in `data/segmentation/`.
+On the first run with this check,
+complete existing outputs are adopted as the baseline when their quality
+manifests or model reports validate them, so they do not have to be generated
+again. The fingerprints are stored in
+`data/metadata/automation/airflow_dataset_state.json`. Use
+`python automation.py --force-airflow-dags` to run the data-producing DAGs
+regardless of their recorded fingerprints.
 
 Run automation on macOS, Linux, or WSL2, not native Windows. macOS runs Airflow
 in Docker; Linux/WSL2 uses its Linux Airflow environment. By default,
@@ -438,7 +451,7 @@ remain running after the script exits.
 
 For a functional, resource-conscious local run, the silver stage deterministically samples **100 residential entities** by default (down from 1,000). The sample size can be changed with `CUSTOMER_SAMPLE_BUILDINGS` before running automation. The silver transform discovers residential entity profiles with bounded Arrow batches, avoiding a full-file DuckDB profile aggregation. DuckDB is limited to 2 GB and two worker threads by default, and spills intermediate data when needed. In the macOS Airflow container, spill files use the persistent Airflow volume; on Linux/WSL, the default is `~/.cache/gridvision/duckdb_temp`. Ensure the filesystem containing the spill directory has free space. You can tune the DuckDB limits with `CUSTOMER_DUCKDB_MEMORY_LIMIT` and `CUSTOMER_DUCKDB_THREADS`. This smaller sample is intended for functional development; increase it as resources and scaling work allow.
 
-To retrain and rebuild the services using already-prepared outputs without rerunning the ETL, run `python automation.py --skip-all-data-pipelines`. This validates Customer Gold and its quality manifest, the Government training-ready parquet, and Commercial Silver/Gold plus its quality manifest. It skips only data preparation; it still runs government, commercial, and customer training and model registration. `--skip-data-pipeline` skips only customer ETL, while `--skip-commercial-data-pipeline` skips only commercial ETL.
+To retrain and rebuild the services using already-prepared outputs without rerunning the ETL, run `python automation.py --skip-all-data-pipelines`. This validates Customer Gold and its quality manifest, the Government training-ready parquet, Commercial Silver/Gold plus its quality manifest, and the complete customer-segmentation output set. It reuses unchanged Government and segmentation DAG outputs, while still running commercial and customer model training/registration. `--skip-data-pipeline` skips only customer ETL, while `--skip-commercial-data-pipeline` skips only commercial ETL. Customer segmentation uses the existing Bronze dataset and runs separately.
 
 Open the frontend at `http://localhost:8082` (configurable with
 `GRIDVISION_FRONTEND_HOST_PORT`). Airflow is at `http://localhost:8081`

@@ -33,11 +33,13 @@ class CustomerBillPredictionService:
         artifact_path: Path,
         model_provider: BaseModelProvider,
         tariff_inr_per_kwh: float,
+        forecast_model_provider: BaseModelProvider | None = None,
     ) -> None:
         self.dataset_path = dataset_path
         self.metadata_path = metadata_path
         self.artifact_path = artifact_path
         self.model_provider = model_provider
+        self.forecast_model_provider = forecast_model_provider
         self.tariff_inr_per_kwh = tariff_inr_per_kwh
         self._frame: pd.DataFrame | None = None
         self._artifact: dict[str, Any] | None = None
@@ -184,15 +186,36 @@ class CustomerBillPredictionService:
 
     def get_model_catalog(self) -> list[dict[str, Any]]:
         catalog = []
-        if hasattr(self.model_provider, "get_horizon_model_status"):
-            forecast_status = self.model_provider.get_horizon_model_status()
+        catalog_provider = self.forecast_model_provider or self.model_provider
+        if hasattr(catalog_provider, "get_horizon_model_status"):
+            forecast_status = catalog_provider.get_horizon_model_status()
         else:
-            forecast_status = self.model_provider.get_model_status().get("models", {})
+            provider_status = catalog_provider.get_model_status()
+            provider_name = provider_status.get("provider", "unknown")
+            provider_error = provider_status.get(
+                "description",
+                "The backend is not configured with the trained forecast model provider.",
+            )
+            forecast_status = {
+                key: {
+                    "status": "unavailable",
+                    "provider": provider_name,
+                    "model_version": "not_deployed",
+                    "model_alias": "not_deployed",
+                    "error": provider_error,
+                    "test_metrics": {},
+                    "features": [],
+                }
+                for key in ("commercial", "government")
+            }
         for model_id, definition in MODEL_REGISTRY.items():
             if model_id == "customer-bill-prediction":
                 catalog.append(self.get_summary())
                 continue
-            if model_id == "anomaly-prediction":
+            if model_id in {
+                "anomaly-prediction",
+                "government-customer-segmentation",
+            }:
                 continue
             provider_key = {
                 "commercial-building-forecast": "commercial",
@@ -208,7 +231,14 @@ class CustomerBillPredictionService:
                 "selectedModel": status.get("model_alias", "not_deployed") if ready else "not_deployed",
                 "testMetrics": status.get("test_metrics", {}),
                 "features": status.get("features", []),
-                **({} if ready else {"error": "Registered champion model or its forecast data is unavailable."}),
+                **(
+                    {}
+                    if ready
+                    else {
+                        "error": status.get("error")
+                        or "Registered champion model or its forecast data is unavailable."
+                    }
+                ),
             })
         return catalog
 

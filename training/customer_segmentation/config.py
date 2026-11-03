@@ -15,11 +15,12 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 class SegmentationSettings:
     source_path: Path
     output_dir: Path
+    building_sample_fraction: float = 0.1
     window_end: date | None = None
     window_months: int = 12
     minimum_coverage: float = 0.9
-    duckdb_memory_limit: str = "4GB"
-    duckdb_threads: int = 4
+    duckdb_memory_limit: str = "1GB"
+    duckdb_threads: int = 1
     duckdb_temp_dir: Path = Path("/tmp/gridvision-segmentation-duckdb")
     minimum_category_size: int = 50
     minimum_cluster_size: int = 5
@@ -51,11 +52,14 @@ class SegmentationSettings:
                     PROJECT_ROOT / "data" / "segmentation",
                 )
             ).expanduser(),
+            building_sample_fraction=float(
+                os.getenv("SEGMENTATION_BUILDING_SAMPLE_FRACTION", "0.1")
+            ),
             window_end=date.fromisoformat(end) if end else None,
             window_months=int(os.getenv("SEGMENTATION_WINDOW_MONTHS", "12")),
             minimum_coverage=float(os.getenv("SEGMENTATION_MIN_COVERAGE", "0.9")),
-            duckdb_memory_limit=os.getenv("SEGMENTATION_DUCKDB_MEMORY_LIMIT", "4GB"),
-            duckdb_threads=max(1, int(os.getenv("SEGMENTATION_DUCKDB_THREADS", "4"))),
+            duckdb_memory_limit=os.getenv("SEGMENTATION_DUCKDB_MEMORY_LIMIT", "1GB"),
+            duckdb_threads=max(1, int(os.getenv("SEGMENTATION_DUCKDB_THREADS", "1"))),
             duckdb_temp_dir=Path(
                 os.getenv(
                     "SEGMENTATION_DUCKDB_TEMP_DIR",
@@ -78,6 +82,8 @@ class SegmentationSettings:
         )
 
     def validate(self) -> None:
+        if not 0 < self.building_sample_fraction <= 1:
+            raise ValueError("building_sample_fraction must be in (0, 1]")
         if self.window_months <= 0:
             raise ValueError("window_months must be positive")
         if not 0 < self.minimum_coverage <= 1:
@@ -92,4 +98,3 @@ class SegmentationSettings:
             raise ValueError("correlation_threshold must be in (0, 1]")
         if self.min_k < 2 or self.max_k < self.min_k:
             raise ValueError("cluster range must satisfy 2 <= min_k <= max_k")
-

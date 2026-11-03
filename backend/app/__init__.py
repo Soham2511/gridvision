@@ -97,6 +97,8 @@ def create_app(config_class: type[BaseConfig] | None = None) -> Flask:
             commercial_model_name=app.config["COMMERCIAL_MLFLOW_MODEL_NAME"],
             government_model_name=app.config["GOVERNMENT_MLFLOW_MODEL_NAME"],
             model_alias=app.config["MLFLOW_MODEL_ALIAS"],
+            commercial_model_alias=app.config["COMMERCIAL_MLFLOW_MODEL_ALIAS"],
+            government_model_alias=app.config["GOVERNMENT_MLFLOW_MODEL_ALIAS"],
         )
     else:
         model_provider = DevelopmentModelProvider()
@@ -117,6 +119,7 @@ def create_app(config_class: type[BaseConfig] | None = None) -> Flask:
         artifact_path=app.config["CUSTOMER_MODEL_ARTIFACT_PATH"],
         model_provider=customer_model_provider,
         tariff_inr_per_kwh=app.config["CUSTOMER_TARIFF_INR_PER_KWH"],
+        forecast_model_provider=model_provider,
     )
     government_segmentation_svc = SegmentationService(
         output_dir=app.config["SEGMENTATION_OUTPUT_DIR"],

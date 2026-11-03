@@ -72,6 +72,18 @@ export const ModelWorkbenchPage: React.FC = () => {
     }
   };
 
+  const openModel = (model: RegisteredModel) => {
+    if (model.modelId === 'customer-bill-prediction') {
+      navigate('/models/customer');
+    } else if (model.modelId === 'government-customer-segmentation') {
+      navigate('/app/customers');
+    } else if (model.modelId === 'anomaly-prediction') {
+      navigate('/anomalies');
+    } else if (modelIds.has(model.modelId)) {
+      setSelectedId(model.modelId);
+    }
+  };
+
   if (loading) return <><PageHeader title="Model Workbench" description="Loading registered models..." /><LoadingSkeleton height="150px" count={3} /></>;
   if (error && !catalog.length) return <ErrorState title="Model Catalog Unavailable" message={error} />;
 
@@ -81,10 +93,11 @@ export const ModelWorkbenchPage: React.FC = () => {
       {error && <div role="alert" className="gv-card" style={{ color: 'var(--gv-status-danger)' }}>{error}</div>}
       <section className="gv-grid-kpis">
         {catalog.map((model) => (
-          <button key={model.modelId} type="button" onClick={() => model.modelId === 'customer-bill-prediction' ? navigate('/models/customer') : setSelectedId(model.modelId)} className="gv-card" style={{ textAlign: 'left', cursor: 'pointer', border: selectedId === model.modelId ? '2px solid var(--gv-color-smart-teal)' : undefined }}>
+          <button key={model.modelId} type="button" onClick={() => openModel(model)} className="gv-card" style={{ textAlign: 'left', cursor: 'pointer', border: selectedId === model.modelId ? '2px solid var(--gv-color-smart-teal)' : undefined }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.5rem' }}><Cpu size={18} /><span className={`gv-badge ${model.status === 'configured' ? 'gv-badge-success' : 'gv-badge-danger'}`}>{model.status}</span></div>
             <strong style={{ display: 'block', marginTop: '0.65rem' }}>{model.name}</strong>
             <span className="gv-text-muted">{model.modelVersion} · {model.provider}</span>
+            {model.runSummary && <span className="gv-text-muted" style={{ display: 'block', marginTop: '0.4rem' }}>{model.runSummary}</span>}
             <span className="gv-text-muted" style={{ display: 'block', marginTop: '0.4rem' }}>{model.description}</span>
           </button>
         ))}
