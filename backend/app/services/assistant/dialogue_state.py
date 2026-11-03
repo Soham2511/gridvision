@@ -248,7 +248,10 @@ def compact_history_for_llm(
 
         if role == "user":
             cleaned = raw_content[:max_user_chars]
-            sanitized.append({"role": "user", "content": cleaned})
+            if sanitized and sanitized[-1]["role"] == "user":
+                sanitized[-1]["content"] = (sanitized[-1]["content"] + " " + cleaned)[:max_user_chars]
+            else:
+                sanitized.append({"role": "user", "content": cleaned})
         else:
             # Assistant turn: compact large tables, code blocks, and citations
             text = raw_content
@@ -270,7 +273,11 @@ def compact_history_for_llm(
                 else:
                     text = truncated + "..."
 
-            sanitized.append({"role": "assistant", "content": text})
+            if sanitized and sanitized[-1]["role"] == "assistant":
+                merged = (sanitized[-1]["content"] + " " + text).strip()
+                sanitized[-1]["content"] = merged[:max_assistant_chars]
+            else:
+                sanitized.append({"role": "assistant", "content": text})
 
     return sanitized
 
