@@ -34,6 +34,7 @@ export interface QuestionField {
   field_id: string;
   label: string;
   description?: string;
+  tooltip?: string;
   input_type: QuestionInputType;
   required: boolean;
   unit?: string;

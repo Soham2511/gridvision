@@ -631,20 +631,62 @@ export const ChatMessageRenderer: React.FC<ChatMessageRendererProps> = ({ conten
           },
 
           // Links
-          a: ({ href, children }) => (
-            <a
-              href={href}
-              target="_blank"
-              rel="noopener noreferrer"
-              style={{
-                color: '#00A396',
-                textDecoration: 'underline',
-                fontWeight: 600,
-              }}
-            >
-              {children}
-            </a>
-          ),
+          a: ({ href, children }) => {
+            if (href && (href.startsWith('#feature:') || href.startsWith('feature:'))) {
+              const featId = href.replace(/^#?feature:/, '');
+              return (
+                <button
+                  type="button"
+                  onClick={() => {
+                    window.dispatchEvent(
+                      new CustomEvent('gv-navigate-feature', { detail: { featureId: featId } })
+                    );
+                  }}
+                  title={`Open ${String(children)}`}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                    padding: '2px 8px',
+                    borderRadius: '5px',
+                    backgroundColor: '#E0F7F5',
+                    color: '#00A396',
+                    fontWeight: 700,
+                    border: '1px solid #99F6E4',
+                    cursor: 'pointer',
+                    fontSize: '0.82rem',
+                    margin: '0 2px',
+                    verticalAlign: 'baseline',
+                    transition: 'all 0.15s ease',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.backgroundColor = '#CCFBF1';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.backgroundColor = '#E0F7F5';
+                  }}
+                >
+                  <span>{children}</span>
+                  <span style={{ fontSize: '0.9em' }}>→</span>
+                </button>
+              );
+            }
+
+            return (
+              <a
+                href={href}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{
+                  color: '#00A396',
+                  textDecoration: 'underline',
+                  fontWeight: 600,
+                }}
+              >
+                {children}
+              </a>
+            );
+          },
 
           // Horizontal rule
           hr: () => (

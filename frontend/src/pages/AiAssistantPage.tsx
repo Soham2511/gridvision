@@ -358,6 +358,25 @@ export const AiAssistantPage: React.FC = () => {
 
   const [isTyping, setIsTyping] = useState<boolean>(false);
 
+  // Listen for navigation requests from chat action links (e.g. #feature:house_energy_planning)
+  useEffect(() => {
+    const handleFeatureNav = (e: Event) => {
+      const customEvent = e as CustomEvent<{ featureId: ResidentialFeatureId }>;
+      const targetFeat = customEvent.detail?.featureId;
+      if (
+        targetFeat &&
+        ['general_chat', 'house_energy_planning', 'appliance_analysis', 'cost_management'].includes(targetFeat)
+      ) {
+        setActiveFeature(targetFeat);
+        setActiveTab('workflow');
+        setCalculationError(null);
+      }
+    };
+
+    window.addEventListener('gv-navigate-feature', handleFeatureNav);
+    return () => window.removeEventListener('gv-navigate-feature', handleFeatureNav);
+  }, []);
+
   // Auto-scroll on new message or typing state change
   useEffect(() => {
     if (activeTab === 'chat' || activeFeature === 'general_chat') {

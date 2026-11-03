@@ -470,7 +470,7 @@ class AgenticKnowledgeOrchestrator:
         est_bill = rec_plan.get("estimatedMonthlyBillInr", 0.0)
 
         answer = (
-            f"### Preliminary Electrical & Energy Plan for New {bedrooms}-Bedroom Residential House\n\n"
+            f"💡 **Tip:** You can explore and fine-tune your parameters interactively in the **[New-House Planning Tab](#feature:house_energy_planning)** where standard engineering defaults are already pre-filled with informative tooltips!\n\n### Preliminary Electrical & Energy Plan for New {bedrooms}-Bedroom Residential House\n\n"
             f"**Property Design Assumptions:** Built-up area: `{area_sqm:.1f} m²` (~`{area_sqm * 10.764:.0f} sq.ft`), "
             f"Occupancy: `{bedrooms + 1} persons`, City: `Bangalore`.\n\n"
             "#### 1. Electrical Capacity & Supply Sizing\n"
@@ -485,7 +485,7 @@ class AgenticKnowledgeOrchestrator:
             "- **Life Safety Earthing:** Mandatory `30 mA` Residual Current Circuit Breaker (RCCB/ELCB) protection covering all habitable and wet zones.\n\n"
             "#### 3. Energy Efficiency Recommendations (BEE 5-Star)\n"
             "- Standardize on BEE 5-Star Inverter Air Conditioners (ISEER $\\ge 5.00$) to save ~30% in seasonal cooling electricity.\n"
-            "- Use BLDC motor ceiling fans (28W vs 75W induction fans) for an annual saving of ~80 kWh per fan.\n"
+            "- Use BLDC motor ceiling fans (28W vs 75W induction fans) for an annual saving of ~172 kWh per fan.\n"
         )
 
         if include_solar and plan_data.get("solarPvAnalysis"):

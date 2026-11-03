@@ -31,6 +31,92 @@ const buildInitialFormData = (
   return initial;
 };
 
+const FieldTooltip: React.FC<{ tooltipText: string; fieldLabel: string }> = ({ tooltipText, fieldLabel }) => {
+  const [visible, setVisible] = useState(false);
+
+  return (
+    <div
+      style={{ position: 'relative', display: 'inline-flex', alignItems: 'center', marginLeft: '4px' }}
+      onMouseEnter={() => setVisible(true)}
+      onMouseLeave={() => setVisible(false)}
+      onFocus={() => setVisible(true)}
+      onBlur={() => setVisible(false)}
+    >
+      <button
+        type="button"
+        aria-label={`Standards info for ${fieldLabel}`}
+        title={tooltipText}
+        onClick={(e) => {
+          e.preventDefault();
+          setVisible((prev) => !prev);
+        }}
+        style={{
+          background: 'none',
+          border: 'none',
+          padding: '2px',
+          cursor: 'pointer',
+          display: 'inline-flex',
+          alignItems: 'center',
+          color: visible ? '#00B8A9' : '#94A3B8',
+          transition: 'color 0.15s ease',
+        }}
+      >
+        <HelpCircle size={14} />
+      </button>
+
+      {visible && (
+        <div
+          role="tooltip"
+          style={{
+            position: 'absolute',
+            bottom: 'calc(100% + 7px)',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            width: '280px',
+            backgroundColor: '#0B1F33',
+            color: '#F8FAFC',
+            fontSize: '0.73rem',
+            lineHeight: 1.45,
+            padding: '0.6rem 0.75rem',
+            borderRadius: '6px',
+            boxShadow: '0 4px 14px rgba(11, 31, 51, 0.28)',
+            zIndex: 100,
+            pointerEvents: 'none',
+            textAlign: 'left',
+          }}
+        >
+          <div
+            style={{
+              fontWeight: 700,
+              color: '#00B8A9',
+              marginBottom: '3px',
+              fontSize: '0.67rem',
+              textTransform: 'uppercase',
+              letterSpacing: '0.04em',
+            }}
+          >
+            Engineering Norm & Sizing Impact
+          </div>
+          <div>{tooltipText}</div>
+          <div
+            style={{
+              position: 'absolute',
+              top: '100%',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              width: 0,
+              height: 0,
+              borderLeft: '5px solid transparent',
+              borderRight: '5px solid transparent',
+              borderTop: '5px solid #0B1F33',
+            }}
+          />
+        </div>
+      )}
+    </div>
+  );
+};
+
 export const SchemaQuestionnaire: React.FC<SchemaQuestionnaireProps> = ({
   schema,
   defaultValues,
@@ -252,6 +338,12 @@ export const SchemaQuestionnaire: React.FC<SchemaQuestionnaireProps> = ({
                           >
                             {field.unit}
                           </span>
+                        )}
+                        {(field.tooltip || field.description) && (
+                          <FieldTooltip
+                            tooltipText={field.tooltip || field.description || ''}
+                            fieldLabel={field.label}
+                          />
                         )}
                       </label>
 

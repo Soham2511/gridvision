@@ -70,6 +70,7 @@ class QuestionField(BaseModel):
     field_id: str
     label: str
     description: Optional[str] = None
+    tooltip: Optional[str] = None
     input_type: QuestionInputType
     required: bool = True
     unit: Optional[str] = None
