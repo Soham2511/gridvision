@@ -527,21 +527,7 @@ class ResidentialAssistantOrchestrator:
                 if any(w in err_text for w in ["rate limit", "429", "rate_limit_exceeded"]):
                     rate_limit_encountered = True
 
-        # 6. Direct LLM completion fallback (ONLY if not rate-limited)
-        if not answer and not rate_limit_encountered and self.llm_provider and self.llm_provider.is_available():
-            try:
-                answer = self.llm_provider.generate_chat_completion(
-                    messages=messages,
-                    temperature=self.temperature,
-                    max_tokens=self.max_tokens,
-                )
-                is_llm_generated = True
-            except LLMInferenceError as exc:
-                logger.warning("LLM inference unavailable, using verified context fallback: %s", exc)
-            except Exception as exc:
-                logger.error("Unexpected error during LLM generation: %s", exc)
-
-        # 7. Specialized Multi-Knowledge Orchestrator (for dedicated house planning, appliance analysis, or standards)
+        # 6. Specialized Multi-Knowledge Orchestrator (Prioritized for house planning, appliances, savings, continuations)
         contract = None
         p_low = effective_prompt.lower()
         is_knowledge_mode = is_continuation or any(k in p_low for k in [
@@ -573,15 +559,27 @@ class ResidentialAssistantOrchestrator:
                 "entityId": meter_id,
                 "customerName": customer_name,
                 "status": contract.status,
-                "isLlmGenerated": False,
                 "mode": contract.mode,
                 "citations": citations_data,
                 "provenance": provenance_data,
                 "assumptions": contract.assumptions,
                 "limitations": contract.limitations,
-                "missing_information": contract.missing_information,
-                "structured_data": contract.structured_data,
+                "isLlmGenerated": False,
             }
+
+        # 7. Direct LLM completion fallback (for general chat or queries not handled by specialized orchestrator)
+        if not answer and not rate_limit_encountered and self.llm_provider and self.llm_provider.is_available():
+            try:
+                answer = self.llm_provider.generate_chat_completion(
+                    messages=messages,
+                    temperature=self.temperature,
+                    max_tokens=self.max_tokens,
+                )
+                is_llm_generated = True
+            except LLMInferenceError as exc:
+                logger.warning("LLM inference unavailable, using verified context fallback: %s", exc)
+            except Exception as exc:
+                logger.error("Unexpected error during LLM generation: %s", exc)
 
         # 8. Deterministic domain fallback (telemetry, billing, usage trends, or verified assistance)
         if not answer:

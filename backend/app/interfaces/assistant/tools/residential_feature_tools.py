@@ -76,6 +76,16 @@ class PlanHouseEnergyTool(BaseTool):
         return self._run(*args, **kwargs)
 
 
+class PlanHouseAreaM2Tool(PlanHouseEnergyTool):
+    """Alias for plan_house_energy for robust LLM tool call dispatch."""
+
+    name: str = "plan_house_area_m2"
+    description: str = (
+        "Alias for plan_house_energy. Design and plan a residential electrical layout and equipment schedule "
+        "based on built_up_area_m2, property_type, and occupancy."
+    )
+
+
 # --- 2. Analyze Appliance Scenario Tool ---
 
 class AnalyzeApplianceScenarioInput(BaseModel):

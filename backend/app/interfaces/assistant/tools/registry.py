@@ -59,6 +59,7 @@ from app.interfaces.assistant.tools.rag_tools import (
 from app.interfaces.assistant.tools.residential_feature_tools import (
     AnalyzeApplianceScenarioTool,
     ManageEnergyCostTool,
+    PlanHouseAreaM2Tool,
     PlanHouseEnergyTool,
 )
 from app.interfaces.assistant.tools.structured_reference_tools import (
@@ -143,6 +144,10 @@ def create_residential_tools(
             authorized_meter_id=authorized_meter_id,
             use_case=house_plan_uc,
         ),
+        PlanHouseAreaM2Tool(
+            authorized_meter_id=authorized_meter_id,
+            use_case=house_plan_uc,
+        ),
         AnalyzeApplianceScenarioTool(
             authorized_meter_id=authorized_meter_id,
             use_case=appliance_uc,
@@ -193,6 +198,7 @@ def create_residential_tools(
             },
             "planning_and_upgrades": {
                 "plan_house_energy",
+                "plan_house_area_m2",
                 "analyze_appliance_scenario",
                 "generate_energy_cost_recommendations",
                 "lookup_appliance_benchmark",
@@ -204,6 +210,7 @@ def create_residential_tools(
                 "predict_usage_and_bill",
                 "generate_energy_cost_recommendations",
                 "plan_house_energy",
+                "plan_house_area_m2",
                 "analyze_appliance_scenario",
                 "search_regulatory_documents",
                 "query_consumption_history",
