@@ -85,6 +85,19 @@ class ResidentialAssistantOrchestrator:
         billing = context["billingCycleStatus"]
         recent = context["recentConsumptionMetrics"]
 
+        # Gentle out-of-scope response if live LLM is offline and query is outside energy domain
+        if not self._is_energy_related_query(prompt):
+            return (
+                f"### Domain Scope Notice\n\n"
+                f"Hello! I am GridVision's AI Energy Assistant for meter **{meter_id}** ({cust_name}).\n\n"
+                f"Your query (*\"{prompt}\"*) appears outside of residential electricity, billing, appliance efficiency, or electrical planning.\n\n"
+                f"**Here is how I can assist you with your home:**\n"
+                f"- **Current Bill & Usage:** Check month-to-date kWh and projected monthly bills.\n"
+                f"- **Appliance Sizing:** Compare BEE 3-Star vs 5-Star ACs or BLDC ceiling fans.\n"
+                f"- **House Energy Planning:** Sizing connected load and wiring under IS 732.\n"
+                f"- **Cost Management:** Prioritized energy reduction strategies."
+            )
+
         # Check for dedicated feature workflows in fallback
         if any(w in p for w in ["plan house", "new house", "house planning", "electrical layout", "electrical plan", "connected load"]):
             try:
@@ -303,6 +316,28 @@ class ResidentialAssistantOrchestrator:
             f"- **Estimated Month-End Invoice**: **{est_bill}**\n\n"
             f"All readings are verified from smart meter `{meter_id}` records as of `{billing.get('lastRecordedDate') or 'recent record'}`."
         )
+
+    @staticmethod
+    def _is_energy_related_query(prompt: str) -> bool:
+        """Evaluate if user prompt relates to household energy, billing, power, appliances, or standards."""
+        p = prompt.lower().strip()
+        # Common arithmetic or numbers (e.g. 2+2)
+        if all(c in "0123456789+-*/. ()?" for c in p) and any(c in "+-*/" for c in p):
+            return True
+
+        energy_terms = [
+            "bill", "tariff", "kwh", "consumption", "usage", "meter", "reading", "cost",
+            "yesterday", "forecast", "predict", "daily", "average", "peak", "power", "electricity",
+            "energy", "standard", "code", "regulation", "is 732", "is732", "nec", "bee", "cea",
+            "voltage", "amp", "load", "ac", "air condition", "air conditioner", "inverter", "star",
+            "appliance", "refrigerator", "fridge", "fan", "bldc", "geyser", "heater", "solar", "pv",
+            "saving", "save", "cut bill", "reduce bill", "efficiency", "electrical", "wiring", "circuit",
+            "rccb", "mcb", "earthing", "neutral", "phase", "sub-circuit", "lighting", "bedroom",
+            "house", "home", "planning", "layout", "gridvision", "spend", "owing", "payback",
+            "show", "summary", "overview", "status", "profile", "baseline", "telemetry", "month",
+            "hi", "hello", "hey", "help", "thank"
+        ]
+        return any(term in p for term in energy_terms)
 
     def _determine_tool_scope(self, prompt: str) -> str:
         """Dynamically select a focused tool scope to optimize prompt tokens and latency while preserving AI flexibility."""
@@ -534,23 +569,29 @@ class ResidentialAssistantOrchestrator:
         if not answer:
             answer = self._generate_fallback_response(clean_user_prompt, context)
 
+        is_relevant = self._is_energy_related_query(clean_user_prompt)
+        final_mode = "general_chat" if is_relevant else "irrelevant"
+        relevance_val = "relevant" if is_relevant else "irrelevant"
+        status_val = "success"
+
         return {
             "answer": answer,
             "content": answer,
             "persona": "household",
             "entityId": meter_id,
             "customerName": customer_name,
-            "status": "success",
+            "status": status_val,
+            "relevance": relevance_val,
             "isLlmGenerated": is_llm_generated,
-            "mode": "general_chat",
+            "mode": final_mode,
             "citations": [],
             "provenance": {
-                "knowledge_sources_used": ["household_telemetry"],
+                "knowledge_sources_used": ["household_telemetry"] if is_relevant else ["domain_scope_guard"],
                 "structured_references": [],
                 "calculations": [],
             },
             "assumptions": [],
-            "limitations": [],
+            "limitations": [] if is_relevant else ["Out-of-scope query: Question does not relate to residential electricity, billing, or appliance standards."],
             "missing_information": [],
             "structured_data": None,
         }

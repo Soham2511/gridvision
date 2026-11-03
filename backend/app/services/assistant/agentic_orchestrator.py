@@ -79,8 +79,10 @@ class AgenticKnowledgeOrchestrator:
             primary_mode = "appliance_lifecycle"
         elif any(k in p for k in ["reduce bill", "cost management", "saving", "save", "lower consumption", "reduce electricity", "compromis", "package", "balanced efficiency", "priority", "step", "execute", "investment", "cut bill"]):
             primary_mode = "cost_management"
-        else:
+        elif any(k in p for k in ["bill", "tariff", "kwh", "consumption", "usage", "meter", "reading", "cost", "yesterday", "forecast", "predict", "daily", "average", "peak", "power", "electricity", "energy", "standard", "code", "regulation", "is 732", "is732", "nec", "bee", "cea", "voltage", "amp", "load", "hello", "hi", "hey"]):
             primary_mode = "general_chat"
+        else:
+            primary_mode = "irrelevant"
 
         # Determine required knowledge sources
         sources: List[str] = []
@@ -172,6 +174,13 @@ class AgenticKnowledgeOrchestrator:
                 customer_name=customer_name,
             )
 
+        elif mode == "irrelevant":
+            return self._handle_irrelevant_mode(
+                prompt=prompt,
+                meter_id=meter_id,
+                customer_name=customer_name,
+            )
+
         else:
             return self._handle_general_chat_mode(
                 prompt=prompt,
@@ -180,8 +189,68 @@ class AgenticKnowledgeOrchestrator:
                 required_sources=required_sources,
             )
 
+    def _handle_irrelevant_mode(
+
+        self,
+
+        prompt: str,
+
+        meter_id: str,
+
+        customer_name: Optional[str] = None,
+
+    ) -> AssistantResponseContract:
+
+        """Courteous standard response for prompts outside residential energy scope."""
+
+        answer = (
+
+            f"### Domain Scope Notice\n\n"
+
+            f"Hello! I am GridVision's AI Energy Assistant for meter **{meter_id}** ({customer_name or 'Resident'}).\n\n"
+
+            f"Your inquiry (*\"{prompt}\"*) appears outside the domain of residential electricity, billing, appliance efficiency, or electrical planning.\n\n"
+
+            "**Here is what I can help you with:**\n"
+
+            "- **Billing & Consumption:** Check your current cycle charges, daily usage averages, and projected month-end bills.\n"
+
+            "- **Appliance Decisions:** Compare 3-Star vs 5-Star Inverter ACs, refrigerators, and calculate simple payback periods.\n"
+
+            "- **House Electrical Planning:** Sizing connected load, sub-circuit distribution, and solar PV feasibility under IS 732.\n"
+
+            "- **Cost Reduction:** Get prioritized, non-overlapping efficiency strategies to lower your monthly power bills.\n\n"
+
+            "*Feel free to ask any question related to your home's electricity!*"
+
+        )
+
+        return AssistantResponseContract(
+
+            answer=answer,
+
+            mode="irrelevant",
+
+            status="irrelevant",
+
+            relevance="irrelevant",
+
+            entityId=meter_id,
+
+            customerName=customer_name,
+
+            provenance=AssistantProvenance(knowledge_sources_used=["domain_scope_guard"]),
+
+            limitations=["Out-of-scope query: Question does not relate to residential electricity, billing, or appliance standards."],
+
+        )
+
+
+
     # =================================================================
+
     # Mode 1: General Chat / Standards / Telemetry / Unsupported
+
     # =================================================================
     def _handle_general_chat_mode(
         self,
