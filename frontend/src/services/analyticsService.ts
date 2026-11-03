@@ -24,6 +24,7 @@ import {
   CustomerSegmentationData,
   PlatformHealthSummary,
   KpiMetric,
+  PairedCommercialForecast,
 } from '../types/analytics';
 import {
   QuestionnaireSchema,
@@ -63,9 +64,13 @@ class AnalyticsService {
     return apiClient.get<OverviewApiResponse>('/overview');
   }
 
-  // --- Commercial Facilities ---
+  // --- Commercial Buildings ---
   async getCommercialBuildings(): Promise<CommercialBuilding[]> {
     return apiClient.get<CommercialBuilding[]>('/entities/commercial');
+  }
+
+  async getCommercialBuilding(buildingId: string): Promise<CommercialBuilding> {
+    return apiClient.get<CommercialBuilding>(`/entities/commercial/${encodeURIComponent(buildingId)}`);
   }
 
   async getCommercialForecast(buildingId: string): Promise<{
@@ -78,8 +83,14 @@ class AnalyticsService {
     }>(`/forecast/commercial/${encodeURIComponent(buildingId)}`);
   }
 
+  async getPairedCommercialForecast(buildingId: string): Promise<PairedCommercialForecast> {
+    return apiClient.get<PairedCommercialForecast>(
+      `/forecast/commercial/${encodeURIComponent(buildingId)}/paired`
+    );
+  }
+
   async getCommercialDashboard(
-    tab: 'building' | 'regional' = 'building',
+    tab: 'building' | 'regional' | 'portfolio' | 'eui' = 'building',
     timeRange: '1D' | '7D' | '1M' | '3M' | '1Y' = '1D',
     buildingId: string = 'Panther_office_1'
   ): Promise<CommercialDashboardData> {
@@ -217,8 +228,12 @@ class AnalyticsService {
   }
 
   // --- Government & Utilities Dashboard Data ---
-  async getGovernmentRegions(): Promise<GovernmentRegionItem[]> {
-    return apiClient.get<GovernmentRegionItem[]>('/dashboard/government/regions');
+  async getGovernmentRegions(
+    timeRange: '1D' | '7D' | '1M' | '3M' | '1Y' = '1D'
+  ): Promise<GovernmentRegionItem[]> {
+    return apiClient.get<GovernmentRegionItem[]>('/dashboard/government/regions', {
+      time_range: timeRange,
+    });
   }
 
   async getGovernmentDashboard(
@@ -250,7 +265,8 @@ class AnalyticsService {
       }
     );
   }
-// --- Dedicated Residential Features ---
+
+  // --- Dedicated Residential Features ---
   async getResidentialQuestionnaire(featureId: string): Promise<QuestionnaireSchema> {
     return apiClient.get<QuestionnaireSchema>(`/residential/questionnaires/${encodeURIComponent(featureId)}`);
   }

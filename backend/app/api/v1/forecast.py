@@ -16,6 +16,13 @@ def commercial_forecast(building_id: str):
     return success_response(service.get_commercial_forecast(building_id))
 
 
+@bp.route("/forecast/commercial/<building_id>/paired", methods=["GET"])
+def commercial_region_forecast(building_id: str):
+    """Return building and mapped total-grid forecasts from their separate models."""
+    service = current_app.extensions["forecast_service"]
+    return success_response(service.get_commercial_region_forecast(building_id))
+
+
 @bp.route("/forecast/residential/<household_id>", methods=["GET"])
 def residential_forecast(household_id: str):
     """Month-end demand forecast for a residential meter."""

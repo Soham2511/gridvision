@@ -3,14 +3,21 @@
 from __future__ import annotations
 
 from datetime import date
+from pathlib import Path
 
-from flask import Blueprint, current_app, request
+from flask import Blueprint, current_app, request, send_file
 
 from app.api.error_handlers import AppError, ResourceNotFoundError
+from app.models.anomaly_prediction import (
+    AnomalyPredictionError,
+    AnomalyPredictionService,
+)
 from app.models.customer_bill_prediction import (
     CustomerBillPredictionError,
     CustomerBillPredictionService,
 )
+from app.models.registry import MODEL_REGISTRY
+from app.services.segmentation_service import SegmentationUnavailableError
 from app.utils.responses import success_response
 
 bp = Blueprint("models", __name__)
@@ -18,6 +25,10 @@ bp = Blueprint("models", __name__)
 
 def _service() -> CustomerBillPredictionService:
     return current_app.extensions["customer_bill_prediction_service"]
+
+
+def _anomaly_service() -> AnomalyPredictionService:
+    return current_app.extensions["anomaly_prediction_service"]
 
 
 def _positive_int(value: str | None, name: str, default: int) -> int:
@@ -44,11 +55,199 @@ def _positive_int(value: str | None, name: str, default: int) -> int:
 def get_model_catalog():
     """Return real model metadata and data readiness for the model workbench."""
     try:
-        return success_response({"models": _service().get_model_catalog()})
+        models = _service().get_model_catalog()
     except CustomerBillPredictionError as exc:
         raise AppError(
             str(exc), code="MODEL_UNAVAILABLE", status_code=503
         ) from exc
+    segmentation_service = current_app.extensions[
+        "government_segmentation_service"
+    ]
+    try:
+        metadata = segmentation_service.get_model_metadata()
+        models.append(
+            {
+                **MODEL_REGISTRY["government-customer-segmentation"].as_dict(),
+                "status": "configured",
+                "provider": "published_artifacts",
+                "modelVersion": metadata.get("model_version", "unknown"),
+                "selectedModel": metadata.get("model_version", "unknown"),
+                "healthSummary": (
+                    f"{metadata.get('assignment_count', 0):,} buildings assigned "
+                    f"across {len(metadata.get('trained_models', []))} model groups."
+                ),
+                "assignmentCount": metadata.get("assignment_count", 0),
+                "trainedModelCount": len(metadata.get("trained_models", [])),
+                "observationStart": metadata.get("observation_start"),
+                "observationEndExclusive": metadata.get(
+                    "observation_end_exclusive"
+                ),
+                "features": sorted(
+                    {
+                        feature
+                        for trained_model in metadata.get("trained_models", [])
+                        for feature in trained_model.get(
+                            "transformed_feature_columns", []
+                        )
+                    }
+                ),
+            }
+        )
+    except SegmentationUnavailableError as exc:
+        models.append(
+            {
+                **MODEL_REGISTRY["government-customer-segmentation"].as_dict(),
+                "status": "unavailable",
+                "provider": "published_artifacts",
+                "modelVersion": "not_deployed",
+                "selectedModel": "not_deployed",
+                "healthSummary": str(exc),
+                "error": str(exc),
+            }
+        )
+    models.append(_anomaly_service().get_summary())
+    return success_response({"models": models})
+
+
+@bp.route("/models/anomaly-prediction", methods=["GET"])
+def get_anomaly_model():
+    """Return anomaly model status without coupling it to other model datasets."""
+    return success_response(_anomaly_service().get_summary())
+
+
+@bp.route("/models/<model_id>/entities", methods=["GET"])
+def get_forecast_model_entities(model_id: str):
+    """List entity inputs supported by a commercial, government, or anomaly model."""
+    service = current_app.extensions["forecast_service"]
+    if model_id == "commercial-building-forecast":
+        items = service.get_commercial_buildings()
+        return success_response({"items": items})
+    if model_id == "government-load-forecast":
+        items = service.get_regional_sites()
+        return success_response({"items": items})
+    if model_id == "anomaly-prediction":
+        try:
+            offset = _positive_int(request.args.get("offset"), "offset", 0)
+            limit = _positive_int(request.args.get("limit"), "limit", 100)
+            if limit < 1 or limit > 10_000:
+                raise AppError(
+                    "limit must be between 1 and 10000.",
+                    code="INVALID_INPUT",
+                    status_code=422,
+                )
+            query = request.args.get("query", "")
+            if len(query) > 100:
+                raise AppError(
+                    "query must be no longer than 100 characters.",
+                    code="INVALID_INPUT",
+                    status_code=422,
+                )
+            return success_response(
+                _anomaly_service().get_entities(
+                    query=query, offset=offset, limit=limit
+                )
+            )
+        except AnomalyPredictionError as exc:
+            raise AppError(str(exc), code="MODEL_UNAVAILABLE", status_code=503) from exc
+    raise ResourceNotFoundError(f"Forecast model '{model_id}' was not found.")
+
+
+@bp.route("/models/<model_id>/predict", methods=["POST"])
+def predict_forecast_model(model_id: str):
+    """Run a verified chronological holdout replay through the registered model."""
+    provider = current_app.extensions["model_provider"]
+    service = current_app.extensions["forecast_service"]
+    payload = request.get_json(force=True, silent=False) or {}
+    if model_id == "commercial-building-forecast":
+        entity_id = str(payload.get("entity_id", ""))
+        if not entity_id.isdigit() or int(entity_id) < 1:
+            raise AppError("entity_id must be a positive integer.", code="INVALID_INPUT", status_code=422)
+        sector = "commercial"
+    elif model_id == "government-load-forecast":
+        entity_id = str(payload.get("entity_id", ""))
+        if not entity_id.isdigit() or int(entity_id) < 1:
+            raise AppError("entity_id must be a positive integer.", code="INVALID_INPUT", status_code=422)
+        sector = "government"
+    elif model_id == "anomaly-prediction":
+        if not isinstance(payload, dict):
+            raise AppError("Request body must be a JSON object.", code="INVALID_INPUT", status_code=422)
+        if "start_date" not in payload or "end_date" not in payload:
+            raise AppError("start_date and end_date are required for anomaly analysis.", code="INVALID_INPUT", status_code=422)
+        if payload.get("customer_ids") is not None and (
+            not isinstance(payload["customer_ids"], list)
+            or any(
+                isinstance(customer_id, bool) or not isinstance(customer_id, int)
+                for customer_id in payload["customer_ids"]
+            )
+        ):
+            raise AppError("customer_ids must be a list of integer IDs.", code="INVALID_INPUT", status_code=422)
+        if not isinstance(payload["start_date"], str) or not isinstance(payload["end_date"], str):
+            raise AppError("start_date and end_date must be ISO dates.", code="INVALID_INPUT", status_code=422)
+        try:
+            result = _anomaly_service().run_analysis(payload)
+            return success_response(result)
+        except AnomalyPredictionError as exc:
+            raise AppError(str(exc), code="MODEL_UNAVAILABLE", status_code=503) from exc
+        except (TypeError, ValueError) as exc:
+            raise AppError(str(exc), code="INVALID_INPUT", status_code=422) from exc
+    else:
+        raise ResourceNotFoundError(f"Forecast model '{model_id}' was not found.")
+    horizon = payload.get("horizon_hours", 24)
+    if isinstance(horizon, bool) or not isinstance(horizon, int) or not 1 <= horizon <= 24:
+        raise AppError("horizon_hours must be an integer from 1 to 24.", code="INVALID_INPUT", status_code=422)
+    status = provider.get_forecast_model_info(sector)
+    if status.get("is_demo"):
+        raise AppError("The registered champion model is unavailable.", code="MODEL_UNAVAILABLE", status_code=503)
+    return success_response({
+        "model": status,
+        "entity_id": entity_id,
+        "horizon": provider.predict_horizon(sector, entity_id, horizon),
+    })
+
+
+@bp.route("/models/anomaly-prediction/runs", methods=["GET"])
+def get_anomaly_runs():
+    """List persisted anomaly analysis runs."""
+    limit = _positive_int(request.args.get("limit"), "limit", 25)
+    if limit < 1 or limit > 100:
+        raise AppError("limit must be between 1 and 100.", code="INVALID_INPUT", status_code=422)
+    try:
+        return success_response({"items": _anomaly_service().list_runs(limit)})
+    except AnomalyPredictionError as exc:
+        raise AppError(str(exc), code="MODEL_UNAVAILABLE", status_code=503) from exc
+
+
+@bp.route("/models/anomaly-prediction/runs/<run_id>", methods=["GET"])
+def get_anomaly_run(run_id: str):
+    """Return one persisted anomaly analysis run."""
+    try:
+        run = _anomaly_service().get_run(run_id)
+    except ValueError as exc:
+        raise ResourceNotFoundError("Anomaly analysis run was not found.") from exc
+    if run is None:
+        raise ResourceNotFoundError("Anomaly analysis run was not found.")
+    return success_response(run)
+
+
+@bp.route(
+    "/models/anomaly-prediction/runs/<run_id>/download/<filename>",
+    methods=["GET"],
+)
+def download_anomaly_run_file(run_id: str, filename: str):
+    """Download an allow-listed artifact from a completed anomaly run."""
+    try:
+        run = _anomaly_service().get_run(run_id)
+        path = _anomaly_service().get_run_file(run_id, filename)
+    except ValueError as exc:
+        raise ResourceNotFoundError("Anomaly analysis run was not found.") from exc
+    if run is None or path is None or run.get("status") != "completed":
+        raise ResourceNotFoundError("Anomaly run artifact was not found.")
+    media_type = {
+        ".csv": "text/csv",
+        ".json": "application/json",
+        ".geojson": "application/geo+json",
+    }.get(Path(filename).suffix, "application/octet-stream")
+    return send_file(path, as_attachment=True, download_name=filename, mimetype=media_type)
 
 
 @bp.route("/models/customer-bill-prediction/records", methods=["GET"])
@@ -103,10 +302,38 @@ def get_customer_months(entity_id: int):
     return success_response(records)
 
 
+@bp.route("/models/customer-bill-prediction/profile/<int:entity_id>", methods=["GET"])
+def get_customer_entity_profile(entity_id: int):
+    """Return identity and location metadata for one residential entity."""
+    try:
+        profile = _service().get_entity_profile(entity_id)
+    except CustomerBillPredictionError as exc:
+        raise AppError(
+            str(exc), code="DATA_UNAVAILABLE", status_code=503
+        ) from exc
+    if profile is None:
+        raise ResourceNotFoundError(
+            f"Customer entity '{entity_id}' was not found in the gold dataset."
+        )
+    return success_response(profile)
+
+
 @bp.route("/models/customer-bill-prediction/history", methods=["GET"])
 def get_customer_historical_insights():
     """Return residential historical trends from the customer gold dataset."""
     time_range = request.args.get("time_range", "ALL")
+    entity_id_value = request.args.get("entity_id")
+    entity_id = (
+        _positive_int(entity_id_value, "entity_id", 0)
+        if entity_id_value is not None
+        else None
+    )
+    if entity_id is not None and entity_id < 1:
+        raise AppError(
+            "entity_id must be a positive integer.",
+            code="INVALID_INPUT",
+            status_code=422,
+        )
     if time_range not in {"3M", "6M", "1Y", "ALL"}:
         raise AppError(
             "time_range must be one of 3M, 6M, 1Y, or ALL.",
@@ -114,7 +341,12 @@ def get_customer_historical_insights():
             status_code=422,
         )
     try:
-        result = _service().get_historical_gold_insights(time_range)
+        service = _service()
+        if entity_id is not None and not service.get_entity_months(entity_id):
+            raise ResourceNotFoundError(
+                f"Customer entity '{entity_id}' was not found in the gold dataset."
+            )
+        result = service.get_historical_gold_insights(time_range, entity_id)
     except CustomerBillPredictionError as exc:
         raise AppError(
             str(exc), code="DATA_UNAVAILABLE", status_code=503

@@ -6,11 +6,16 @@
 **/*.py[cod]
 **/node_modules
 **/.pytest_cache
+**/.pytest_cache/**
 **/.mypy_cache
 **/.ruff_cache
 tests
 data
 models
 mlruns
+logs
+/~/
+/D/
 frontend/dist
 frontend/.vite
+/.pytest_cache/

@@ -67,7 +67,7 @@ class ApiClient {
 
   private async request<T>(
     path: string,
-    options: RequestInit = {},
+    options: RequestInit & { timeoutMs?: number } = {},
     params?: Record<string, string | number | boolean | undefined | null>
   ): Promise<T> {
     const fullUrl = this.buildUrl(path, params);
@@ -82,7 +82,7 @@ class ApiClient {
     };
 
     const timeoutDuration =
-      (options as { timeoutMs?: number })?.timeoutMs ||
+      options?.timeoutMs ||
       (path.includes('/assistant/chat') ? 45000 : 30000);
 
     const controller = new AbortController();
@@ -160,6 +160,34 @@ class ApiClient {
       },
       params
     );
+  }
+
+  public async postLong<T>(path: string, body?: unknown, timeoutMs = 300000): Promise<T> {
+    return this.request<T>(
+      path,
+      {
+        method: 'POST',
+        body: body ? JSON.stringify(body) : undefined,
+        timeoutMs,
+      }
+    );
+  }
+
+  public async getBlob(path: string): Promise<Blob> {
+    const response = await fetch(this.buildUrl(path), {
+      headers: { Accept: 'application/octet-stream' },
+    });
+    if (!response.ok) {
+      let message = `Request failed with status ${response.status} (${response.statusText})`;
+      try {
+        const body = (await response.json()) as ApiResponse<unknown>;
+        message = body.error?.message || message;
+      } catch {
+        // Keep diagnostic
+      }
+      throw new ApiClientError(message, `HTTP_${response.status}`, response.status);
+    }
+    return response.blob();
   }
 
   public async put<T>(

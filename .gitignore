@@ -1,5 +1,8 @@
 # Python & Virtual Environments
 .venv/
+/~/
+# MLflow's local file store created under a malformed WSL drive URI
+/D/
 venv/
 ENV/
 env/
@@ -17,6 +20,10 @@ htmlcov/
 /notebooks/artifacts/
 /models/*.pkl
 /models/*.metadata.json
+/models/commercial/**
+!/models/commercial/.gitkeep
+/models/segmentation/**
+!/models/segmentation/.gitkeep
 *.duckdb
 *.sqlite
 *.sqlite3
@@ -33,16 +40,24 @@ htmlcov/
 !/logs/data/
 !/logs/data/quality_reports/
 !/logs/data/quality_reports/.gitkeep
+!/logs/data/quality_reports/commercial/
+!/logs/data/quality_reports/commercial/.gitkeep
 !/logs/endpoints/
 !/logs/endpoints/.gitkeep
 !/logs/model_cards/
 !/logs/model_cards/.gitkeep
+!/logs/model_cards/commercial/
+!/logs/model_cards/commercial/.gitkeep
 !/logs/model_metrics/
 !/logs/model_metrics/.gitkeep
+!/logs/model_metrics/commercial/
+!/logs/model_metrics/commercial/.gitkeep
 !/logs/testing/
 !/logs/testing/.gitkeep
 !/logs/training/
 !/logs/training/.gitkeep
+!/logs/training/commercial/
+!/logs/training/commercial/.gitkeep
 
 # Node & Frontend Build
 node_modules/
@@ -62,5 +77,6 @@ frontend/.env
 # IDE & OS files
 .vscode/
 .idea/
+.slingshot/
 .DS_Store
 Thumbs.db

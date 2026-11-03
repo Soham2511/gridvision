@@ -1,9 +1,110 @@
 services:
+  airflow:
+    image: gridvision-airflow:local
+    restart: unless-stopped
+    build:
+      context: ${GRIDVISION_BUILD_CONTEXT:-.}
+      dockerfile: Dockerfile.airflow
+    user: "${AIRFLOW_UID:-50000}:0"
+    command:
+      - bash
+      - -o
+      - pipefail
+      - -c
+      - umask 077; rm -f /opt/airflow/airflow-webserver.pid; airflow standalone 2>&1 | tee -a /opt/gridvision/logs/airflow/standalone.log
+    environment:
+      AIRFLOW_HOME: /opt/airflow
+      AIRFLOW__CORE__DAGS_FOLDER: /opt/gridvision/airflow
+      AIRFLOW__CORE__EXECUTOR: SequentialExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: "False"
+      AIRFLOW__WEBSERVER__WEB_SERVER_HOST: 0.0.0.0
+      AIRFLOW__WEBSERVER__WEB_SERVER_PORT: "8080"
+      GRIDVISION_DATA_DIR: /opt/gridvision/data
+      GRIDVISION_LOG_DIR: /opt/gridvision/logs
+      GRIDVISION_SOURCE_PATH: /opt/gridvision/data/sample/${GRIDVISION_SOURCE_FILENAME:-training_sample_50000.parquet}
+      SEGMENTATION_SOURCE_PATH: /opt/gridvision/data/bronze/${GRIDVISION_SOURCE_FILENAME:-training_sample_50000.parquet}
+      SEGMENTATION_BUILDING_SAMPLE_FRACTION: ${SEGMENTATION_BUILDING_SAMPLE_FRACTION:-0.1}
+      SEGMENTATION_OUTPUT_DIR: /opt/gridvision/data/segmentation
+      SEGMENTATION_FEATURE_PATH: /opt/gridvision/data/gold/customer_segmentation_features.parquet
+      SEGMENTATION_MODEL_DIR: /opt/gridvision/models/segmentation
+      SEGMENTATION_REPORTS_DIR: /opt/gridvision/docs/customer_segmentation/reports
+      SEGMENTATION_DUCKDB_MEMORY_LIMIT: ${SEGMENTATION_DUCKDB_MEMORY_LIMIT:-1GB}
+      SEGMENTATION_DUCKDB_THREADS: ${SEGMENTATION_DUCKDB_THREADS:-1}
+      GOVERNMENT_PIPELINE_INPUT: /opt/gridvision/data/sample/${GRIDVISION_SOURCE_FILENAME:-training_sample_50000.parquet}
+      GOVERNMENT_PIPELINE_REUSE_PREPARED: ${GOVERNMENT_PIPELINE_REUSE_PREPARED:-0}
+      MLFLOW_TRACKING_URI: http://mlflow:5001
+      GOVERNMENT_MLFLOW_MODEL_NAME: ${GOVERNMENT_MLFLOW_MODEL_NAME:-gridvision-government-load-forecast}
+      GOVERNMENT_MLFLOW_MODEL_ALIAS: ${GOVERNMENT_MLFLOW_MODEL_ALIAS:-${MLFLOW_MODEL_ALIAS:-champion}}
+      GRIDVISION_SOURCE_DATA: /opt/gridvision/data/anomaly_prediction/synthetic_2019_normal.parquet
+      GRIDVISION_SILVER_DATA: /opt/gridvision/data/silver/synthetic_2019_silver.parquet
+      GRIDVISION_GOLD_DATA: /opt/gridvision/data/gold/gridvision_model_features.parquet
+      GRIDVISION_MODEL_PATH: /opt/gridvision/models/anomaly_prediction/gridvision_anomaly_model.joblib
+      GRIDVISION_REPORT_DIR: /opt/gridvision/reports/anomaly_prediction/training
+      ANOMALY_MLFLOW_MODEL_NAME: ${ANOMALY_MLFLOW_MODEL_NAME:-gridvision-anomaly-detection}
+      ANOMALY_MLFLOW_MODEL_ALIAS: ${ANOMALY_MLFLOW_MODEL_ALIAS:-champion}
+      MLFLOW_EXPERIMENT_NAME: ${ANOMALY_MLFLOW_EXPERIMENT_NAME:-gridvision-anomaly-detection-container}
+      MLFLOW_MODEL_NAME: ${MLFLOW_MODEL_NAME:-customer-bill-prediction}
+      MLFLOW_MODEL_ALIAS: ${MLFLOW_MODEL_ALIAS:-champion}
+      CUSTOMER_SAMPLE_BUILDINGS: ${CUSTOMER_SAMPLE_BUILDINGS:-100}
+      CUSTOMER_SAMPLE_SEED: ${CUSTOMER_SAMPLE_SEED:-42}
+      CUSTOMER_MIN_MONTH_COVERAGE: ${CUSTOMER_MIN_MONTH_COVERAGE:-0.95}
+      CUSTOMER_TARIFF_INR_PER_KWH: ${CUSTOMER_TARIFF_INR_PER_KWH:-10.0}
+      CUSTOMER_DUCKDB_MEMORY_LIMIT: ${CUSTOMER_DUCKDB_MEMORY_LIMIT:-2GB}
+      CUSTOMER_DUCKDB_THREADS: ${CUSTOMER_DUCKDB_THREADS:-2}
+      CUSTOMER_DUCKDB_TEMP_DIR: /opt/airflow/tmp/customer-duckdb
+      MLFLOW_DATA_QUALITY_EXPERIMENT: ${MLFLOW_DATA_QUALITY_EXPERIMENT:-GridVision Data Quality}
+      COMMERCIAL_SILVER_DATASET: /opt/gridvision/data/silver/commercial_silver.parquet
+      COMMERCIAL_GOLD_DATASET: /opt/gridvision/data/gold/commercial_gold.parquet
+      COMMERCIAL_DUCKDB_MEMORY_LIMIT: ${COMMERCIAL_DUCKDB_MEMORY_LIMIT:-2GB}
+      COMMERCIAL_DUCKDB_THREADS: ${COMMERCIAL_DUCKDB_THREADS:-2}
+      COMMERCIAL_DUCKDB_TEMP_DIR: /opt/airflow/tmp/commercial-duckdb
+      COMMERCIAL_FORECAST_HORIZON_HOURS: ${COMMERCIAL_FORECAST_HORIZON_HOURS:-24}
+      COMMERCIAL_SAMPLE_BUILDINGS: ${COMMERCIAL_SAMPLE_BUILDINGS:-100}
+      GOVERNMENT_PIPELINE_FEATURES: /opt/gridvision/mlflow/government/feature_columns_2018.joblib
+      GOVERNMENT_PIPELINE_OUTPUT: /opt/gridvision/data/airflow/government/training_ready_2018.parquet
+      GOVERNMENT_PIPELINE_MODEL: /opt/gridvision/data/airflow/government/hybrid_grid_2018.joblib
+      GOVERNMENT_PIPELINE_MEMORY_LIMIT: ${GOVERNMENT_PIPELINE_MEMORY_LIMIT:-4GB}
+      GOVERNMENT_PIPELINE_THREADS: ${GOVERNMENT_PIPELINE_THREADS:-4}
+      GOVERNMENT_PIPELINE_HORIZON_HOURS: ${GOVERNMENT_PIPELINE_HORIZON_HOURS:-24}
+      GOVERNMENT_PIPELINE_BATCH_SIZE: ${GOVERNMENT_PIPELINE_BATCH_SIZE:-100000}
+      GOVERNMENT_PIPELINE_MAX_TRAINING_ROWS: ${GOVERNMENT_PIPELINE_MAX_TRAINING_ROWS:-1000000}
+      GOVERNMENT_PIPELINE_MAX_VALIDATION_ROWS: ${GOVERNMENT_PIPELINE_MAX_VALIDATION_ROWS:-250000}
+      GOVERNMENT_PIPELINE_N_ESTIMATORS: ${GOVERNMENT_PIPELINE_N_ESTIMATORS:-1200}
+      AIRFLOW__LOGGING__BASE_LOG_FOLDER: /opt/airflow/logs
+    volumes:
+      - airflow-home:/opt/airflow
+      - ./airflow:/opt/gridvision/airflow:ro
+      - ./backend/app/models/anomaly_prediction/runtime:/opt/gridvision/backend/app/models/anomaly_prediction/runtime:ro
+      - ./models/anomaly_prediction:/opt/gridvision/models/anomaly_prediction
+      - ./reports/anomaly_prediction:/opt/gridvision/reports/anomaly_prediction
+      - ./training:/opt/gridvision/training:ro
+      - ./mlflow/government:/opt/gridvision/mlflow/government:ro
+      - ./models/segmentation:/opt/gridvision/models/segmentation
+      - ./docs/customer_segmentation/reports:/opt/gridvision/docs/customer_segmentation/reports
+      - ${GRIDVISION_DATA_DIR:?Set GRIDVISION_DATA_DIR}:/opt/gridvision/data
+      - ${GRIDVISION_LOG_DIR:-./logs}:/opt/gridvision/logs
+      - ${GRIDVISION_SOURCE_PATH:-${GRIDVISION_DATA_DIR}/sample/training_sample_50000.parquet}:/opt/gridvision/data/sample/${GRIDVISION_SOURCE_FILENAME:-training_sample_50000.parquet}:ro
+    ports:
+      - "127.0.0.1:${GRIDVISION_AIRFLOW_HOST_PORT:-8081}:8080"
+    depends_on:
+      mlflow:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=3)"
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 60s
+
   mlflow:
     image: gridvision-backend:local
     restart: unless-stopped
     build:
-      context: .
+      context: ${GRIDVISION_BUILD_CONTEXT:-.}
       dockerfile: Dockerfile.backend
     command:
       - python
@@ -40,7 +141,7 @@ services:
     image: gridvision-backend:local
     restart: unless-stopped
     build:
-      context: .
+      context: ${GRIDVISION_BUILD_CONTEXT:-.}
       dockerfile: Dockerfile.backend
     environment:
       FLASK_ENV: production
@@ -50,17 +151,40 @@ services:
       MLFLOW_TRACKING_URI: http://mlflow:5001
       MLFLOW_MODEL_NAME: ${MLFLOW_MODEL_NAME:-customer-bill-prediction}
       MLFLOW_MODEL_ALIAS: ${MLFLOW_MODEL_ALIAS:-champion}
+      COMMERCIAL_MLFLOW_MODEL_NAME: ${COMMERCIAL_MLFLOW_MODEL_NAME:-gridvision-commercial-building-forecast}
+      COMMERCIAL_MLFLOW_MODEL_ALIAS: ${COMMERCIAL_MLFLOW_MODEL_ALIAS:-${MLFLOW_MODEL_ALIAS:-champion}}
+      GOVERNMENT_MLFLOW_MODEL_NAME: ${GOVERNMENT_MLFLOW_MODEL_NAME:-gridvision-government-load-forecast}
+      GOVERNMENT_MLFLOW_MODEL_ALIAS: ${GOVERNMENT_MLFLOW_MODEL_ALIAS:-${MLFLOW_MODEL_ALIAS:-champion}}
       CUSTOMER_TARIFF_INR_PER_KWH: ${CUSTOMER_TARIFF_INR_PER_KWH:-10.0}
       CUSTOMER_GOLD_DATASET_PATH: /data/gold/customer_gold.parquet
       CUSTOMER_MODEL_METADATA_PATH: /models/customer_bill_prediction.metadata.json
-      CORS_ORIGINS: ${CORS_ORIGINS:-*}
+      COMMERCIAL_FORECAST_DATA_PATH: /data/gold/commercial_gold.parquet
+      COMMERCIAL_FORECAST_MODEL_PATH: /models/commercial/building_forecast.joblib
+      GOVERNMENT_FORECAST_DATA_PATH: /data/government/training_ready_2018.parquet
+      GOVERNMENT_FORECAST_MODEL_PATH: /data/government/hybrid_grid_2018.joblib
+      SEGMENTATION_OUTPUT_DIR: /data/segmentation
+      SEGMENTATION_FEATURE_PATH: /data/gold/customer_segmentation_features.parquet
+      SEGMENTATION_MODEL_DIR: /models/segmentation
+      SEGMENTATION_REPORTS_DIR: /docs/customer_segmentation/reports
+      ANOMALY_DATASET_PATH: /data/anomaly_prediction/synthetic_2019_normal.parquet
+      ANOMALY_MODEL_PATH: /models/anomaly_prediction/gridvision_anomaly_model.joblib
+      ANOMALY_RUNS_PATH: /reports/anomaly_prediction/application_runs
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8082,http://127.0.0.1:8082,http://localhost:5173,http://127.0.0.1:5173}
     volumes:
       - ${GRIDVISION_DATA_DIR:?Set GRIDVISION_DATA_DIR}/mlflow:/mlflow:ro
-      - ${GRIDVISION_DATA_DIR:?Set GRIDVISION_DATA_DIR}/gold:/data/gold
-      - ${GRIDVISION_MODELS_DIR:-./models}:/models
+      - ${GRIDVISION_DATA_DIR:?Set GRIDVISION_DATA_DIR}/gold:/data/gold:ro
+      - ${GRIDVISION_DATA_DIR:?Set GRIDVISION_DATA_DIR}/anomaly_prediction:/data/anomaly_prediction:ro
+      - ${GRIDVISION_DATA_DIR:?Set GRIDVISION_DATA_DIR}/airflow/government:/data/government:ro
+      - ${GRIDVISION_DATA_DIR:?Set GRIDVISION_DATA_DIR}/segmentation:/data/segmentation:ro
+      - ./models/anomaly_prediction:/models/anomaly_prediction:ro
+      - ./reports/anomaly_prediction:/reports/anomaly_prediction
+      - ./docs/customer_segmentation/reports:/docs/customer_segmentation/reports:ro
+      - ./models/segmentation:/models/segmentation:ro
+      - ./models/commercial:/models/commercial:ro
+      - ./models/customer_bill_prediction.metadata.json:/models/customer_bill_prediction.metadata.json:ro
       - ${GRIDVISION_LOG_DIR:-./logs}:/logs
     ports:
-      - "127.0.0.1:5000:5000"
+      - "127.0.0.1:${GRIDVISION_BACKEND_HOST_PORT:-5000}:5000"
     depends_on:
       mlflow:
         condition: service_healthy
@@ -78,12 +202,16 @@ services:
   frontend:
     restart: unless-stopped
     build:
-      context: .
+      context: ${GRIDVISION_BUILD_CONTEXT:-.}
       dockerfile: Dockerfile.frontend
       args:
-        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api/v1}
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8082/api/v1}
+        VITE_MAP_TILE_URL: ${VITE_MAP_TILE_URL:-https://tile.openstreetmap.org/{z}/{x}/{y}.png}
     depends_on:
       backend:
         condition: service_healthy
     ports:
-      - "8080:80"
+      - "${GRIDVISION_FRONTEND_HOST_PORT:-8082}:80"
+
+volumes:
+  airflow-home:

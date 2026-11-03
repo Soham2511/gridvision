@@ -3,6 +3,7 @@ import { usePersona } from '../context';
 import { analyticsService } from '../services/analyticsService';
 import { HistoricalInsightsData } from '../types/analytics';
 import { CommonMetricCard, CommonChartHoverCard } from '../components/common';
+import { ResidentialGoldInsightsPage } from './ResidentialGoldInsightsPage';
 import {
   ResponsiveContainer,
   AreaChart,
@@ -22,6 +23,12 @@ import {
 } from 'lucide-react';
 
 export const HistoricalAnalysisPage: React.FC = () => {
+  const { currentPersona } = usePersona();
+  const persona = currentPersona || 'household';
+
+  if (persona === 'household') {
+    return <ResidentialGoldInsightsPage />;
+  }
   return <PersonaHistoricalAnalysisPage />;
 };
 
@@ -35,11 +42,14 @@ const PersonaHistoricalAnalysisPage: React.FC = () => {
   const [timeRange, setTimeRange] = useState<'30D' | '90D' | '1Y' | 'ALL'>('30D');
   const [historicalData, setHistoricalData] = useState<HistoricalInsightsData | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
+  const [historyError, setHistoryError] = useState<string | null>(null);
 
   // Load historical analytics dynamically based on persona, active entity, and time range
   useEffect(() => {
     let isMounted = true;
     setLoading(true);
+    setHistoryError(null);
+    setHistoricalData(null);
 
     analyticsService
       .getHistoricalInsights(persona, timeRange, activeEntity)
@@ -49,8 +59,13 @@ const PersonaHistoricalAnalysisPage: React.FC = () => {
           setLoading(false);
         }
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         if (isMounted) {
+          setHistoryError(
+            error instanceof Error
+              ? error.message
+              : 'Unable to load historical telemetry.'
+          );
           setLoading(false);
         }
       });
@@ -63,14 +78,13 @@ const PersonaHistoricalAnalysisPage: React.FC = () => {
   // Subtitle personalized by sector persona
   const subtitle = useMemo(() => {
     if (persona === 'commercial') {
-      return `Analyze facility demand & peak load trends over time for ${activeEntity || 'Panther_office_1'}`;
+      return `Analyze facility demand & peak load trends over time for ${historicalData?.entityId || activeEntity || 'Panther_office_1'}`;
     }
     if (persona === 'government') {
-      return 'Analyze system-wide grid demand & substation capacity history across 17 regional zones';
+      return 'Review system-wide grid demand across the available historical telemetry';
     }
-    const numPart = (activeEntity || '2254213').replace(/METER-/i, '').replace(/meter-/i, '');
-    return `Analyze household energy consumption over time for OBJECTID ${numPart}`;
-  }, [persona, activeEntity]);
+    return 'Analyze your household energy consumption over time';
+  }, [persona, activeEntity, historicalData?.entityId]);
 
   // Find peak day data point to anchor the visual demarcation pin
   const peakPoint = useMemo(() => {
@@ -86,15 +100,34 @@ const PersonaHistoricalAnalysisPage: React.FC = () => {
 
   // Dynamic Y-axis scale based on persona
   const { yDomain, yTicks } = useMemo(() => {
-    if (persona === 'commercial') {
-      return { yDomain: [0, 360] as [number, number], yTicks: [0, 60, 120, 180, 240, 300, 360] };
-    }
     if (persona === 'government') {
-      return { yDomain: [250, 500] as [number, number], yTicks: [250, 300, 350, 400, 450, 500] };
+      const observedPeak = Math.max(
+        0,
+        ...(historicalData?.historyCurve.map((point) => point.peakDemand) ?? []),
+      );
+      const rawStep = Math.max(observedPeak / 5, 1);
+      const magnitude = 10 ** Math.floor(Math.log10(rawStep));
+      const normalizedStep = rawStep / magnitude;
+      const step =
+        (normalizedStep <= 1
+          ? 1
+          : normalizedStep <= 2
+            ? 2
+            : normalizedStep <= 5
+              ? 5
+              : 10) * magnitude;
+      const upperBound = Math.max(step, Math.ceil(observedPeak / step) * step);
+      const ticks = Array.from(
+        { length: Math.round(upperBound / step) + 1 },
+        (_, index) => index * step,
+      );
+      return { yDomain: [0, upperBound] as [number, number], yTicks: ticks };
     }
-    // Residential: 0 - 10 kWh with ticks 0, 2, 4, 6, 8, 10 matching screenshot
-    return { yDomain: [0, 10] as [number, number], yTicks: [0, 2, 4, 6, 8, 10] };
-  }, [persona]);
+    if (persona === 'household') {
+      return { yDomain: [0, 10] as [number, number], yTicks: [0, 2, 4, 6, 8, 10] };
+    }
+    return { yDomain: ['auto', 'auto'] as [string, string], yTicks: undefined };
+  }, [historicalData?.historyCurve, persona]);
 
   return (
     <div
@@ -171,6 +204,21 @@ const PersonaHistoricalAnalysisPage: React.FC = () => {
         </div>
       </div>
 
+      {historyError && (
+        <div
+          role="alert"
+          style={{
+            border: '1px solid #FECACA',
+            background: '#FEF2F2',
+            color: '#991B1B',
+            borderRadius: '12px',
+            padding: '0.85rem 1rem',
+          }}
+        >
+          {historyError}
+        </div>
+      )}
+
       {/* ========================================================= */}
       {/* 2. Four KPI Cards using CommonMetricCard                  */}
       {/* ========================================================= */}
@@ -195,7 +243,7 @@ const PersonaHistoricalAnalysisPage: React.FC = () => {
 
           {/* Card 2: Average Daily Consumption / Usage */}
           <CommonMetricCard
-            title="Average Daily Usage"
+            title={persona === 'government' ? 'Average Grid Demand' : 'Average Daily Usage'}
             value={
               historicalData.unit === 'kWh' && isMWh
                 ? (historicalData.avgDailyConsumption / 1000).toFixed(3)
@@ -208,22 +256,24 @@ const PersonaHistoricalAnalysisPage: React.FC = () => {
           />
 
           {/* Card 3: Average Monthly Consumption / Usage */}
-          <CommonMetricCard
-            title="Average Monthly Usage"
-            value={
-              historicalData.unit === 'kWh' && isMWh
-                ? (historicalData.avgMonthlyConsumption / 1000).toFixed(2)
-                : Math.round(historicalData.avgMonthlyConsumption)
-            }
-            unit={historicalData.unit === 'kWh' && isMWh ? 'MWh' : historicalData.unit}
-            icon={<BarChart3 size={22} color="#7C3AED" />}
-            iconBg="#F5F3FF"
-            hoverBorderColor="rgba(124, 58, 237, 0.4)"
-          />
+          {persona !== 'government' && (
+            <CommonMetricCard
+              title="Average Monthly Usage"
+              value={
+                historicalData.unit === 'kWh' && isMWh
+                  ? (historicalData.avgMonthlyConsumption / 1000).toFixed(2)
+                  : Math.round(historicalData.avgMonthlyConsumption)
+              }
+              unit={historicalData.unit === 'kWh' && isMWh ? 'MWh' : historicalData.unit}
+              icon={<BarChart3 size={22} color="#7C3AED" />}
+              iconBg="#F5F3FF"
+              hoverBorderColor="rgba(124, 58, 237, 0.4)"
+            />
+          )}
 
           {/* Card 4: Peak Consumption */}
           <CommonMetricCard
-            title="Peak Consumption"
+            title={persona === 'government' ? 'Peak Grid Demand' : 'Peak Consumption'}
             value={
               historicalData.unit === 'kWh' && isMWh
                 ? (historicalData.peakConsumption / 1000).toFixed(3)
@@ -262,7 +312,7 @@ const PersonaHistoricalAnalysisPage: React.FC = () => {
           }}
         >
           <h2 style={{ fontSize: '1.2rem', fontWeight: 700, color: '#0B1F33', margin: 0 }}>
-            Daily Energy Consumption
+            {persona === 'government' ? 'Daily Grid Demand' : 'Daily Energy Consumption'}
           </h2>
 
           {/* Top-right Legend matching screenshot */}
@@ -338,7 +388,7 @@ const PersonaHistoricalAnalysisPage: React.FC = () => {
                   axisLine={false}
                   tickLine={false}
                   label={{
-                    value: `Consumption (${historicalData?.unit || 'kWh'})`,
+                    value: `${persona === 'government' ? 'Demand' : 'Consumption'} (${historicalData?.unit || 'kWh'})`,
                     angle: -90,
                     position: 'insideLeft',
                     fill: '#64748B',
@@ -354,7 +404,10 @@ const PersonaHistoricalAnalysisPage: React.FC = () => {
                   content={
                     <CommonChartHoverCard
                       unit={historicalData?.unit || 'kWh'}
+                      totalUnit={persona === 'government' ? 'MWh' : undefined}
+                      totalLabel={persona === 'government' ? 'Daily Energy' : undefined}
                       datePrefix=""
+                      showCost={persona !== 'government'}
                     />
                   }
                 />

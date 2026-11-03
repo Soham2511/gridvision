@@ -55,3 +55,13 @@ class BaseModelProvider(ABC):
     @abstractmethod
     def get_model_status(self) -> dict[str, Any]:
         """Report provider health, active models, and readiness status."""
+
+    def get_forecast_model_info(self, sector: str) -> dict[str, Any]:
+        """Return identity metadata for an individual horizon forecast model."""
+        status = self.get_model_status()
+        return {
+            "model_name": sector,
+            "model_version": status.get("model_version") or "unknown",
+            "provider": status.get("provider", "unknown"),
+            "is_demo": bool(status.get("is_demo", False)),
+        }

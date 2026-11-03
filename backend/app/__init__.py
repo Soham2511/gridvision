@@ -17,6 +17,7 @@ from app.providers.parquet_data_provider import ParquetDataProvider
 from app.providers.sample_data_provider import SampleDataProvider
 from app.providers.mock_model_provider import DevelopmentModelProvider
 from app.providers.mlflow_adapter import MLflowModelAdapter
+from app.providers.trained_forecast_provider import TrainedForecastProvider
 from app.services.health_service import HealthService
 from app.services.forecast_service import ForecastService
 from app.services.dashboard_service import DashboardService
@@ -27,6 +28,8 @@ from app.services.insight_service import InsightService
 from app.services.assistant_service import AssistantService
 from app.providers.llm import GroqLLMAdapter
 from app.models.customer_bill_prediction import CustomerBillPredictionService
+from app.services.segmentation_service import SegmentationService
+from app.models.anomaly_prediction import AnomalyPredictionService
 
 
 def create_app(config_class: type[BaseConfig] | None = None) -> Flask:
@@ -71,16 +74,16 @@ def create_app(config_class: type[BaseConfig] | None = None) -> Flask:
         supports_credentials=True,
     )
 
-    # Instantiate providers based on configuration (defaults to verified real Parquet)
+    # Instantiate providers based on configuration
     data_provider_type = app.config.get("DATA_PROVIDER", "parquet").lower()
-    if data_provider_type == "sample":
-        data_provider = SampleDataProvider()
-    else:
+    if data_provider_type == "parquet":
         data_provider = ParquetDataProvider()
+    else:
+        data_provider = SampleDataProvider()
 
     model_provider_type = app.config.get("MODEL_PROVIDER", "development").lower()
     if model_provider_type == "mlflow":
-        model_provider = MLflowModelAdapter(
+        customer_model_provider = MLflowModelAdapter(
             tracking_uri=app.config.get("MLFLOW_TRACKING_URI"),
             model_alias=app.config.get("MLFLOW_MODEL_ALIAS", "champion"),
             model_name=app.config.get(
@@ -90,8 +93,22 @@ def create_app(config_class: type[BaseConfig] | None = None) -> Flask:
                 "CUSTOMER_TARIFF_INR_PER_KWH", 10.0
             ),
         )
+        model_provider = TrainedForecastProvider(
+            customer_provider=customer_model_provider,
+            commercial_data=app.config["COMMERCIAL_FORECAST_DATA_PATH"],
+            commercial_model=app.config["COMMERCIAL_FORECAST_MODEL_PATH"],
+            government_data=app.config["GOVERNMENT_FORECAST_DATA_PATH"],
+            government_model=app.config["GOVERNMENT_FORECAST_MODEL_PATH"],
+            tracking_uri=app.config.get("MLFLOW_TRACKING_URI", ""),
+            commercial_model_name=app.config["COMMERCIAL_MLFLOW_MODEL_NAME"],
+            government_model_name=app.config["GOVERNMENT_MLFLOW_MODEL_NAME"],
+            model_alias=app.config["MLFLOW_MODEL_ALIAS"],
+            commercial_model_alias=app.config["COMMERCIAL_MLFLOW_MODEL_ALIAS"],
+            government_model_alias=app.config["GOVERNMENT_MLFLOW_MODEL_ALIAS"],
+        )
     else:
         model_provider = DevelopmentModelProvider()
+        customer_model_provider = model_provider
 
     # Instantiate LLM provider for conversational assistant
     llm_provider = GroqLLMAdapter(
@@ -103,7 +120,7 @@ def create_app(config_class: type[BaseConfig] | None = None) -> Flask:
     # Instantiate business services
     health_svc = HealthService(data_provider, model_provider)
     forecast_svc = ForecastService(data_provider, model_provider)
-    dashboard_svc = DashboardService(data_provider)
+    dashboard_svc = DashboardService(data_provider, model_provider)
     peak_svc = PeakDemandService(data_provider)
     anomaly_svc = AnomalyService(data_provider)
     customer_svc = CustomerService(data_provider)
@@ -112,8 +129,9 @@ def create_app(config_class: type[BaseConfig] | None = None) -> Flask:
         dataset_path=app.config["CUSTOMER_GOLD_DATASET_PATH"],
         metadata_path=app.config["CUSTOMER_MODEL_METADATA_PATH"],
         artifact_path=app.config["CUSTOMER_MODEL_ARTIFACT_PATH"],
-        model_provider=model_provider,
+        model_provider=customer_model_provider,
         tariff_inr_per_kwh=app.config["CUSTOMER_TARIFF_INR_PER_KWH"],
+        forecast_model_provider=model_provider,
     )
     assistant_svc = AssistantService(
         data_provider,
@@ -123,6 +141,17 @@ def create_app(config_class: type[BaseConfig] | None = None) -> Flask:
         temperature=app.config.get("ASSISTANT_TEMPERATURE", 0.2),
         max_tokens=app.config.get("ASSISTANT_MAX_TOKENS", 800),
         prediction_service=customer_bill_prediction_svc,
+    )
+    government_segmentation_svc = SegmentationService(
+        output_dir=app.config["SEGMENTATION_OUTPUT_DIR"],
+        reports_dir=app.config["SEGMENTATION_REPORTS_DIR"],
+        max_page_size=app.config["SEGMENTATION_API_MAX_PAGE_SIZE"],
+    )
+    anomaly_prediction_svc = AnomalyPredictionService(
+        dataset_path=app.config["ANOMALY_DATASET_PATH"],
+        model_path=app.config["ANOMALY_MODEL_PATH"],
+        project_root=app.config["PROJECT_ROOT"],
+        runs_path=app.config["ANOMALY_RUNS_PATH"],
     )
 
     # Attach to app extensions
@@ -139,6 +168,8 @@ def create_app(config_class: type[BaseConfig] | None = None) -> Flask:
     app.extensions["customer_bill_prediction_service"] = (
         customer_bill_prediction_svc
     )
+    app.extensions["government_segmentation_service"] = government_segmentation_svc
+    app.extensions["anomaly_prediction_service"] = anomaly_prediction_svc
 
     # Register error handlers
     register_error_handlers(app)
@@ -164,6 +195,7 @@ def create_app(config_class: type[BaseConfig] | None = None) -> Flask:
                 "anomalies": f"{app.config.get('API_PREFIX')}/anomalies",
                 "customers": f"{app.config.get('API_PREFIX')}/customers/segmentation-matrix",
                 "insights": f"{app.config.get('API_PREFIX')}/energy-insights",
+                "government_segmentation": f"{app.config.get('API_PREFIX')}/government/segmentation/overview",
             },
         })
 

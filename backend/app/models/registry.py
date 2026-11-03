@@ -32,14 +32,38 @@ MODEL_REGISTRY = {
             "features in the versioned gold dataset."
         ),
     ),
-    "government-load-forecasting": ModelDefinition(
-        model_id="government-load-forecasting",
-        name="Government Grid Load Forecaster",
+    "commercial-building-forecast": ModelDefinition(
+        model_id="commercial-building-forecast",
+        name="Commercial Building Forecast",
+        domain="commercial",
+        task="24_hour_building_energy_forecast",
+        description="Predicts hourly commercial building demand using the persisted chronological holdout model.",
+    ),
+    "government-load-forecast": ModelDefinition(
+        model_id="government-load-forecast",
+        name="Government Grid Load Forecast",
         domain="government",
-        task="grid_load_forecasting",
+        task="24_hour_grid_energy_forecast",
+        description="Predicts hourly coarse-grid demand using the per-grid routed hybrid model.",
+    ),
+    "government-customer-segmentation": ModelDefinition(
+        model_id="government-customer-segmentation",
+        name="Government Customer Segmentation",
+        domain="government",
+        task="building_behaviour_clustering",
         description=(
-            "Dual LightGBM hybrid model predicting multi-horizon regional grid energy demand "
-            "with dynamic per-grid routing."
+            "Groups consumer buildings by energy-use behaviour and publishes "
+            "regional, temporal, time-profile, and survey-priority summaries."
+        ),
+    ),
+    "anomaly-prediction": ModelDefinition(
+        model_id="anomaly-prediction",
+        name="Anomaly Prediction",
+        domain="grid",
+        task="spatial_anomaly_detection_and_localization",
+        description=(
+            "Runs the saved GridVision anomaly detector and spatially localizes "
+            "customer-level and area-level anomaly events from the project bundle."
         ),
     ),
 }

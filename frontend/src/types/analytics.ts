@@ -44,9 +44,16 @@ export type PeakDemandSummary = PeakDemandAnalysis;
 export interface CommercialBuilding {
   buildingId: string;
   siteId: string;
+  coarseGridId?: number;
   primarySpaceUsage: string;
+  specificSpaceUsage?: string | null;
+  buildingType?: string | null;
   sqm: number;
+  footprintAreaM2?: number | null;
   yearBuilt: number;
+  idfKw?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
   recentDemandKwh: number;
   predictedDemandKwh: number;
   absErrorKwh: number;
@@ -54,9 +61,41 @@ export interface CommercialBuilding {
   lastTimestamp: string;
 }
 
+export interface ForecastModelIdentity {
+  model_name: string;
+  model_version: string;
+  provider: string;
+  is_demo: boolean;
+}
+
+export interface PairedForecastPoint {
+  timestamp: string;
+  horizon_hours: number;
+  commercial_prediction: number;
+  total_grid_demand_prediction: number;
+}
+
+export interface PairedCommercialForecast {
+  generated_at: string;
+  building: { building_id: string; 'id.grid.coarse': number };
+  commercial_forecast: {
+    source: 'commercial_building_model';
+    model: ForecastModelIdentity;
+    horizon: { timestamp: string; horizon_hours: number; prediction: number }[];
+  };
+  government_forecast: {
+    source: 'government_grid_model';
+    scope: 'total_grid_demand';
+    grid_id: number;
+    model: ForecastModelIdentity;
+    horizon: { timestamp: string; horizon_hours: number; prediction: number }[];
+  };
+  paired_horizon: PairedForecastPoint[];
+}
+
 export interface ResidentialMeter {
   householdId: string;
-  objectId?: number;
+  objectId?: number | string;
   meterId?: string;
   dailyKwh: number;
   actualCycleKwhSoFar: number;
@@ -79,7 +118,7 @@ export interface HouseholdConsumptionPoint {
 
 export interface HouseholdOverview {
   householdId: string;
-  objectId?: number;
+  objectId?: number | string;
   meterId?: string;
   userName: string;
   currentDailyUsageKwh: number;
@@ -232,6 +271,7 @@ export interface CommercialDashboardData {
     label: string;
   };
   demarcationTime?: string;
+  dataPeriod?: string;
   curve: CommercialDashboardPoint[];
 }
 
@@ -240,7 +280,7 @@ export interface GovernmentRegionItem {
   name: string;
   currentDemand: number;
   predictedDemand: number;
-  deltaPct: number;
+  deltaPct: number | null;
   isIncreaseNegative?: boolean;
   pinColor: string;
   sparkline: number[];
@@ -253,8 +293,8 @@ export interface GovernmentDashboardData {
   regionName?: string;
   timeRange: '1D' | '7D' | '1M' | '3M' | '1Y';
   avgDemand: number;
-  avgDemandDeltaPct: number;
-  prevPeriodAvgDemand: number;
+  avgDemandDeltaPct: number | null;
+  prevPeriodAvgDemand: number | null;
   peakDemand: number;
   peakTimestamp: string;
   predictedPeak: number;
@@ -276,6 +316,7 @@ export interface GovernmentDashboardData {
     label: string;
   };
   demarcationTime?: string;
+  dataPeriod?: string;
   yDomain: [number, number];
   yTicks: number[];
   curve: Array<{
@@ -324,10 +365,11 @@ export interface ModelRegistryItem {
   personaUsed: string;
   version: string;
   status: 'Active' | 'Monitoring' | 'Deprecated' | 'Configured' | 'Unavailable';
+  runSummary: string;
   lastInference: string;
-  mse: number;
-  rmse: number;
-  r2: number;
+  mse: number | null;
+  rmse: number | null;
+  r2: number | null;
 }
 
 export interface PlatformHealthSummary {
@@ -381,10 +423,16 @@ export interface RegisteredModel {
   modelVersion: string;
   selectedModel: string;
   error?: string;
+  runSummary?: string;
   dataset?: CustomerBillModel['dataset'];
   testMetrics?: CustomerBillModel['testMetrics'];
   features?: string[];
   tariffInrPerKwh?: number;
+  healthSummary?: string;
+  assignmentCount?: number;
+  trainedModelCount?: number;
+  observationStart?: string | null;
+  observationEndExclusive?: string | null;
 }
 
 export interface CustomerBillRecord {
@@ -432,10 +480,12 @@ export interface ResidentialGoldHistoryPoint {
   averageProjectionKwh: number;
   averageAbsoluteErrorKwh: number;
   averageCoverageRatio: number;
+  monthOverMonthChangePercent: number | null;
 }
 
 export interface ResidentialGoldHistory {
   timeRange: '3M' | '6M' | '1Y' | 'ALL';
+  entityId: string | null;
   monthsReturned: number;
   startMonth: string;
   endMonth: string;
@@ -468,4 +518,21 @@ export interface ResidentialGoldHistory {
     entityCount: number;
   }>;
   history: ResidentialGoldHistoryPoint[];
+}
+
+export interface ResidentialBuildingProfile {
+  entityId: string;
+  buildingType: string | null;
+  specificUseType: string | null;
+  useType: string | null;
+  buildingAreaM2: number | null;
+  footprintAreaM2: number | null;
+  effectiveYearBuilt: number | null;
+  vintage: string | null;
+  gridCoarseId: number | null;
+  idfKw: string | null;
+  gridFinerId: number | null;
+  tractId: string | null;
+  latitude: number | null;
+  longitude: number | null;
 }

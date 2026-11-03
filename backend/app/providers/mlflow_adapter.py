@@ -30,7 +30,7 @@ class MLflowModelAdapter(BaseModelProvider):
         model_name: str | None = None,
         tariff_inr_per_kwh: float | None = None,
     ) -> None:
-        self.tracking_uri = tracking_uri if tracking_uri is not None else os.getenv("MLFLOW_TRACKING_URI", "")
+        self.tracking_uri = tracking_uri or os.getenv("MLFLOW_TRACKING_URI", "")
         self.model_alias = model_alias or os.getenv("MLFLOW_MODEL_ALIAS", "champion")
         self.model_name = model_name or os.getenv(
             "MLFLOW_MODEL_NAME", "customer-bill-prediction"
@@ -40,20 +40,11 @@ class MLflowModelAdapter(BaseModelProvider):
         )
         self._model: Any | None = None
         self._model_version: str | None = None
-        self._run_id: str | None = None
         self._input_names: list[str] | None = None
         self._input_types: dict[str, str] = {}
 
-    def get_current_run_id(self) -> str | None:
-        """Return the MLflow run ID associated with the active champion model."""
-        try:
-            self._load_model()
-            return self._run_id
-        except Exception:
-            return None
-
-    def _load_model(self, force_reload: bool = False) -> Any:
-        if not force_reload and self._model is not None:
+    def _load_model(self) -> Any:
+        if self._model is not None:
             return self._model
         if not self.tracking_uri:
             raise MLflowIntegrationError(
@@ -69,15 +60,6 @@ class MLflowModelAdapter(BaseModelProvider):
             version = client.get_model_version_by_alias(
                 self.model_name, self.model_alias
             )
-            target_version_str = str(version.version)
-
-            if (
-                not force_reload
-                and self._model is not None
-                and self._model_version == target_version_str
-            ):
-                return self._model
-
             model_uri = f"models:/{self.model_name}@{self.model_alias}"
             model = mlflow.pyfunc.load_model(model_uri)
             schema = model.metadata.get_input_schema()
@@ -89,8 +71,7 @@ class MLflowModelAdapter(BaseModelProvider):
             self._input_types = {
                 field.name: field.type.name for field in schema.inputs
             }
-            self._model_version = target_version_str
-            self._run_id = getattr(version, "run_id", None)
+            self._model_version = str(version.version)
             self._model = model
             return model
         except MLflowIntegrationError:
@@ -196,12 +177,8 @@ class MLflowModelAdapter(BaseModelProvider):
         entity_id: str,
         horizon_count: int = 24,
     ) -> list[dict[str, Any]]:
-        from app.providers.mock_model_provider import DevelopmentModelProvider
-
-        return DevelopmentModelProvider().predict_horizon(
-            sector=sector,
-            entity_id=entity_id,
-            horizon_count=horizon_count,
+        raise MLflowIntegrationError(
+            "The customer bill prediction model does not provide multi-horizon forecasts."
         )
 
     def get_model_status(self) -> dict[str, Any]:

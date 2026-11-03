@@ -95,7 +95,7 @@ export const mockResidentialMeters: ResidentialMeter[] = [
     estimatedMonthEndBillInr: 4245.0,
     coverageRatio: 0.985,
     elapsedDays: 19,
-    lastDate: '2018-12-19',
+    lastDate: '2014-05-19',
   },
   {
     householdId: 'METER-1001',
@@ -107,7 +107,7 @@ export const mockResidentialMeters: ResidentialMeter[] = [
     estimatedMonthEndBillInr: 6304.0,
     coverageRatio: 0.992,
     elapsedDays: 19,
-    lastDate: '2018-12-19',
+    lastDate: '2014-05-19',
   },
   {
     householdId: 'METER-1002',
@@ -119,7 +119,7 @@ export const mockResidentialMeters: ResidentialMeter[] = [
     estimatedMonthEndBillInr: 2765.0,
     coverageRatio: 0.88, // below minimum 90% threshold for test
     elapsedDays: 19,
-    lastDate: '2018-12-19',
+    lastDate: '2014-05-19',
   },
   {
     householdId: 'METER-1003',
@@ -131,7 +131,7 @@ export const mockResidentialMeters: ResidentialMeter[] = [
     estimatedMonthEndBillInr: 8852.0,
     coverageRatio: 0.975,
     elapsedDays: 19,
-    lastDate: '2018-12-19',
+    lastDate: '2014-05-19',
   },
 ];
 
@@ -172,16 +172,16 @@ export const mockCommercial10hForecast: TimeSeriesPoint[] = [
 
 // Residential 10-Day Projected Usage for METER-1000
 export const mockResidential10dForecast: TimeSeriesPoint[] = [
-  { timestamp: '2018-12-19', formattedTime: 'Dec 19', actualDemand: 14.8, forecastDemand: 14.8, unit: 'kWh' },
-  { timestamp: '2018-12-20', formattedTime: 'Dec 20', actualDemand: null, forecastDemand: 15.2, unit: 'kWh' },
-  { timestamp: '2018-12-21', formattedTime: 'Dec 21', actualDemand: null, forecastDemand: 14.6, unit: 'kWh' },
-  { timestamp: '2018-12-22', formattedTime: 'Dec 22 (Sat)', actualDemand: null, forecastDemand: 15.8, unit: 'kWh' },
-  { timestamp: '2018-12-23', formattedTime: 'Dec 23 (Sun)', actualDemand: null, forecastDemand: 16.2, unit: 'kWh' },
-  { timestamp: '2018-12-24', formattedTime: 'Dec 24', actualDemand: null, forecastDemand: 18.5, unit: 'kWh' },
-  { timestamp: '2018-12-25', formattedTime: 'Dec 25', actualDemand: null, forecastDemand: 19.1, unit: 'kWh' },
-  { timestamp: '2018-12-26', formattedTime: 'Dec 26', actualDemand: null, forecastDemand: 15.0, unit: 'kWh' },
-  { timestamp: '2018-12-27', formattedTime: 'Dec 27', actualDemand: null, forecastDemand: 14.4, unit: 'kWh' },
-  { timestamp: '2018-12-28', formattedTime: 'Dec 28', actualDemand: null, forecastDemand: 14.9, unit: 'kWh' },
+  { timestamp: '2014-05-19', formattedTime: 'May 19', actualDemand: 14.8, forecastDemand: 14.8, unit: 'kWh' },
+  { timestamp: '2014-05-20', formattedTime: 'May 20', actualDemand: null, forecastDemand: 15.2, unit: 'kWh' },
+  { timestamp: '2014-05-21', formattedTime: 'May 21', actualDemand: null, forecastDemand: 14.6, unit: 'kWh' },
+  { timestamp: '2014-05-22', formattedTime: 'May 22', actualDemand: null, forecastDemand: 15.8, unit: 'kWh' },
+  { timestamp: '2014-05-23', formattedTime: 'May 23', actualDemand: null, forecastDemand: 16.2, unit: 'kWh' },
+  { timestamp: '2014-05-24', formattedTime: 'May 24 (Sat)', actualDemand: null, forecastDemand: 18.5, unit: 'kWh' },
+  { timestamp: '2014-05-25', formattedTime: 'May 25 (Sun)', actualDemand: null, forecastDemand: 19.1, unit: 'kWh' },
+  { timestamp: '2014-05-26', formattedTime: 'May 26', actualDemand: null, forecastDemand: 15.0, unit: 'kWh' },
+  { timestamp: '2014-05-27', formattedTime: 'May 27', actualDemand: null, forecastDemand: 14.4, unit: 'kWh' },
+  { timestamp: '2014-05-28', formattedTime: 'May 28', actualDemand: null, forecastDemand: 14.9, unit: 'kWh' },
 ];
 
 // Peak Demand Analysis Dataset
@@ -403,7 +403,7 @@ export const mockBusinessInsights: BusinessInsight[] = [
 
 export const mockHouseholdOverview: HouseholdOverview = {
   householdId: 'METER-1000',
-  userName: 'Resident-1000',
+  userName: 'Rohit Sharma',
   currentDailyUsageKwh: 18.4,
   dailyAvgKwh: 16.2,
   dailyAvgChangePct: 8.0,

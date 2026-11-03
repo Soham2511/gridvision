@@ -44,6 +44,9 @@ DUCKDB_TEMP_DIR = Path(
 ).expanduser().resolve()
 DATASET_VERSIONS_DIR = DATA_ROOT / "metadata" / "dataset_versions"
 QUALITY_REPORTS_DIR = LOG_ROOT / "data" / "quality_reports"
+MLFLOW_DATA_QUALITY_EXPERIMENT = os.getenv(
+    "MLFLOW_DATA_QUALITY_EXPERIMENT", "GridVision Data Quality"
+)
 
 
 def _connect() -> duckdb.DuckDBPyConnection:
@@ -133,6 +136,9 @@ def _record_dataset(
         import mlflow
 
         mlflow.set_tracking_uri(tracking_uri)
+        # Do not use MLflow's default experiment: its artifact URI may predate
+        # the HTTP tracking server and point at a host-local Windows path.
+        mlflow.set_experiment(MLFLOW_DATA_QUALITY_EXPERIMENT)
         with mlflow.start_run(run_name=f"data-quality-{stage}") as run:
             mlflow.set_tags(
                 {

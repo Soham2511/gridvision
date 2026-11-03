@@ -17,9 +17,12 @@ pyarrow==16.1.0
 mlflow==2.22.0
 lightgbm>=4.3,<5
 joblib>=1.4,<2
+dill>=0.3.1.1
 numpy>=1.26,<3
 pandas==2.1.4
 scikit-learn>=1.5,<2
+h3>=4.0
+PyWavelets>=1.4
 
 # group: notebook
 jupyter

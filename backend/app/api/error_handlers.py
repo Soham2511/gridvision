@@ -47,6 +47,27 @@ class InvalidInputError(AppError):
         )
 
 
+class RegionMappingNotFoundError(AppError):
+    """Commercial building has no verified coarse-grid mapping."""
+
+    def __init__(self, message: str = "No coarse-grid mapping exists for this building.") -> None:
+        super().__init__(message=message, code="REGION_MAPPING_NOT_FOUND", status_code=409)
+
+
+class ModelUnavailableError(AppError):
+    """One or both required forecast models are unavailable."""
+
+    def __init__(self, message: str = "A required forecast model is unavailable.") -> None:
+        super().__init__(message=message, code="MODEL_UNAVAILABLE", status_code=503)
+
+
+class InvalidModelOutputError(AppError):
+    """Forecast provider returned data outside the forecast response contract."""
+
+    def __init__(self, message: str) -> None:
+        super().__init__(message=message, code="INVALID_MODEL_OUTPUT", status_code=502)
+
+
 def register_error_handlers(app: Flask) -> None:
     """Register application-wide error handlers."""
 

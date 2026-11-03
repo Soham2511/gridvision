@@ -7,18 +7,11 @@ import hashlib
 import json
 import os
 import platform
-import sys
 import tempfile
 from datetime import datetime, timezone
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from typing import Any
-
-if sys.platform == "win32":
-    if hasattr(sys.stdout, "reconfigure"):
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    if hasattr(sys.stderr, "reconfigure"):
-        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 import joblib
 import mlflow
@@ -105,10 +98,31 @@ def _dataset_lineage(data_path: Path) -> dict[str, Any]:
             "dataset_path": str(data_path.resolve()),
         }
     manifest = json.loads(latest_manifest.read_text(encoding="utf-8"))
-    report_path = Path(manifest["quality_report"])
-    if not report_path.is_absolute():
-        report_path = data_root / report_path
-    versioned_dataset_path = Path(manifest["versioned_dataset_path"])
+
+    def resolve_manifest_path(
+        value: str, *, root: Path, container_root: Path, host_root: Path
+    ) -> Path:
+        path = Path(value)
+        if not path.is_absolute():
+            return root / path
+        try:
+            relative_path = path.relative_to(container_root)
+        except ValueError:
+            return path
+        return host_root / relative_path
+
+    report_path = resolve_manifest_path(
+        manifest["quality_report"],
+        root=data_root,
+        container_root=Path("/opt/gridvision/logs"),
+        host_root=LOG_ROOT,
+    )
+    versioned_dataset_path = resolve_manifest_path(
+        manifest["versioned_dataset_path"],
+        root=data_root,
+        container_root=Path("/opt/gridvision/data"),
+        host_root=data_root,
+    )
     if not versioned_dataset_path.is_file():
         raise FileNotFoundError(
             f"Versioned gold dataset snapshot is missing: {versioned_dataset_path}"
@@ -485,11 +499,6 @@ def train_and_log(
                 f"candidate_{candidate['candidate']}_mean_cv_mae_kwh",
                 candidate["mean_cv_mae_kwh"],
             )
-            for fold_index, fold_mae in enumerate(candidate["fold_mae_kwh"], start=1):
-                mlflow.log_metric(
-                    f"candidate_{candidate['candidate']}_fold_{fold_index}_mae_kwh",
-                    fold_mae,
-                )
         signature = infer_signature(x_validation, selected_model.predict(x_validation))
         model_info = mlflow.sklearn.log_model(
             sk_model=selected_model,
@@ -499,7 +508,7 @@ def train_and_log(
             input_example=x_validation.head(3),
             registered_model_name=selected_model_name,
         )
-        client = mlflow.tracking.MlflowClient(tracking_uri=resolved_uri)
+        client = mlflow.tracking.MlflowClient()
         if not model_info.registered_model_version:
             raise RuntimeError(
                 f"MLflow did not register a version of {selected_model_name}."
@@ -630,8 +639,6 @@ def train_and_log(
                 dataset["versioned_dataset_path"],
                 artifact_path="dataset_lineage",
             )
-        if data_path.is_file():
-            mlflow.log_artifact(str(data_path), artifact_path="dataset_lineage")
         client.set_registered_model_alias(
             selected_model_name,
             selected_alias,

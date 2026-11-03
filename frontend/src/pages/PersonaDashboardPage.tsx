@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { usePersona } from '../context';
 import { analyticsService } from '../services/analyticsService';
 import {
+  CommercialBuilding,
   CommercialDashboardData,
   GovernmentRegionItem,
   GovernmentDashboardData,
@@ -33,7 +34,7 @@ import {
 } from 'lucide-react';
 
 export const PersonaDashboardPage: React.FC = () => {
-  const { currentPersona, activeEntity, energyUnit } = usePersona();
+  const { currentPersona, activeEntity, energyUnit, setActiveEntity } = usePersona();
 
   // Active persona (defaults to household / Residential)
   const persona = currentPersona || 'household';
@@ -46,21 +47,73 @@ export const PersonaDashboardPage: React.FC = () => {
   const [commercialRange, setCommercialRange] = useState<'1D' | '7D' | '1M' | '3M' | '1Y'>('1D');
   const [commercialData, setCommercialData] = useState<CommercialDashboardData | null>(null);
   const [commercialLoading, setCommercialLoading] = useState<boolean>(true);
+  const [commercialError, setCommercialError] = useState<string | null>(null);
+  const [commercialBuildings, setCommercialBuildings] = useState<CommercialBuilding[]>([]);
+  const [commercialBuildingsLoaded, setCommercialBuildingsLoaded] = useState(false);
 
   useEffect(() => {
-    if (persona === 'commercial') {
-      setCommercialLoading(true);
-      analyticsService
-        .getCommercialDashboard(commercialTab, commercialRange, activeEntity)
-        .then((res) => {
-          setCommercialData(res);
-          setCommercialLoading(false);
-        })
-        .catch(() => {
-          setCommercialLoading(false);
-        });
+    if (persona !== 'commercial') return;
+    let cancelled = false;
+    setCommercialBuildingsLoaded(false);
+    analyticsService.getCommercialBuildings().then((buildings) => {
+      if (!cancelled) {
+        setCommercialBuildings(buildings);
+        setCommercialBuildingsLoaded(true);
+      }
+    }).catch(() => {
+      if (!cancelled) {
+        setCommercialBuildings([]);
+        setCommercialBuildingsLoaded(true);
+        setCommercialError('Unable to load the Commercial Gold building list.');
+      }
+    });
+    return () => { cancelled = true; };
+  }, [persona]);
+
+  useEffect(() => {
+    if (persona !== 'commercial' || !commercialBuildings.length) return;
+    if (!commercialBuildings.some((building) => building.buildingId === activeEntity)) {
+      setActiveEntity(commercialBuildings[0].buildingId);
     }
-  }, [persona, commercialTab, commercialRange, activeEntity]);
+  }, [persona, commercialBuildings, activeEntity, setActiveEntity]);
+
+  useEffect(() => {
+    if (persona !== 'commercial') return;
+    if (commercialTab === 'building' && !commercialBuildingsLoaded) {
+      setCommercialLoading(true);
+      return;
+    }
+    if (commercialTab === 'building' && commercialBuildings.length > 0 &&
+        !commercialBuildings.some((building) => building.buildingId === activeEntity)) {
+      setActiveEntity(commercialBuildings[0].buildingId);
+      return;
+    }
+    if (commercialTab === 'building' && !commercialBuildings.length) {
+      setCommercialLoading(false);
+      setCommercialData(null);
+      setCommercialError('No Commercial Gold building IDs are available.');
+      return;
+    }
+    let cancelled = false;
+    setCommercialLoading(true);
+    setCommercialError(null);
+    setCommercialData(null);
+    analyticsService
+      .getCommercialDashboard(commercialTab, commercialRange, activeEntity)
+      .then((res) => {
+        if (cancelled) return;
+        setCommercialData(res);
+        setCommercialLoading(false);
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setCommercialError(
+          err instanceof Error ? err.message : 'Unable to load commercial building data.'
+        );
+        setCommercialLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [persona, commercialTab, commercialRange, activeEntity, commercialBuildingsLoaded, commercialBuildings, setActiveEntity]);
 
   // -------------------------------------------------------------
   // 3. Government & Utilities View State (Matches User Screenshot)
@@ -75,41 +128,56 @@ export const PersonaDashboardPage: React.FC = () => {
   const [governmentRegions, setGovernmentRegions] = useState<GovernmentRegionItem[]>([]);
   const [govDashboardData, setGovDashboardData] = useState<GovernmentDashboardData | null>(null);
   const [govLoading, setGovLoading] = useState<boolean>(true);
+  const [govError, setGovError] = useState<string | null>(null);
 
-  // Load government regions list
   useEffect(() => {
-    if (persona === 'government') {
-      analyticsService.getGovernmentRegions().then((res) => {
+    if (persona !== 'government') return;
+    let cancelled = false;
+    analyticsService
+      .getGovernmentRegions(govTimeRange)
+      .then((res) => {
+        if (cancelled) return;
         setGovernmentRegions(res);
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setGovError(
+          err instanceof Error ? err.message : 'Unable to load Government grid regions.'
+        );
       });
-    }
-  }, [persona]);
+    return () => { cancelled = true; };
+  }, [persona, govTimeRange]);
 
-  // Load active government dashboard data (overall or selected region)
   useEffect(() => {
-    if (persona === 'government') {
-      setGovLoading(true);
-      if (govActiveTab === 'overall') {
-        analyticsService
-          .getGovernmentDashboard('overall', undefined, govTimeRange)
-          .then((res) => {
-            setGovDashboardData(res);
-            setGovLoading(false);
-          })
-          .catch(() => setGovLoading(false));
-      } else if (govActiveTab.startsWith('region_')) {
-        const regionId = govActiveTab.replace('region_', '');
-        analyticsService
-          .getGovernmentDashboard('region', regionId, govTimeRange)
-          .then((res) => {
-            setGovDashboardData(res);
-            setGovLoading(false);
-          })
-          .catch(() => setGovLoading(false));
-      } else {
-        setGovLoading(false);
-      }
+    if (persona !== 'government') return;
+    if (govActiveTab !== 'overall' && !govActiveTab.startsWith('region_')) {
+      setGovLoading(false);
+      return;
     }
+    let cancelled = false;
+    setGovLoading(true);
+    setGovError(null);
+    const request = govActiveTab === 'overall'
+      ? analyticsService.getGovernmentDashboard('overall', undefined, govTimeRange)
+      : analyticsService.getGovernmentDashboard(
+          'region',
+          govActiveTab.replace('region_', ''),
+          govTimeRange
+        );
+    request
+      .then((res) => {
+        if (cancelled) return;
+        setGovDashboardData(res);
+        setGovLoading(false);
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setGovError(
+          err instanceof Error ? err.message : 'Unable to load Government grid telemetry.'
+        );
+        setGovLoading(false);
+      });
+    return () => { cancelled = true; };
   }, [persona, govActiveTab, govTimeRange]);
 
   // Handler to open a region card in a new closable tab
@@ -233,10 +301,10 @@ export const PersonaDashboardPage: React.FC = () => {
         <>
           <div>
             <h1 style={{ fontSize: '2.1rem', fontWeight: 800, color: '#0B1F33', margin: '0 0 0.35rem 0', letterSpacing: '-0.025em' }}>
-              Commercial Facility Overview
+              Hello, Rohit!
             </h1>
             <p style={{ fontSize: '0.95rem', color: '#64748B', margin: 0, fontWeight: 500 }}>
-              Building demand forecast and performance metrics.
+              Here is your commercial energy overview.
             </p>
           </div>
 
@@ -288,6 +356,26 @@ export const PersonaDashboardPage: React.FC = () => {
               </button>
             </div>
 
+            {commercialTab === 'building' && (
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.55rem', color: '#475569', fontSize: '0.82rem', fontWeight: 700 }}>
+                Building ID
+                <select
+                  aria-label="Commercial building ID"
+                  value={commercialBuildings.some((building) => building.buildingId === activeEntity) ? activeEntity : ''}
+                  onChange={(event) => setActiveEntity(event.target.value)}
+                  disabled={!commercialBuildings.length}
+                  style={{ border: '1px solid #CBD5E1', borderRadius: '8px', background: '#FFFFFF', color: '#0B1F33', padding: '0.55rem 0.7rem', minWidth: '150px' }}
+                >
+                  {!commercialBuildings.length && <option value="">Loading building IDs…</option>}
+                  {commercialBuildings.map((building) => (
+                    <option key={building.buildingId} value={building.buildingId}>
+                      {building.buildingId}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+
             <div
               style={{
                 display: 'flex',
@@ -322,6 +410,12 @@ export const PersonaDashboardPage: React.FC = () => {
             </div>
           </div>
 
+          {commercialError && (
+            <div role="alert" style={{ border: '1px solid #FECACA', background: '#FEF2F2', color: '#991B1B', borderRadius: '12px', padding: '0.85rem 1rem' }}>
+              {commercialError}
+            </div>
+          )}
+
           {commercialData && (
             <div
               style={{
@@ -340,7 +434,7 @@ export const PersonaDashboardPage: React.FC = () => {
                   value: Math.abs(commercialData.avgDemandDeltaPct),
                   direction: commercialData.avgDemandDeltaPct >= 0 ? 'up' : 'down',
                   isIncreaseNegative: true,
-                  comparisonText: `vs previous day (${commercialData.prevPeriodAvgDemand.toLocaleString()} ${commercialData.unit})`,
+                  comparisonText: `vs previous ${commercialRange} (${commercialData.prevPeriodAvgDemand.toLocaleString()} ${commercialData.unit})`,
                 }}
                 hoverBorderColor="rgba(0, 163, 150, 0.4)"
               />
@@ -354,7 +448,7 @@ export const PersonaDashboardPage: React.FC = () => {
                 hoverBorderColor="rgba(217, 119, 6, 0.4)"
               />
               <CommonMetricCard
-                title="Predicted Peak"
+                title={commercialRange === '1D' ? 'Predicted Peak · Next 24h' : 'Predicted Peak'}
                 value={commercialData.predictedPeak.toLocaleString()}
                 unit={commercialData.unit}
                 icon={<TrendingUp size={22} color="#7C3AED" />}
@@ -363,7 +457,7 @@ export const PersonaDashboardPage: React.FC = () => {
                 hoverBorderColor="rgba(124, 58, 237, 0.4)"
               />
               <CommonMetricCard
-                title="Predicted Total"
+                title={commercialRange === '1D' ? 'Day-End Forecast' : 'Predicted Total'}
                 value={
                   isMWh
                     ? (commercialData.predictedTotal / 1000).toFixed(2)
@@ -392,7 +486,8 @@ export const PersonaDashboardPage: React.FC = () => {
                 Demand vs Time
               </h2>
               <p style={{ fontSize: '0.84rem', color: '#64748B', margin: 0 }}>
-                Actual and predicted demand for the selected period.
+                Gold dataset history and {commercialData?.predictedTotalHorizon || 'model forecast'}.
+                {commercialData?.dataPeriod ? ` ${commercialData.dataPeriod}` : ''}
               </p>
             </div>
 
@@ -428,12 +523,6 @@ export const PersonaDashboardPage: React.FC = () => {
                     />
 
                     <YAxis
-                      domain={[0, commercialTab === 'regional' ? 5000 : 1200]}
-                      ticks={
-                        commercialTab === 'regional'
-                          ? [0, 1000, 2000, 3000, 4000, 5000]
-                          : [0, 200, 400, 600, 800, 1000, 1200]
-                      }
                       width={56}
                       tick={{ fontSize: 11, fill: '#64748B', fontWeight: 500 }}
                       axisLine={false}
@@ -450,7 +539,7 @@ export const PersonaDashboardPage: React.FC = () => {
                       }}
                     />
 
-                    <Tooltip content={<CommonChartHoverCard unit="kW" />} />
+                    <Tooltip content={<CommonChartHoverCard unit="kW" showCost={false} />} />
 
                     {commercialData?.demarcationTime && (
                       <ReferenceLine
@@ -707,6 +796,23 @@ export const PersonaDashboardPage: React.FC = () => {
             </div>
           </div>
 
+          {govError && (
+            <div
+              role="alert"
+              style={{
+                margin: '0.75rem 0',
+                padding: '0.85rem 1rem',
+                border: '1px solid #FECACA',
+                borderRadius: '10px',
+                background: '#FEF2F2',
+                color: '#B91C1C',
+                fontSize: '0.88rem',
+              }}
+            >
+              {govError}
+            </div>
+          )}
+
           {/* VIEW SWITCHER: Regional List vs Dashboard Views */}
           {govActiveTab === 'regional_list' ? (
             /* ========================================================= */
@@ -784,7 +890,22 @@ export const PersonaDashboardPage: React.FC = () => {
                 }}
               >
                 {filteredRegions.map((region) => {
-                  const isUp = region.deltaPct > 0;
+                  const hasDelta = region.deltaPct !== null;
+                  const isUp = region.deltaPct !== null && region.deltaPct > 0;
+                  const sparkValues = region.sparkline.length
+                    ? region.sparkline
+                    : [region.currentDemand];
+                  const sparkPoints = sparkValues.map((value, index) => ({
+                    x: 2 + (index * 96) / Math.max(sparkValues.length - 1, 1),
+                    y: 34 - (
+                      ((value - Math.min(...sparkValues)) /
+                        (Math.max(...sparkValues) - Math.min(...sparkValues) || 1)) * 26
+                    ),
+                  }));
+                  const sparkPath = sparkPoints
+                    .map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`)
+                    .join(' ');
+                  const sparkAreaPath = `${sparkPath} L 98 42 L 2 42 Z`;
                   return (
                     <div
                       key={region.id}
@@ -871,12 +992,24 @@ export const PersonaDashboardPage: React.FC = () => {
                               color: isUp ? '#EF4444' : '#10B981',
                             }}
                           >
-                            <span>{isUp ? '↑' : '↓'}</span>
-                            <span>{Math.abs(region.deltaPct)}%</span>
+                            {hasDelta ? (
+                              <>
+                                <span>{isUp ? '↑' : '↓'}</span>
+                                <span>
+                                  {region.deltaPct !== null
+                                    ? `${Math.abs(region.deltaPct)}%`
+                                    : ''}
+                                </span>
+                              </>
+                            ) : (
+                              <span>Prior period unavailable</span>
+                            )}
+                          </div>
+                          <div style={{ marginTop: '0.35rem', fontSize: '0.72rem', color: '#64748B' }}>
+                            Next 24h avg: {region.predictedDemand.toLocaleString()} {region.unit}
                           </div>
                         </div>
 
-                        {/* Inline SVG Sparkline matching screenshot */}
                         <svg width="100" height="42" viewBox="0 0 100 42" fill="none">
                           <defs>
                             <linearGradient id={`spark-${region.id}`} x1="0" y1="0" x2="0" y2="1">
@@ -885,19 +1018,11 @@ export const PersonaDashboardPage: React.FC = () => {
                             </linearGradient>
                           </defs>
                           <path
-                            d={
-                              isUp
-                                ? 'M 2 32 Q 28 26, 55 18 T 98 8 L 98 42 L 2 42 Z'
-                                : 'M 2 10 Q 28 18, 55 24 T 98 28 L 98 42 L 2 42 Z'
-                            }
+                            d={sparkAreaPath}
                             fill={`url(#spark-${region.id})`}
                           />
                           <path
-                            d={
-                              isUp
-                                ? 'M 2 32 Q 28 26, 55 18 T 98 8'
-                                : 'M 2 10 Q 28 18, 55 24 T 98 28'
-                            }
+                            d={sparkPath}
                             stroke={isUp ? '#EF4444' : '#10B981'}
                             strokeWidth="2.2"
                             strokeLinecap="round"
@@ -930,12 +1055,24 @@ export const PersonaDashboardPage: React.FC = () => {
                     unit={govDashboardData.unit}
                     icon={<BarChart2 size={22} color="#00A396" />}
                     iconBg="#E6F7F5"
-                    trend={{
-                      value: Math.abs(govDashboardData.avgDemandDeltaPct),
-                      direction: govDashboardData.avgDemandDeltaPct >= 0 ? 'up' : 'down',
-                      isIncreaseNegative: true,
-                      comparisonText: `vs previous day (${govDashboardData.prevPeriodAvgDemand.toLocaleString()} ${govDashboardData.unit})`,
-                    }}
+                    trend={govDashboardData.avgDemandDeltaPct === null
+                      ? undefined
+                      : {
+                          value: Math.abs(govDashboardData.avgDemandDeltaPct),
+                          direction: govDashboardData.avgDemandDeltaPct >= 0 ? 'up' : 'down',
+                          isIncreaseNegative: true,
+                          comparisonText: `vs previous ${
+                            govTimeRange === '1D'
+                              ? 'day'
+                              : govTimeRange === '7D'
+                                ? '7 days'
+                                : govTimeRange === '1M'
+                                  ? 'month'
+                                  : govTimeRange === '3M'
+                                    ? '3 months'
+                                    : 'year'
+                          } (${govDashboardData.prevPeriodAvgDemand?.toLocaleString()} ${govDashboardData.unit})`,
+                        }}
                     hoverBorderColor="rgba(0, 163, 150, 0.4)"
                   />
 
@@ -986,9 +1123,10 @@ export const PersonaDashboardPage: React.FC = () => {
                     Demand vs Time
                   </h2>
                   <p style={{ fontSize: '0.84rem', color: '#64748B', margin: 0 }}>
-                    {govActiveTab === 'overall'
-                      ? 'Actual and predicted demand for the selected period.'
-                      : `Actual and predicted demand for ${govDashboardData?.regionName || 'selected region'}`}
+                    {govDashboardData?.dataPeriod ||
+                      (govActiveTab === 'overall'
+                        ? 'Historical demand and a 24-hour forecast for the selected period.'
+                        : `Historical demand and a 24-hour forecast for ${govDashboardData?.regionName || 'selected region'}`)}
                   </p>
                 </div>
 
@@ -1042,7 +1180,11 @@ export const PersonaDashboardPage: React.FC = () => {
                           }}
                         />
 
-                        <Tooltip content={<CommonChartHoverCard unit="MW" />} />
+                        <Tooltip
+                          content={
+                            <CommonChartHoverCard unit="MW" showCost={false} />
+                          }
+                        />
 
                         {govDashboardData?.demarcationTime && (
                           <ReferenceLine

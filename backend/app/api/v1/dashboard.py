@@ -35,18 +35,19 @@ def household_dashboard():
 
 @bp.route("/dashboard/government/regions", methods=["GET"])
 def government_regions():
-    """List of 6 regional zones with sparklines and delta stats."""
+    """List historical grid regions with recent demand and forecast metrics."""
+    time_range = request.args.get("time_range", "1D")
     service = current_app.extensions["dashboard_service"]
-    data = service.get_government_regions()
+    data = service.get_government_regions(time_range=time_range)
     return success_response(data)
 
 
 @bp.route("/dashboard/government", methods=["GET"])
 def government_dashboard():
     """Regional and system-wide telemetry for Government & Utilities."""
-    view_type = request.args.get("view_type") or request.args.get("view", "overall")
-    region_id = request.args.get("region_id") or request.args.get("regionId")
-    time_range = request.args.get("time_range") or request.args.get("range", "1D")
+    view_type = request.args.get("view_type", "overall")
+    region_id = request.args.get("region_id")
+    time_range = request.args.get("time_range", "1D")
 
     service = current_app.extensions["dashboard_service"]
     data = service.get_government_dashboard(

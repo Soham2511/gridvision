@@ -35,133 +35,58 @@ class CustomerBillPredictionService:
         artifact_path: Path,
         model_provider: BaseModelProvider,
         tariff_inr_per_kwh: float,
+        forecast_model_provider: BaseModelProvider | None = None,
     ) -> None:
         self.dataset_path = dataset_path
         self.metadata_path = metadata_path
         self.artifact_path = artifact_path
         self.model_provider = model_provider
+        self.forecast_model_provider = forecast_model_provider
         self.tariff_inr_per_kwh = tariff_inr_per_kwh
         self._frame: pd.DataFrame | None = None
         self._artifact: dict[str, Any] | None = None
         self._metadata: dict[str, Any] | None = None
-        self._loaded_model_version: str | None = None
-
-    def _sync_with_model_provider(self) -> None:
-        if isinstance(self.model_provider, MLflowModelAdapter):
-            current_version = getattr(self.model_provider, "_model_version", None)
-            if current_version and current_version != self._loaded_model_version:
-                self._metadata = None
-                self._frame = None
-                self._loaded_model_version = current_version
 
     def _load_metadata(self) -> dict[str, Any]:
-        self._sync_with_model_provider()
-        if self._metadata is not None:
-            return self._metadata
-
-        if self.metadata_path.is_file():
+        if self._metadata is None:
+            if not self.metadata_path.is_file():
+                raise CustomerBillPredictionError(
+                    f"Model metadata file is missing: {self.metadata_path}"
+                )
             try:
                 self._metadata = json.loads(
                     self.metadata_path.read_text(encoding="utf-8")
                 )
-                return self._metadata
             except (OSError, json.JSONDecodeError) as exc:
-                logger.warning("Could not read local metadata: %s", exc)
-
-        # Fallback: dynamically download metadata from active champion MLflow run
-        if isinstance(self.model_provider, MLflowModelAdapter):
-            run_id = self.model_provider.get_current_run_id()
-            if run_id:
-                try:
-                    import mlflow.artifacts
-
-                    self.metadata_path.parent.mkdir(parents=True, exist_ok=True)
-                    local_meta = mlflow.artifacts.download_artifacts(
-                        run_id=run_id,
-                        artifact_path="model_metadata.json",
-                        dst_path=str(self.metadata_path.parent),
-                        tracking_uri=self.model_provider.tracking_uri,
-                    )
-                    self._metadata = json.loads(
-                        Path(local_meta).read_text(encoding="utf-8")
-                    )
-                    return self._metadata
-                except Exception as exc:
-                    logger.warning("Unable to download metadata from MLflow: %s", exc)
-
-        if not self.metadata_path.is_file():
-            raise CustomerBillPredictionError(
-                f"Model metadata file is missing: {self.metadata_path}"
-            )
-        try:
-            self._metadata = json.loads(
-                self.metadata_path.read_text(encoding="utf-8")
-            )
-        except (OSError, json.JSONDecodeError) as exc:
-            raise CustomerBillPredictionError(
-                f"Unable to read customer bill model metadata: {exc}"
-            ) from exc
+                raise CustomerBillPredictionError(
+                    f"Unable to read customer bill model metadata: {exc}"
+                ) from exc
         return self._metadata
 
     def _load_frame(self) -> pd.DataFrame:
-        self._sync_with_model_provider()
-        if self._frame is not None:
-            return self._frame
-
-        frame_path = self.dataset_path
-        if not frame_path.is_file() and isinstance(self.model_provider, MLflowModelAdapter):
-            run_id = self.model_provider.get_current_run_id()
-            if run_id:
-                try:
-                    import mlflow.artifacts
-
-                    dest_dir = self.dataset_path.parent
-                    try:
-                        dest_dir.mkdir(parents=True, exist_ok=True)
-                        test_file = dest_dir / ".write_test"
-                        test_file.touch()
-                        test_file.unlink()
-                    except OSError:
-                        dest_dir = Path("/tmp/data/gold")
-                        dest_dir.mkdir(parents=True, exist_ok=True)
-
-                    downloaded = mlflow.artifacts.download_artifacts(
-                        run_id=run_id,
-                        artifact_path="dataset_lineage",
-                        dst_path=str(dest_dir),
-                        tracking_uri=self.model_provider.tracking_uri,
-                    )
-                    downloaded_path = Path(downloaded)
-                    parquets = list(downloaded_path.glob("*.parquet"))
-                    if not parquets:
-                        parquets = list(dest_dir.glob("**/*.parquet"))
-                    if parquets:
-                        frame_path = parquets[0]
-                except Exception as exc:
-                    logger.warning("Unable to download dataset from MLflow: %s", exc)
-
-        if not frame_path.is_file():
-            raise CustomerBillPredictionError(
-                f"Customer gold dataset is missing: {self.dataset_path}"
-            )
-        try:
-            frame = pd.read_parquet(frame_path)
-        except (OSError, ValueError, ImportError) as exc:
-            raise CustomerBillPredictionError(
-                f"Unable to read customer gold dataset: {exc}"
-            ) from exc
-        required_columns = {
-            "entity_id",
-            "month_start",
-            "target_month_kwh",
-            "cumulative_energy_kwh",
-        }
-        missing = sorted(required_columns.difference(frame.columns))
-        if missing:
-            raise CustomerBillPredictionError(
-                f"Customer gold dataset is missing required columns: {missing}"
-            )
-        self._frame = frame
+        if self._frame is None:
+            if not self.dataset_path.is_file():
+                raise CustomerBillPredictionError(
+                    f"Customer gold dataset is missing: {self.dataset_path}"
+                )
+            try:
+                frame = pd.read_parquet(self.dataset_path)
+            except (OSError, ValueError, ImportError) as exc:
+                raise CustomerBillPredictionError(
+                    f"Unable to read customer gold dataset: {exc}"
+                ) from exc
+            required_columns = {
+                "entity_id",
+                "month_start",
+                "target_month_kwh",
+                "cumulative_energy_kwh",
+            }
+            missing = sorted(required_columns.difference(frame.columns))
+            if missing:
+                raise CustomerBillPredictionError(
+                    f"Customer gold dataset is missing required columns: {missing}"
+                )
+            self._frame = frame
         return self._frame
 
     def _load_artifact(self) -> dict[str, Any]:
@@ -261,90 +186,66 @@ class CustomerBillPredictionService:
             summary["error"] = model_error
         return summary
 
-    def get_government_summary(self, definition: Any) -> dict[str, Any]:
-        return {
-            **definition.as_dict(),
-            "status": "configured",
-            "provider": (
-                self.model_provider.PROVIDER_NAME
-                if isinstance(self.model_provider, MLflowModelAdapter)
-                else "local_artifact"
-            ),
-            "modelVersion": "1",
-            "selectedModel": "dual_lightgbm_hybrid",
-            "dataset": {
-                "name": "gold_grid_forecasting_2018",
-                "rows": 250000,
-                "entities": 53,
-                "regions": 53,
-                "startMonth": "2018-01-01",
-                "endMonth": "2018-12-01",
-                "qualityPassed": True,
-                "version": "2018-annual-grid",
-            },
-            "testMetrics": {
-                "mae_kwh": 390.29,
-                "rmse_kwh": 1160.58,
-                "r2": 0.9565,
-                "wape": 0.1299,
-                "rmsle": 0.2646,
-            },
-            "features": [
-                "forecast_horizon_hours",
-                "total_building_area_m2",
-                "total_footprint_area_m2",
-                "centroid_latitude",
-                "centroid_longitude",
-                "building_count",
-                "Commercial_count",
-                "Industrial_count",
-                "Institutional_count",
-                "Recreational_count",
-                "Residential_count",
-                "energy_at_origin",
-                "energy_lag_1h",
-                "energy_lag_24h",
-                "energy_lag_168h",
-                "energy_lag_336h",
-                "energy_lag_720h",
-                "energy_mean_24h",
-                "energy_std_24h",
-                "energy_count_24h",
-                "energy_mean_7d",
-                "energy_std_7d",
-                "energy_count_7d",
-                "energy_mean_30d",
-                "energy_std_30d",
-                "energy_count_30d",
-                "target_month",
-                "target_day_of_month",
-                "target_day_of_week",
-                "target_hour",
-                "target_day_of_year",
-                "target_is_weekend",
-                "target_hour_sin",
-                "target_hour_cos",
-                "target_day_of_year_sin",
-                "target_day_of_year_cos",
-            ],
-            "tariffInrPerKwh": self.tariff_inr_per_kwh,
-        }
-
-    def get_model_catalog(self) -> list[dict[str, Any]]:
+    def get_model_catalog(
+        self, forecast_status: dict[str, dict[str, Any]] | None = None
+    ) -> list[dict[str, Any]]:
         catalog = []
+        if forecast_status is None:
+            catalog_provider = self.forecast_model_provider or self.model_provider
+            if hasattr(catalog_provider, "get_horizon_model_status"):
+                forecast_status = catalog_provider.get_horizon_model_status()
+            else:
+                provider_status = catalog_provider.get_model_status()
+                forecast_status = provider_status.get("models")
+                if forecast_status is None:
+                    provider_name = provider_status.get("provider", "unknown")
+                    provider_error = provider_status.get(
+                        "description",
+                        "The backend is not configured with the trained forecast model provider.",
+                    )
+                    forecast_status = {
+                        key: {
+                            "status": "unavailable",
+                            "provider": provider_name,
+                            "model_version": "not_deployed",
+                            "model_alias": "not_deployed",
+                            "error": provider_error,
+                            "test_metrics": {},
+                            "features": [],
+                        }
+                        for key in ("commercial", "government")
+                    }
         for model_id, definition in MODEL_REGISTRY.items():
             if model_id == "customer-bill-prediction":
                 catalog.append(self.get_summary())
                 continue
-            if model_id == "government-load-forecasting":
-                catalog.append(self.get_government_summary(definition))
+            if model_id in {
+                "anomaly-prediction",
+                "government-customer-segmentation",
+            }:
                 continue
+            provider_key = {
+                "commercial-building-forecast": "commercial",
+                "government-load-forecast": "government",
+            }.get(model_id)
+            status = forecast_status.get(provider_key, {}) if provider_key else {}
+            ready = status.get("status") == "ready"
             catalog.append({
                 **definition.as_dict(),
-                "status": "unavailable",
-                "provider": "not_registered",
-                "modelVersion": "not_deployed",
-                "selectedModel": "not_deployed",
+                "status": "configured" if ready else "unavailable",
+                "provider": status.get("provider", "not_deployed"),
+                "modelVersion": status.get("model_version") or "not_deployed",
+                "selectedModel": status.get("model_alias", "not_deployed") if ready else "not_deployed",
+                "testMetrics": status.get("test_metrics", {}),
+                "features": status.get("features", []),
+                **(
+                    {}
+                    if ready
+                    else {
+                        "error": status.get("error")
+                        or "Registered champion model or its forecast data is unavailable."
+                    }
+                ),
             })
         return catalog
 
@@ -402,7 +303,43 @@ class CustomerBillPredictionService:
             for row in rows.itertuples()
         ]
 
-    def get_historical_gold_insights(self, time_range: str) -> dict[str, Any]:
+    def get_entity_profile(self, entity_id: int) -> dict[str, Any] | None:
+        frame = self._load_frame()
+        rows = frame[frame["entity_id"] == entity_id].sort_values(
+            ["month_start", "cutoff_day"]
+        )
+        if rows.empty:
+            return None
+
+        row = rows.iloc[-1]
+        fields = {
+            "buildingType": "building_type",
+            "specificUseType": "specific_use_type",
+            "useType": "usetype",
+            "buildingAreaM2": "building_area_m2",
+            "footprintAreaM2": "footprint_area_m2",
+            "effectiveYearBuilt": "effective_year_built",
+            "vintage": "vintage",
+            "gridCoarseId": "id_grid_coarse",
+            "idfKw": "idf_kw",
+            "gridFinerId": "id_grid_finer",
+            "tractId": "id_tract",
+            "latitude": "latitude",
+            "longitude": "longitude",
+        }
+        profile: dict[str, Any] = {"entityId": str(entity_id)}
+        for output_name, column_name in fields.items():
+            value = row[column_name] if column_name in rows.columns else None
+            if value is not None and pd.isna(value):
+                value = None
+            elif hasattr(value, "item"):
+                value = value.item()
+            profile[output_name] = value
+        return profile
+
+    def get_historical_gold_insights(
+        self, time_range: str, entity_id: int | None = None
+    ) -> dict[str, Any]:
         frame = self._load_frame()
         required_columns = {
             "cutoff_day",
@@ -417,6 +354,13 @@ class CustomerBillPredictionService:
                 f"Customer gold dataset is missing historical insight columns: {missing}"
             )
 
+        if entity_id is not None:
+            frame = frame[frame["entity_id"] == entity_id]
+            if frame.empty:
+                raise CustomerBillPredictionError(
+                    f"Customer entity '{entity_id}' was not found in the gold dataset."
+                )
+
         latest = (
             frame.sort_values(["entity_id", "month_start", "cutoff_day"])
             .drop_duplicates(["entity_id", "month_start"], keep="last")
@@ -430,7 +374,6 @@ class CustomerBillPredictionService:
         month_limit = {"3M": 3, "6M": 6, "1Y": 12}.get(time_range)
         if month_limit is not None:
             selected_months = available_months[-month_limit:]
-            latest = latest[latest["month_start"].isin(selected_months)]
 
         monthly = (
             latest.groupby("month_start", sort=True)
@@ -448,6 +391,17 @@ class CustomerBillPredictionService:
             )
             .reset_index()
         )
+        previous_average = monthly["average_actual_kwh"].shift(1)
+        month_periods = pd.to_datetime(monthly["month_start"]).dt.to_period("M")
+        previous_periods = month_periods.shift(1)
+        monthly["month_over_month_change_percent"] = (
+            (monthly["average_actual_kwh"] - previous_average)
+            / previous_average
+            * 100
+        ).where((previous_average > 0) & (month_periods == previous_periods + 1))
+        if month_limit is not None:
+            monthly = monthly[monthly["month_start"].isin(selected_months)]
+            latest = latest[latest["month_start"].isin(selected_months)]
         if monthly.empty:
             raise CustomerBillPredictionError(
                 "Customer gold dataset has no monthly records for historical insights."
@@ -470,6 +424,11 @@ class CustomerBillPredictionService:
                     row.average_absolute_error_kwh
                 ),
                 "averageCoverageRatio": float(row.average_coverage_ratio),
+                "monthOverMonthChangePercent": (
+                    float(row.month_over_month_change_percent)
+                    if pd.notna(row.month_over_month_change_percent)
+                    else None
+                ),
             }
             for row in monthly.itertuples()
         ]
@@ -482,6 +441,7 @@ class CustomerBillPredictionService:
 
         return {
             "timeRange": time_range,
+            "entityId": str(entity_id) if entity_id is not None else None,
             "monthsReturned": len(month_records),
             "startMonth": month_records[0]["monthStart"],
             "endMonth": month_records[-1]["monthStart"],
