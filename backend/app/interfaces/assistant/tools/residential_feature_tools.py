@@ -30,7 +30,7 @@ from app.domain.residential.schemas import (
 # --- 1. Plan House Energy Tool ---
 
 class PlanHouseEnergyInput(BaseModel):
-    """Input parameters for planning house energy layout and connected load."""
+    """Input parameters for planning house energy layout, appliance schedule, and connected load."""
 
     built_up_area_m2: float = Field(
         ...,
@@ -41,14 +41,47 @@ class PlanHouseEnergyInput(BaseModel):
         description="Type of residential structure",
     )
     floors_count: int = Field(default=1, ge=1, le=10, description="Number of floors")
-    occupancy_count: int = Field(default=4, ge=1, le=20, description="Number of regular residents")
+    occupancy_count: int = Field(default=4, ge=1, le=30, description="Number of regular residents")
     location_city: str = Field(default="Bangalore", description="City location")
-    budget_inr: float = Field(default=150000.0, description="Approximate electrical equipment budget in ₹")
+    bedrooms_count: int = Field(default=3, ge=1, le=20, description="Number of bedrooms")
+    bathrooms_count: int = Field(default=2, ge=1, le=20, description="Number of bathrooms")
+    living_dining_count: int = Field(default=1, ge=1, le=10, description="Number of living/dining areas")
+    daytime_occupancy: Literal["mostly_away", "home_during_day", "work_from_home"] = Field(
+        default="mostly_away",
+        description="Daytime occupancy profile: 'mostly_away', 'home_during_day', or 'work_from_home'",
+    )
+    budget_inr: float = Field(default=150000.0, description="Approximate electrical fixtures and equipment budget in ₹")
     efficiency_priority: Literal["economy", "balanced", "high_efficiency"] = Field(
         default="balanced",
         description="Preferred plan tier: 'economy', 'balanced', or 'high_efficiency'",
     )
-    include_solar_pv: bool = Field(default=False, description="Whether to size on-site rooftop solar PV")
+    ac_required: bool = Field(default=False, description="Whether air conditioners are required")
+    ac_count: int = Field(default=0, ge=0, le=10, description="Number of AC units")
+    ac_intended_rooms: Optional[List[str]] = Field(default_factory=list, description="Intended rooms for AC (e.g. ['bedrooms', 'living_dining'])")
+    ac_usage_range: Optional[Literal["up_to_4_hours", "4_to_8_hours", "more_than_8_hours", "not_sure"]] = Field(
+        default="4_to_8_hours", description="Daily cooling hours"
+    )
+    fans_required: bool = Field(default=True, description="Whether ceiling fans are required")
+    fans_count: Optional[int] = Field(default=None, ge=0, le=30, description="Number of ceiling fans")
+    geyser_required: bool = Field(default=False, description="Whether water heaters/geysers are required")
+    geyser_count: int = Field(default=0, ge=0, le=10, description="Number of geysers")
+    geyser_usage: Optional[Literal["occasional", "regular", "frequent", "not_sure"]] = Field(
+        default="regular", description="Geyser usage frequency"
+    )
+    refrigerator_required: bool = Field(default=True, description="Whether refrigerator is required")
+    refrigerator_count: int = Field(default=1, ge=0, le=5, description="Number of refrigerators")
+    washing_machine_required: bool = Field(default=False, description="Whether washing machine is required")
+    washing_machine_count: int = Field(default=0, ge=0, le=3, description="Number of washing machines")
+    water_pump_required: bool = Field(default=False, description="Whether water pump/borewell is required")
+    induction_cooktop_required: bool = Field(default=False, description="Whether induction cooktop is required")
+    microwave_required: bool = Field(default=False, description="Whether microwave oven is required")
+    additional_high_load_notes: Optional[str] = Field(default=None, description="Custom high-load equipment notes")
+    include_solar_pv: bool = Field(default=False, description="Whether to evaluate on-site rooftop solar PV")
+    roof_area_available_m2: Optional[float] = Field(default=None, ge=0.0, description="Usable rooftop area in m²")
+    solar_roof_access: Optional[Literal["private", "shared"]] = Field(default=None, description="Roof access type")
+    include_ev_charger: bool = Field(default=False, description="Whether to plan EV charging provision")
+    ev_category: Optional[Literal["two_wheeler", "four_wheeler", "both"]] = Field(default=None, description="EV vehicle category")
+    ev_charger_rating_preference: Optional[str] = Field(default=None, description="EV charger rating preference")
 
 
 class PlanHouseEnergyTool(BaseTool):

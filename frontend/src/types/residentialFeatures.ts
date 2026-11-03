@@ -76,24 +76,92 @@ export interface PlannedEquipmentItem {
   efficiency_standard: string;
   estimated_daily_hours: number;
   estimated_monthly_kwh: number;
-  unit_cost_inr: number;
-  total_cost_inr: number;
+  unit_cost_inr?: number | null;
+  total_cost_inr?: number | null;
+  cost_status?: 'verified' | 'unavailable' | 'customer_estimate';
+  room_assignment?: string | null;
+  is_provision_only?: boolean;
+  notes?: string | null;
   provenance: string;
+}
+
+export interface RoomScheduleItem {
+  room_name: string;
+  room_type: string;
+  equipment: PlannedEquipmentItem[];
+  total_connected_load_w: number;
+  ac_provision: boolean;
+  notes?: string | null;
+}
+
+export interface BudgetSummary {
+  lighting_fans_cost_inr?: number | null;
+  cooling_cost_inr?: number | null;
+  water_heating_cost_inr?: number | null;
+  other_equipment_cost_inr?: number | null;
+  total_equipment_cost_inr: number;
+  allocated_budget_inr: number;
+  budget_exceeded: boolean;
+  budget_variance_inr: number;
+  cost_coverage: 'complete' | 'partial' | 'unavailable';
+  unpriced_items: string[];
+  wiring_installation_note?: string;
+}
+
+export interface PracticalRecommendationItem {
+  title: string;
+  category: string;
+  rationale: string;
+  source: string;
+  expected_benefit: string;
+  is_quantitative: boolean;
+  estimated_monthly_savings_inr?: number | null;
+  estimated_monthly_kwh_saved?: number | null;
+}
+
+export interface SolarReadinessAnalysis {
+  status: 'feasibility_estimated' | 'preliminary_readiness' | 'not_requested';
+  roof_area_available_m2?: number | null;
+  roof_access?: 'private' | 'shared' | null;
+  recommended_system_kwp?: number | null;
+  estimated_monthly_generation_kwh?: number | null;
+  estimated_gross_cost_inr?: number | null;
+  mnre_estimated_subsidy_inr?: number | null;
+  net_investment_inr?: number | null;
+  estimated_annual_savings_inr?: number | null;
+  simple_payback_years?: number | null;
+  feasibility_notes: string[];
+  missing_inputs: string[];
+}
+
+export interface EvReadinessAnalysis {
+  status: 'readiness_planned' | 'not_requested';
+  ev_category?: 'two_wheeler' | 'four_wheeler' | 'both' | null;
+  recommended_charger_type: string;
+  recommended_circuit_rating: string;
+  dedicated_circuit_required: boolean;
+  safety_guidelines: string[];
+  discom_verification_needed: string[];
 }
 
 export interface EnergyPlanTier {
   tier_name: string;
   tagline: string;
   total_equipment_cost_inr: number;
+  cost_coverage?: 'complete' | 'partial' | 'unavailable';
   estimated_connected_load_kw: number;
   diversified_peak_demand_kw: number;
+  recommended_supply_phase?: string;
+  supply_phase_advisory?: string;
   estimated_monthly_consumption_kwh: number;
   estimated_monthly_bill_inr: number;
   estimated_annual_bill_inr: number;
+  bill_calculation_status?: 'calculated' | 'unavailable';
+  bill_calculation_notes?: string | null;
   energy_savings_vs_standard_pct: number;
-  solar_pv_kwp?: number;
-  solar_generation_monthly_kwh?: number;
-  net_monthly_bill_inr?: number;
+  solar_pv_kwp?: number | null;
+  solar_generation_monthly_kwh?: number | null;
+  net_monthly_bill_inr?: number | null;
   equipment_schedule: PlannedEquipmentItem[];
   key_features: string[];
 }
@@ -102,8 +170,16 @@ export interface HouseEnergyPlanningResult {
   property_summary: Record<string, any>;
   preliminary_connected_load_kw: number;
   diversified_maximum_demand_kw: number;
+  recommended_supply_phase?: string;
   recommended_plan: EnergyPlanTier;
   alternative_plans: EnergyPlanTier[];
+  has_room_assignment?: boolean;
+  room_wise_schedule?: RoomScheduleItem[];
+  unassigned_appliances?: string[];
+  budget_summary?: BudgetSummary | null;
+  recommendations?: PracticalRecommendationItem[];
+  solar_readiness?: SolarReadinessAnalysis | null;
+  ev_readiness?: EvReadinessAnalysis | null;
   room_wise_load_summary: Array<{
     roomType: string;
     areaM2: number;
@@ -121,6 +197,8 @@ export interface HouseEnergyPlanningResult {
     simplePaybackYears?: number;
   };
   audit_trail: CalculationAuditItem[];
+  assumptions?: string[];
+  missing_or_unverified_inputs?: string[];
   technical_disclaimer: string;
 }
 

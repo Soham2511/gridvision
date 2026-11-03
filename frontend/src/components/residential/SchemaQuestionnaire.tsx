@@ -24,6 +24,7 @@ const buildInitialFormData = (
       initial[field.field_id] = field.default_value;
     } else {
       if (field.input_type === 'boolean') initial[field.field_id] = false;
+      else if (field.input_type === 'multi_select') initial[field.field_id] = field.default_value || [];
       else if (field.input_type === 'number' || field.input_type === 'currency') initial[field.field_id] = '';
       else initial[field.field_id] = '';
     }
@@ -228,6 +229,7 @@ export const SchemaQuestionnaire: React.FC<SchemaQuestionnaireProps> = ({
         initial[field.field_id] = field.default_value;
       } else {
         if (field.input_type === 'boolean') initial[field.field_id] = false;
+        else if (field.input_type === 'multi_select') initial[field.field_id] = field.default_value || [];
         else if (field.input_type === 'number' || field.input_type === 'currency') initial[field.field_id] = '';
         else initial[field.field_id] = '';
       }
@@ -430,6 +432,45 @@ export const SchemaQuestionnaire: React.FC<SchemaQuestionnaireProps> = ({
                                 }}
                               >
                                 {opt.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      ) : field.input_type === 'multi_select' ? (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem', marginTop: '0.2rem' }}>
+                          {field.options?.map((opt) => {
+                            const currentArr: string[] = Array.isArray(value) ? value : [];
+                            const isSelected = currentArr.includes(opt.value);
+                            return (
+                              <button
+                                key={opt.value}
+                                type="button"
+                                onClick={() => {
+                                  if (isSelected) {
+                                    handleChange(
+                                      field.field_id,
+                                      currentArr.filter((v) => v !== opt.value)
+                                    );
+                                  } else {
+                                    handleChange(field.field_id, [...currentArr, opt.value]);
+                                  }
+                                }}
+                                style={{
+                                  padding: '0.35rem 0.65rem',
+                                  borderRadius: '6px',
+                                  border: isSelected ? '2px solid #00B8A9' : '1px solid #CBD5E1',
+                                  backgroundColor: isSelected ? '#E0F7F5' : '#FFFFFF',
+                                  color: isSelected ? '#00A396' : '#475569',
+                                  fontSize: '0.78rem',
+                                  fontWeight: isSelected ? 700 : 500,
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '0.3rem',
+                                }}
+                              >
+                                <span>{isSelected ? '✓' : '+'}</span>
+                                <span>{opt.label}</span>
                               </button>
                             );
                           })}

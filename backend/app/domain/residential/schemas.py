@@ -105,23 +105,6 @@ class RoomSpec(BaseModel):
     occupancy_hours_per_day: float = Field(default=8.0, ge=0.0, le=24.0)
 
 
-class HouseEnergyPlanningRequest(BaseModel):
-    """Input payload for New House Energy Planning."""
-    property_type: Literal["apartment", "independent_house", "villa", "row_house"] = "independent_house"
-    built_up_area_m2: float = Field(..., ge=15.0, le=2000.0, description="Total built-up area in m²")
-    floors_count: int = Field(default=1, ge=1, le=10)
-    occupancy_count: int = Field(default=4, ge=1, le=30)
-    location_city: str = Field(default="Bangalore", description="City location for climate and solar insolation norms")
-    rooms: List[RoomSpec] = Field(default_factory=list, description="Room-wise specifications")
-    budget_inr: float = Field(default=150000.0, ge=10000.0, description="Customer upfront equipment/electrical budget in ₹")
-    efficiency_priority: Literal["economy", "balanced", "high_efficiency"] = "balanced"
-    include_solar_pv: bool = False
-    roof_area_available_m2: Optional[float] = Field(default=None, ge=0.0)
-    include_battery_storage: bool = False
-    include_ev_charger: bool = False
-    tariff_inr_per_kwh: float = Field(default=10.0, ge=1.0)
-
-
 class PlannedEquipmentItem(BaseModel):
     """Individual recommended equipment specification in the energy plan."""
     item_name: str
@@ -131,9 +114,88 @@ class PlannedEquipmentItem(BaseModel):
     efficiency_standard: str  # e.g., "5-Star BEE Inverter", "BLDC Motor", "LED CRI>80"
     estimated_daily_hours: float
     estimated_monthly_kwh: float
-    unit_cost_inr: float
-    total_cost_inr: float
+    unit_cost_inr: Optional[float] = None
+    total_cost_inr: Optional[float] = None
+    cost_status: Literal["verified", "unavailable", "customer_estimate"] = "verified"
+    room_assignment: Optional[str] = None
+    is_provision_only: bool = False
+    notes: Optional[str] = None
     provenance: DataProvenance = DataProvenance.CALCULATED
+
+
+class RoomScheduleItem(BaseModel):
+    """Room-wise electrical and equipment allocation."""
+    room_name: str
+    room_type: str = "general"  # bedroom, living_dining, kitchen, bathroom, utility, general
+    equipment: List[PlannedEquipmentItem] = Field(default_factory=list)
+    total_connected_load_w: float = 0.0
+    ac_provision: bool = False
+    notes: Optional[str] = None
+
+
+class BudgetSummary(BaseModel):
+    """Structured budget comparison and equipment breakdown."""
+    lighting_fans_cost_inr: Optional[float] = None
+    cooling_cost_inr: Optional[float] = None
+    water_heating_cost_inr: Optional[float] = None
+    other_equipment_cost_inr: Optional[float] = None
+    total_equipment_cost_inr: float = 0.0
+    estimated_equipment_cost_inr: Optional[float] = None
+    allocated_budget_inr: float = 0.0
+    budget_exceeded: bool = False
+    budget_variance_inr: float = 0.0
+    budget_status: Literal["within_budget", "exceeds_budget", "incomplete"] = "within_budget"
+    cost_coverage: Literal["complete", "partial", "unavailable"] = "complete"
+    unpriced_items: List[str] = Field(default_factory=list)
+    wiring_installation_note: str = (
+        "Equipment budget covers purchase cost of fixtures and appliances. "
+        "Conduit piping, internal wiring runs, distribution boards, MCBs, "
+        "and contractor installation labor are quoted separately by an electrical contractor."
+    )
+
+
+class PracticalRecommendationItem(BaseModel):
+    """Targeted, source-backed energy optimization recommendation for the resident."""
+    title: str
+    category: str  # cooling, ventilation, water_heating, solar, ev, wiring_infrastructure
+    rationale: str
+    source: str
+    expected_benefit: str
+    is_quantitative: bool = False
+    estimated_monthly_savings_inr: Optional[float] = None
+    estimated_monthly_kwh_saved: Optional[float] = None
+
+
+class SolarReadinessAnalysis(BaseModel):
+    """Rooftop Solar PV feasibility or readiness assessment."""
+    status: Literal["feasibility_estimated", "feasible", "preliminary_readiness", "not_requested"] = "not_requested"
+    roof_area_available_m2: Optional[float] = None
+    roof_access: Optional[Literal["private", "shared"]] = None
+    recommended_system_kwp: Optional[float] = None
+    feasible_capacity_kw: Optional[float] = None
+    estimated_monthly_generation_kwh: Optional[float] = None
+    estimated_gross_cost_inr: Optional[float] = None
+    mnre_estimated_subsidy_inr: Optional[float] = None
+    net_investment_inr: Optional[float] = None
+    estimated_annual_savings_inr: Optional[float] = None
+    simple_payback_years: Optional[float] = None
+    feasibility_notes: List[str] = Field(default_factory=list)
+    next_steps: List[str] = Field(default_factory=list)
+    missing_inputs: List[str] = Field(default_factory=list)
+
+
+class EvReadinessAnalysis(BaseModel):
+    """Electric vehicle charging infrastructure readiness assessment."""
+    status: Literal["readiness_planned", "not_requested"] = "not_requested"
+    ev_category: Optional[Literal["two_wheeler", "four_wheeler", "both"]] = None
+    recommended_charger_type: str = "Dedicated 16A / 3.3 kW AC Level-1"
+    recommended_charger_rating_kw: Optional[float] = None
+    recommended_circuit_rating: str = "16A Single-Phase (3.3 kW)"
+    recommended_supply_phase: Optional[str] = None
+    dedicated_circuit_required: bool = True
+    safety_guidelines: List[str] = Field(default_factory=list)
+    wiring_notes: str = "Protected dedicated radial sub-circuit per IS 17017 standards."
+    discom_verification_needed: List[str] = Field(default_factory=list)
 
 
 class EnergyPlanTier(BaseModel):
@@ -141,17 +203,157 @@ class EnergyPlanTier(BaseModel):
     tier_name: str
     tagline: str
     total_equipment_cost_inr: float
+    cost_coverage: Literal["complete", "partial", "unavailable"] = "complete"
     estimated_connected_load_kw: float
     diversified_peak_demand_kw: float
+    recommended_supply_phase: str = "Single-Phase (230V)"
+    supply_phase_advisory: str = "Preliminary advisory subject to DISCOM connection sanction"
     estimated_monthly_consumption_kwh: float
     estimated_monthly_bill_inr: float
     estimated_annual_bill_inr: float
-    energy_savings_vs_standard_pct: float
+    bill_calculation_status: Literal["calculated", "unavailable"] = "calculated"
+    bill_calculation_notes: Optional[str] = None
+    energy_savings_vs_standard_pct: float = 0.0
+    monthly_savings_pct: float = 0.0
+    monthly_savings_vs_economy_inr: float = 0.0
     solar_pv_kwp: Optional[float] = None
     solar_generation_monthly_kwh: Optional[float] = None
     net_monthly_bill_inr: Optional[float] = None
     equipment_schedule: List[PlannedEquipmentItem]
+    equipment_list: Optional[List[PlannedEquipmentItem]] = None
     key_features: List[str]
+
+
+class HouseEnergyPlanningRequest(BaseModel):
+    """Input payload for New House Energy Planning.
+    
+    Organized into 4 sections:
+    Section A - Property Profile
+    Section B - Electrical & Appliance Requirements
+    Section C - Energy Efficiency & Budget
+    Section D - Solar & EV Readiness
+    """
+    # Section A — Property Profile
+    property_type: Literal["apartment", "independent_house", "villa", "row_house"] = "independent_house"
+    built_up_area_m2: float = Field(..., ge=15.0, le=2000.0, description="Total built-up area in m²")
+    floors_count: int = Field(default=1, ge=1, le=10)
+    occupancy_count: int = Field(default=4, ge=1, le=30)
+    location_city: str = Field(default="Bangalore", description="City location for climate and solar insolation norms")
+    bedrooms_count: int = Field(default=3, ge=1, le=20, description="Number of bedrooms")
+    bathrooms_count: int = Field(default=2, ge=1, le=20, description="Number of bathrooms")
+    living_dining_count: int = Field(default=1, ge=1, le=10, description="Number of living/dining areas")
+    daytime_occupancy: Literal["mostly_away", "home_during_day", "work_from_home"] = Field(
+        default="mostly_away", description="Daytime occupancy profile"
+    )
+
+    # Section B — Electrical & Appliance Requirements
+    ac_required: bool = False
+    ac_count: int = Field(default=0, ge=0, le=20)
+    ac_intended_rooms: List[str] = Field(default_factory=list)
+    ac_usage_range: Optional[Literal["up_to_4_hours", "4_to_8_hours", "more_than_8_hours", "not_sure"]] = "4_to_8_hours"
+
+    fans_required: bool = True
+    fans_count: Optional[int] = Field(default=None, ge=0, le=50)
+
+    geyser_required: bool = False
+    geyser_count: int = Field(default=0, ge=0, le=15)
+    geyser_usage: Optional[Literal["occasional", "regular", "frequent", "not_sure"]] = "regular"
+
+    refrigerator_required: bool = True
+    refrigerator_count: int = Field(default=1, ge=0, le=10)
+
+    washing_machine_required: bool = False
+    washing_machine_count: int = Field(default=0, ge=0, le=5)
+
+    water_pump_required: bool = False
+    induction_cooktop_required: bool = False
+    microwave_required: bool = False
+    additional_high_load_notes: Optional[str] = None
+
+    # Section C — Energy Efficiency and Budget
+    efficiency_priority: Literal["economy", "balanced", "high_efficiency"] = "balanced"
+    budget_inr: float = Field(default=150000.0, ge=10000.0, description="Approximate budget for electrical fixtures & appliances in ₹")
+    tariff_inr_per_kwh: float = Field(default=10.0, ge=0.0)
+
+    # Section D — Solar and EV Readiness
+    include_solar_pv: bool = False
+    roof_area_available_m2: Optional[float] = Field(default=None, ge=0.0)
+    solar_roof_access: Optional[Literal["private", "shared"]] = None
+
+    include_battery_storage: bool = False
+    include_ev_charger: bool = False
+    ev_category: Optional[Literal["two_wheeler", "four_wheeler", "both"]] = None
+    ev_charger_rating_preference: Optional[str] = None
+
+    # Backward compatibility: explicit room specs
+    rooms: List[RoomSpec] = Field(default_factory=list, description="Optional room-wise specifications for backward compatibility")
+
+    model_config = ConfigDict(extra="ignore")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_request_data(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+
+        d = dict(data)
+        if d.get("ac_intended_rooms") is None:
+            d["ac_intended_rooms"] = []
+        if d.get("ac_usage_range") is None:
+            d["ac_usage_range"] = "4_to_8_hours"
+        if d.get("geyser_usage") is None:
+            d["geyser_usage"] = "regular"
+        if d.get("daytime_occupancy") is None:
+            d["daytime_occupancy"] = "mostly_away"
+        # Unpack nested appliances payload if provided
+        if "appliances" in d and isinstance(d["appliances"], dict):
+            app_dict = d.pop("appliances")
+            for k, v in app_dict.items():
+                if k not in d or d[k] is None:
+                    d[k] = v
+
+        # If rooms list is provided (legacy payloads), extract room counts and AC requirements
+        rooms = d.get("rooms")
+        if rooms and isinstance(rooms, list) and len(rooms) > 0:
+            bed_count = 0
+            bath_count = 0
+            living_count = 0
+            ac_in_rooms = 0
+            for r in rooms:
+                rtype = str(r.get("room_type", "") if isinstance(r, dict) else getattr(r, "room_type", "")).lower()
+                if "bed" in rtype:
+                    bed_count += 1
+                elif "bath" in rtype:
+                    bath_count += 1
+                elif "living" in rtype or "dining" in rtype:
+                    living_count += 1
+
+                has_ac = r.get("ac_required", False) if isinstance(r, dict) else getattr(r, "ac_required", False)
+                if has_ac:
+                    ac_in_rooms += 1
+
+            if "bedrooms_count" not in d and bed_count > 0:
+                d["bedrooms_count"] = bed_count
+            if "bathrooms_count" not in d and bath_count > 0:
+                d["bathrooms_count"] = bath_count
+            if "living_dining_count" not in d and living_count > 0:
+                d["living_dining_count"] = living_count
+            if ac_in_rooms > 0 and not d.get("ac_required"):
+                d["ac_required"] = True
+                if not d.get("ac_count"):
+                    d["ac_count"] = ac_in_rooms
+
+        # EV charging synonym normalization
+        if "include_ev_charging" in d and "include_ev_charger" not in d:
+            d["include_ev_charger"] = bool(d.pop("include_ev_charging"))
+
+        # Default fan count to bedrooms + living_dining if not explicitly provided
+        if d.get("fans_required", True) and d.get("fans_count") is None:
+            beds = int(d.get("bedrooms_count", 3))
+            living = int(d.get("living_dining_count", 1))
+            d["fans_count"] = beds + living
+
+        return d
 
 
 class HouseEnergyPlanningResult(BaseModel):
@@ -159,15 +361,28 @@ class HouseEnergyPlanningResult(BaseModel):
     property_summary: Dict[str, Any]
     preliminary_connected_load_kw: float
     diversified_maximum_demand_kw: float
+    recommended_supply_phase: str = "Single-Phase (230V)"
     recommended_plan: EnergyPlanTier
     alternative_plans: List[EnergyPlanTier]
-    room_wise_load_summary: List[Dict[str, Any]]
-    solar_potential_analysis: Optional[Dict[str, Any]] = None
+    alternative_tiers: Optional[List[EnergyPlanTier]] = None  # Backward compatibility alias
+    has_room_assignment: bool = False
+    room_wise_schedule: List[RoomScheduleItem] = Field(default_factory=list)
+    unassigned_appliances: List[str] = Field(default_factory=list)
+    budget_summary: Optional[BudgetSummary] = None
+    recommendations: List[PracticalRecommendationItem] = Field(default_factory=list)
+    solar_readiness: Optional[SolarReadinessAnalysis] = None
+    ev_readiness: Optional[EvReadinessAnalysis] = None
+    solar_potential_analysis: Optional[Dict[str, Any]] = None  # Backward compatibility
+    room_wise_load_summary: List[Dict[str, Any]] = Field(default_factory=list)  # Backward compatibility
     audit_trail: List[CalculationAuditItem]
+    assumptions: List[str] = Field(default_factory=list)
+    missing_or_unverified_inputs: List[str] = Field(default_factory=list)
     technical_disclaimer: str = (
-        "Preliminary engineering estimate for planning purposes. "
-        "Final wiring, cable sizing, and circuit protection must comply with National Electrical Code (NEC) / IS 732 "
-        "and be certified by a licensed electrical contractor."
+        "Preliminary home energy planning blueprint for conceptual budgeting and sizing. "
+        "This is not a certified electrical installation design. "
+        "Final wiring routes, cable cross-sections, conduit sizing, switchgear, distribution boards, "
+        "and circuit breaker protection must be designed and certified by a licensed electrical engineer / contractor "
+        "in compliance with National Electrical Code (NEC) and IS 732, and verified with the local DISCOM."
     )
 
 

@@ -454,9 +454,56 @@ class AgenticKnowledgeOrchestrator:
             bedrooms = 2
         elif "4-bedroom" in p or "4 bedroom" in p or "4bhk" in p:
             bedrooms = 4
+        elif "1-bedroom" in p or "1 bedroom" in p or "1bhk" in p:
+            bedrooms = 1
 
-        area_sqm = 135.0 if bedrooms == 3 else (95.0 if bedrooms == 2 else 180.0)
+        bathrooms = 2
+        if "1 bathroom" in p or "1 bath" in p:
+            bathrooms = 1
+        elif "3 bathroom" in p or "3 bath" in p:
+            bathrooms = 3
+        elif "4 bathroom" in p or "4 bath" in p:
+            bathrooms = 4
+
+        # Appliance parsing from resident's natural language
+        ac_req = bool("ac" in p or "air conditioner" in p or "cooling" in p)
+        ac_cnt = 0
+        ac_rooms = []
+        if ac_req:
+            if "two bedroom" in p or "2 bedroom" in p or "two ac" in p or "2 ac" in p:
+                ac_cnt = 2
+                ac_rooms = ["bedrooms"]
+            elif "three ac" in p or "3 ac" in p or "three bedroom" in p:
+                ac_cnt = 3
+                ac_rooms = ["bedrooms"]
+            elif "one ac" in p or "1 ac" in p or "single ac" in p:
+                ac_cnt = 1
+                ac_rooms = ["bedrooms"]
+            else:
+                ac_cnt = 2 if bedrooms >= 2 else 1
+                ac_rooms = ["bedrooms"]
+
+        fans_req = bool("fan" in p or "ventilation" in p or not ("no fan" in p or "without fan" in p))
+        fans_cnt = bedrooms + 1
+        fan_match = re.search(r"(\d+)\s*(?:ceiling\s*)?fans?", p)
+        if fan_match:
+            fans_cnt = int(fan_match.group(1))
+
+        geyser_req = bool("geyser" in p or "water heater" in p or "hot water" in p)
+        geyser_cnt = 0
+        if geyser_req:
+            if "both bathroom" in p or "two geyser" in p or "2 geyser" in p:
+                geyser_cnt = min(bathrooms, 2)
+            elif "one geyser" in p or "1 geyser" in p:
+                geyser_cnt = 1
+            else:
+                geyser_cnt = min(bathrooms, 2)
+
         include_solar = bool("solar" in p or is_opt_request)
+        include_ev = bool("ev" in p or "electric vehicle" in p or "charger" in p)
+        refrigerator_req = not ("no fridge" in p or "without refrigerator" in p)
+
+        area_sqm = 135.0 if bedrooms == 3 else (95.0 if bedrooms == 2 else (180.0 if bedrooms == 4 else 60.0))
 
         # 1. User is asking for the key optimization steps for their current plan
         if is_opt_analysis_query:
@@ -589,8 +636,20 @@ class AgenticKnowledgeOrchestrator:
             floors_count=1 if area_sqm <= 100 else 2,
             occupancy_count=bedrooms + 1,
             location_city="Bangalore",
+            bedrooms_count=bedrooms,
+            bathrooms_count=bathrooms,
+            living_dining_count=1,
             efficiency_priority="balanced",
+            ac_required=ac_req,
+            ac_count=ac_cnt,
+            ac_intended_rooms=ac_rooms,
+            fans_required=fans_req,
+            fans_count=fans_cnt,
+            geyser_required=geyser_req,
+            geyser_count=geyser_cnt,
+            refrigerator_required=refrigerator_req,
             include_solar_pv=include_solar,
+            include_ev_charger=include_ev,
             tariff_inr_per_kwh=self.tariff_rate,
         )
 

@@ -143,6 +143,68 @@ APPLIANCE_BENCHMARKS: Dict[str, Dict[str, Any]] = {
             "unit_price_inr": 350.0,
         },
     },
+    "washing_machine_7kg": {
+        "description": "7.0 kg Fully Automatic Washing Machine",
+        "standard_conventional": {
+            "label": "Conventional 3-Star Top Load",
+            "rated_power_w": 450.0,
+            "annual_energy_kwh": 65.0,
+            "average_power_draw_w": 180.0,
+            "unit_price_inr": 18000.0,
+        },
+        "5_star_inverter": {
+            "label": "5-Star BEE Inverter Direct Drive Front Load",
+            "rated_power_w": 360.0,
+            "annual_energy_kwh": 38.0,
+            "average_power_draw_w": 120.0,
+            "unit_price_inr": 28000.0,
+        },
+    },
+    "water_pump_1hp": {
+        "description": "1.0 HP Domestic Monobloc Water Pump",
+        "standard_conventional": {
+            "label": "Standard Induction Monobloc Pump",
+            "rated_power_w": 750.0,
+            "average_power_draw_w": 750.0,
+            "unit_price_inr": 6500.0,
+        },
+        "5_star_inverter": {
+            "label": "BEE 5-Star High-Efficiency Submersible / Booster",
+            "rated_power_w": 650.0,
+            "average_power_draw_w": 650.0,
+            "unit_price_inr": 9500.0,
+        },
+    },
+    "induction_cooktop": {
+        "description": "Electromagnetic Induction Cooktop",
+        "standard_conventional": {
+            "label": "Standard 1800W Induction Cooktop",
+            "rated_power_w": 1800.0,
+            "average_power_draw_w": 1400.0,
+            "unit_price_inr": 3200.0,
+        },
+        "5_star_inverter": {
+            "label": "Advanced Smart Sensor Induction Cooktop",
+            "rated_power_w": 1800.0,
+            "average_power_draw_w": 1200.0,
+            "unit_price_inr": 4800.0,
+        },
+    },
+    "microwave_oven": {
+        "description": "20L Solo / Convection Microwave Oven",
+        "standard_conventional": {
+            "label": "Standard Solo Microwave Oven",
+            "rated_power_w": 1200.0,
+            "average_power_draw_w": 1100.0,
+            "unit_price_inr": 6500.0,
+        },
+        "5_star_inverter": {
+            "label": "Inverter Convection Microwave Oven",
+            "rated_power_w": 1100.0,
+            "average_power_draw_w": 900.0,
+            "unit_price_inr": 12500.0,
+        },
+    },
 }
 
 # Rooftop Solar PV Benchmark Parameters (MNRE norms for Indian climatic zones)

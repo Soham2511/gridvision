@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import time
 from typing import Any
 
@@ -656,6 +657,9 @@ class ResidentialAssistantOrchestrator:
         )
         relevance_val = "relevant" if is_relevant else "irrelevant"
         status_val = "success"
+
+        if answer:
+            answer = re.sub(r"Before[\s\u202f]+vs\.?[\s\u202f]+After", "Before vs. After", answer, flags=re.IGNORECASE)
 
         return {
             "answer": answer,
