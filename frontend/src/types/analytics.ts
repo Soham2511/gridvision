@@ -56,6 +56,8 @@ export interface CommercialBuilding {
 
 export interface ResidentialMeter {
   householdId: string;
+  objectId?: number;
+  meterId?: string;
   dailyKwh: number;
   actualCycleKwhSoFar: number;
   targetRemainingKwh: number;
@@ -77,6 +79,8 @@ export interface HouseholdConsumptionPoint {
 
 export interface HouseholdOverview {
   householdId: string;
+  objectId?: number;
+  meterId?: string;
   userName: string;
   currentDailyUsageKwh: number;
   dailyAvgKwh: number;

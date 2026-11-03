@@ -3,7 +3,6 @@ import { usePersona } from '../context';
 import { analyticsService } from '../services/analyticsService';
 import { HistoricalInsightsData } from '../types/analytics';
 import { CommonMetricCard, CommonChartHoverCard } from '../components/common';
-import { ResidentialGoldInsightsPage } from './ResidentialGoldInsightsPage';
 import {
   ResponsiveContainer,
   AreaChart,
@@ -23,12 +22,6 @@ import {
 } from 'lucide-react';
 
 export const HistoricalAnalysisPage: React.FC = () => {
-  const { currentPersona } = usePersona();
-  const persona = currentPersona || 'household';
-
-  if (persona === 'household') {
-    return <ResidentialGoldInsightsPage />;
-  }
   return <PersonaHistoricalAnalysisPage />;
 };
 
@@ -75,7 +68,8 @@ const PersonaHistoricalAnalysisPage: React.FC = () => {
     if (persona === 'government') {
       return 'Analyze system-wide grid demand & substation capacity history across 17 regional zones';
     }
-    return 'Analyze your household energy consumption over time';
+    const numPart = (activeEntity || '2254213').replace(/METER-/i, '').replace(/meter-/i, '');
+    return `Analyze household energy consumption over time for OBJECTID ${numPart}`;
   }, [persona, activeEntity]);
 
   // Find peak day data point to anchor the visual demarcation pin

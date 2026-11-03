@@ -71,14 +71,22 @@ class ApiClient {
     params?: Record<string, string | number | boolean | undefined | null>
   ): Promise<T> {
     const fullUrl = this.buildUrl(path, params);
+    const activeHousehold = typeof window !== 'undefined' ? localStorage.getItem('gv_active_entity_household') : null;
+    const defaultDevUser = activeHousehold ? activeHousehold.replace(/METER-/i, '') : '2254213';
+
     const headers: Record<string, string> = {
       Accept: 'application/json',
       'Content-Type': 'application/json',
+      ...(defaultDevUser ? { 'X-Dev-User-Id': defaultDevUser } : {}),
       ...((options.headers as Record<string, string>) || {}),
     };
 
+    const timeoutDuration =
+      (options as { timeoutMs?: number })?.timeoutMs ||
+      (path.includes('/assistant/chat') ? 45000 : 30000);
+
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 15000);
+    const timeoutId = setTimeout(() => controller.abort(), timeoutDuration);
 
     try {
       const response = await fetch(fullUrl, {
@@ -113,8 +121,9 @@ class ApiClient {
       }
       if (err instanceof Error) {
         if (err.name === 'AbortError') {
+          const secs = Math.round(timeoutDuration / 1000);
           throw new ApiClientError(
-            `Request to ${path} timed out after 15s. Ensure backend is running.`,
+            `Request to ${path} timed out after ${secs}s. Ensure backend is running.`,
             'TIMEOUT_ERROR',
             408
           );
@@ -139,12 +148,29 @@ class ApiClient {
   public async post<T>(
     path: string,
     body?: unknown,
-    params?: Record<string, string | number | boolean | undefined | null>
+    params?: Record<string, string | number | boolean | undefined | null>,
+    options?: RequestInit & { timeoutMs?: number }
   ): Promise<T> {
     return this.request<T>(
       path,
       {
         method: 'POST',
+        body: body ? JSON.stringify(body) : undefined,
+        ...options,
+      },
+      params
+    );
+  }
+
+  public async put<T>(
+    path: string,
+    body?: unknown,
+    params?: Record<string, string | number | boolean | undefined | null>
+  ): Promise<T> {
+    return this.request<T>(
+      path,
+      {
+        method: 'PUT',
         body: body ? JSON.stringify(body) : undefined,
       },
       params

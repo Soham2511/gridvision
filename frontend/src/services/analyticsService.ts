@@ -25,6 +25,13 @@ import {
   PlatformHealthSummary,
   KpiMetric,
 } from '../types/analytics';
+import {
+  QuestionnaireSchema,
+  HouseEnergyPlanningResult,
+  ApplianceScenarioResult,
+  CostManagementResult,
+  AssistantResponsePayload,
+} from '../types/residentialFeatures';
 
 export interface OverviewApiResponse {
   kpis: KpiMetric[];
@@ -86,6 +93,10 @@ class AnalyticsService {
   // --- Residential Meters ---
   async getResidentialMeters(): Promise<ResidentialMeter[]> {
     return apiClient.get<ResidentialMeter[]>('/entities/residential');
+  }
+
+  async getResidentialMeter(householdId: string): Promise<ResidentialMeter> {
+    return apiClient.get<ResidentialMeter>(`/entities/residential/${encodeURIComponent(householdId)}`);
   }
 
   async getResidentialForecast(householdId: string): Promise<{
@@ -226,15 +237,56 @@ class AnalyticsService {
   async askAssistant(
     prompt: string,
     persona: string = 'household',
-    entityId?: string
-  ): Promise<{ answer: string; persona: string; entityId: string }> {
-    return apiClient.post<{ answer: string; persona: string; entityId: string }>(
+    entityId?: string,
+    history?: { role: 'user' | 'assistant' | 'system'; content: string }[]
+  ): Promise<AssistantResponsePayload> {
+    return apiClient.post<AssistantResponsePayload>(
       '/assistant/chat',
       {
         prompt,
         persona,
         entity_id: entityId,
+        history: history || [],
       }
+    );
+  }
+// --- Dedicated Residential Features ---
+  async getResidentialQuestionnaire(featureId: string): Promise<QuestionnaireSchema> {
+    return apiClient.get<QuestionnaireSchema>(`/residential/questionnaires/${encodeURIComponent(featureId)}`);
+  }
+
+  async planHouseEnergy(payload: any): Promise<HouseEnergyPlanningResult> {
+    const res = await apiClient.post<any>('/residential/plan-house-energy', payload);
+    return ((res && res.results) ? res.results : res) as HouseEnergyPlanningResult;
+  }
+
+  async analyzeApplianceScenario(payload: any): Promise<ApplianceScenarioResult> {
+    const res = await apiClient.post<any>('/residential/analyze-appliance', payload);
+    return ((res && res.results) ? res.results : res) as ApplianceScenarioResult;
+  }
+
+  async manageEnergyCost(payload: any): Promise<CostManagementResult> {
+    const res = await apiClient.post<any>('/residential/manage-cost', payload);
+    return ((res && res.results) ? res.results : res) as CostManagementResult;
+  }
+
+  async createResidentialSession(
+    featureId: string,
+    entityId?: string
+  ): Promise<{ session_id: string; status: string }> {
+    return apiClient.post<{ session_id: string; status: string }>('/residential/sessions', {
+      feature_id: featureId,
+      entity_id: entityId,
+    });
+  }
+
+  async updateResidentialSession(
+    sessionId: string,
+    payload: any
+  ): Promise<{ session_id: string; status: string }> {
+    return apiClient.put<{ session_id: string; status: string }>(
+      `/residential/sessions/${encodeURIComponent(sessionId)}`,
+      payload
     );
   }
 }

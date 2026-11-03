@@ -4,6 +4,12 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from dotenv import load_dotenv
+
+# Automatically load environment variables from backend/.env or root .env
+load_dotenv(Path(__file__).resolve().parents[2] / "backend" / ".env")
+load_dotenv(Path(__file__).resolve().parents[2] / ".env")
+load_dotenv()
 
 
 class BaseConfig:
@@ -19,8 +25,51 @@ class BaseConfig:
         ).split(",")
         if origin.strip()
     ]
-    DATA_PROVIDER = os.getenv("DATA_PROVIDER", "sample")
+    DATA_PROVIDER = os.getenv("DATA_PROVIDER", "parquet")
     MODEL_PROVIDER = os.getenv("MODEL_PROVIDER", "development")
+
+    # LLM Assistant Settings (Groq / OpenAI-compatible)
+    GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+    GROQ_BASE_URL = os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1")
+    GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-20b")
+    ASSISTANT_TEMPERATURE = float(os.getenv("ASSISTANT_TEMPERATURE", "0.2"))
+    ASSISTANT_MAX_TOKENS = int(os.getenv("ASSISTANT_MAX_TOKENS", "800"))
+
+    # Server-side authorized residential meters based on real OBJECTIDs
+    # Primary OBJECTIDs: 2254213, 293861, 537421, 679900 in customer_silver.parquet
+    AUTHORIZED_RESIDENTIAL_METERS = [
+        m.strip()
+        for m in os.getenv(
+            "AUTHORIZED_RESIDENTIAL_METERS",
+            "METER-2254213,METER-293861,METER-537421,METER-679900,2254213,293861,537421,679900,METER-1000,METER-1001,METER-1002,METER-1003",
+        ).split(",")
+        if m.strip()
+    ]
+    DEVELOPMENT_AUTH_ENABLED = os.getenv("DEVELOPMENT_AUTH_ENABLED", "true").lower() == "true"
+    DEV_USER_METER_MAPPING = {
+        # Primary OBJECTID-based accounts
+        "2254213": ["2254213", "METER-2254213", "1000", "METER-1000"],
+        "293861": ["293861", "METER-293861", "1001", "METER-1001"],
+        "537421": ["537421", "METER-537421", "1002", "METER-1002"],
+        "679900": ["679900", "METER-679900", "1003", "METER-1003"],
+        # Username aliases
+        "OBJECTID 2254213": ["2254213", "METER-2254213", "1000", "METER-1000"],
+        "OBJECTID 293861": ["293861", "METER-293861", "1001", "METER-1001"],
+        "OBJECTID 537421": ["537421", "METER-537421", "1002", "METER-1002"],
+        "OBJECTID 679900": ["679900", "METER-679900", "1003", "METER-1003"],
+        "usr-resident-2254213": ["2254213", "METER-2254213", "1000", "METER-1000"],
+        "usr-resident-293861": ["293861", "METER-293861", "1001", "METER-1001"],
+        "usr-resident-537421": ["537421", "METER-537421", "1002", "METER-1002"],
+        "usr-resident-679900": ["679900", "METER-679900", "1003", "METER-1003"],
+        # Backward-compatibility aliases
+        "usr-resident-1000": ["METER-1000", "1000", "2254213", "METER-2254213"],
+        "usr-resident-1001": ["METER-1001", "1001", "293861", "METER-293861"],
+        "usr-resident-1002": ["METER-1002", "1002", "537421", "METER-537421"],
+        "usr-resident-1003": ["METER-1003", "1003", "679900", "METER-679900"],
+    }
+    DEV_DEFAULT_USER = "2254213"
+    ASSISTANT_TIMEOUT_SECONDS = float(os.getenv("ASSISTANT_TIMEOUT_SECONDS", "20.0"))
+    ASSISTANT_MAX_RETRIES = int(os.getenv("ASSISTANT_MAX_RETRIES", "2"))
 
     # Optional customer bill prediction registry settings
     MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "")
@@ -73,6 +122,7 @@ class ProductionConfig(BaseConfig):
 
     DEBUG = False
     TESTING = False
+    DEVELOPMENT_AUTH_ENABLED = False
     SECRET_KEY = os.getenv("SECRET_KEY")
 
     def __init__(self) -> None:

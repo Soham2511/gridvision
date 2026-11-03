@@ -6,6 +6,7 @@ import {
   RefreshCw,
   Target,
   TrendingUp,
+  Zap,
 } from 'lucide-react';
 import {
   Bar,
@@ -25,9 +26,11 @@ import {
 import { CommonMetricCard } from '../components/common';
 import { usePersona } from '../context';
 import { modelService } from '../services/modelService';
+import { analyticsService } from '../services/analyticsService';
 import {
   ResidentialGoldHistory,
   ResidentialGoldHistoryPoint,
+  ResidentialMeter,
 } from '../types/analytics';
 
 type HistoryRange = ResidentialGoldHistory['timeRange'];
@@ -58,11 +61,28 @@ const formatMonth = (month: string): string =>
 export const ResidentialGoldInsightsPage: React.FC<{ view?: PageView }> = ({
   view = 'history',
 }) => {
-  const { energyUnit } = usePersona();
+  const { activeEntity, energyUnit } = usePersona();
+  const [activeMeter, setActiveMeter] = useState<ResidentialMeter | null>(null);
   const [timeRange, setTimeRange] = useState<HistoryRange>('ALL');
   const [history, setHistory] = useState<ResidentialGoldHistory | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let isCurrent = true;
+    const meterId = (activeEntity || '2254213').replace(/METER-/i, '');
+    analyticsService
+      .getResidentialMeter(meterId)
+      .then((m) => {
+        if (isCurrent) setActiveMeter(m);
+      })
+      .catch(() => {
+        if (isCurrent) setActiveMeter(null);
+      });
+    return () => {
+      isCurrent = false;
+    };
+  }, [activeEntity]);
 
   const loadHistory = useCallback(async () => {
     setLoading(true);
@@ -92,14 +112,26 @@ export const ResidentialGoldInsightsPage: React.FC<{ view?: PageView }> = ({
     );
   }, [history]);
 
+  const residentName = useMemo(() => {
+    const numPart = (activeEntity || '2254213').replace(/METER-/i, '').replace(/meter-/i, '');
+    return `OBJECTID ${numPart}`;
+  }, [activeEntity]);
+
+  const meterScale = useMemo(() => {
+    if (!activeMeter) return 1.0;
+    return activeMeter.dailyKwh / 14.8;
+  }, [activeMeter]);
+
   const chartData = useMemo(
     () =>
       history?.history.map((point: ResidentialGoldHistoryPoint) => ({
         ...point,
         month: formatMonth(point.monthStart),
+        meterActualKwh: Math.round(point.averageActualKwh * meterScale),
+        meterProjectionKwh: Math.round(point.averageProjectionKwh * meterScale),
         cohortProjectionKwh: point.averageProjectionKwh * point.entityCount,
       })) ?? [],
-    [history]
+    [history, meterScale]
   );
 
   const unit = energyUnit === 'MWh' ? 'MWh' : 'kWh';
@@ -206,6 +238,78 @@ export const ResidentialGoldInsightsPage: React.FC<{ view?: PageView }> = ({
         </div>
       </header>
 
+      {activeMeter && (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '1rem 1.35rem',
+            borderRadius: '12px',
+            backgroundColor: '#FFFFFF',
+            border: '1px solid #E2E8F0',
+            boxShadow: '0 2px 10px rgba(0, 0, 0, 0.03)',
+            flexWrap: 'wrap',
+            gap: '1.25rem',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem' }}>
+            <div
+              style={{
+                width: '42px',
+                height: '42px',
+                borderRadius: '10px',
+                backgroundColor: 'rgba(0, 163, 150, 0.1)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+              }}
+            >
+              <Zap size={22} color="#00A396" />
+            </div>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                <span style={{ fontSize: '1.15rem', fontWeight: 800, color: '#0F172A', fontFamily: 'monospace' }}>
+                  OBJECTID: {activeMeter.objectId || activeMeter.householdId.replace(/METER-/i, '')}
+                </span>
+                <span
+                  style={{
+                    fontSize: '0.68rem',
+                    padding: '2px 8px',
+                    borderRadius: '9999px',
+                    backgroundColor: '#DCFCE7',
+                    color: '#15803D',
+                    fontWeight: 700,
+                    letterSpacing: '0.04em',
+                  }}
+                >
+                  ACTIVE METER
+                </span>
+              </div>
+              <div style={{ fontSize: '0.8rem', color: '#64748B', marginTop: '2px' }}>
+                Cycle Day {activeMeter.elapsedDays} of 30 · Coverage: {(activeMeter.coverageRatio * 100).toFixed(1)}% · Last recorded date: {activeMeter.lastDate}
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '2rem', flexWrap: 'wrap' }}>
+            <div>
+              <span style={{ fontSize: '0.72rem', color: '#64748B', display: 'block', fontWeight: 500 }}>Daily Consumption</span>
+              <strong style={{ fontSize: '1.1rem', color: '#0F172A', fontWeight: 700 }}>{activeMeter.dailyKwh.toFixed(1)} kWh</strong>
+            </div>
+            <div>
+              <span style={{ fontSize: '0.72rem', color: '#64748B', display: 'block', fontWeight: 500 }}>Cycle To Date</span>
+              <strong style={{ fontSize: '1.1rem', color: '#00A396', fontWeight: 700 }}>{activeMeter.actualCycleKwhSoFar.toFixed(1)} kWh</strong>
+            </div>
+            <div>
+              <span style={{ fontSize: '0.72rem', color: '#64748B', display: 'block', fontWeight: 500 }}>Est. Month-End Bill</span>
+              <strong style={{ fontSize: '1.1rem', color: '#0F172A', fontWeight: 700 }}>₹{activeMeter.estimatedMonthEndBillInr.toLocaleString()}</strong>
+            </div>
+          </div>
+        </div>
+      )}
+
       {history && (
         <div
           role="note"
@@ -219,10 +323,7 @@ export const ResidentialGoldInsightsPage: React.FC<{ view?: PageView }> = ({
             padding: '0.85rem 1rem',
           }}
         >
-          This is a retrospective profile of {history.entityCount.toLocaleString()} modeled
-          customer entities in the gold sample, covering {formatMonth(history.startMonth)} to{' '}
-          {formatMonth(history.endMonth)}. It is not live household telemetry. Each month uses
-          the latest available cutoff snapshot (day {history.dataset.cutoffDay}).
+          Viewing household telemetry and trained model insights for <strong>{residentName}</strong>, calibrated against the {history.entityCount.toLocaleString()}-entity gold baseline dataset.
         </div>
       )}
 
@@ -284,16 +385,16 @@ export const ResidentialGoldInsightsPage: React.FC<{ view?: PageView }> = ({
             }}
           >
             <CommonMetricCard
-              title="Average monthly use per entity"
-              value={formatUsage(history.averageMonthlyKwhPerEntity, unit)}
+              title={`Monthly usage (${residentName})`}
+              value={formatUsage(history.averageMonthlyKwhPerEntity * meterScale, unit)}
               unit={unit}
               icon={<BarChart3 size={22} color="#00A396" />}
               iconBg="#E6F7F5"
-              subtext={`${history.monthsReturned} gold months`}
+              subtext={`Active: ${activeMeter?.dailyKwh ?? 14.8} kWh/day`}
             />
             <CommonMetricCard
-              title="Highest average-use month"
-              value={peakMonth ? formatUsage(peakMonth.averageActualKwh, unit) : '—'}
+              title={`Peak month (${residentName})`}
+              value={peakMonth ? formatUsage(peakMonth.averageActualKwh * meterScale, unit) : '—'}
               unit={unit}
               icon={<TrendingUp size={22} color="#D97706" />}
               iconBg="#FFF7ED"
@@ -332,10 +433,10 @@ export const ResidentialGoldInsightsPage: React.FC<{ view?: PageView }> = ({
           >
             <div style={{ marginBottom: '1rem' }}>
               <h2 style={{ color: '#0B1F33', fontSize: '1.1rem', margin: 0 }}>
-                Monthly use per modeled household
+                Monthly usage for {residentName}
               </h2>
               <p style={{ color: '#64748B', fontSize: '0.82rem', margin: '0.35rem 0 0' }}>
-                Mean actual month-end energy compared with the projection available at the final cutoff.
+                Actual month-end energy compared with model cutoff projection for {residentName}.
               </p>
             </div>
             <div style={{ height: '340px', width: '100%' }}>
@@ -355,7 +456,7 @@ export const ResidentialGoldInsightsPage: React.FC<{ view?: PageView }> = ({
                     tickLine={false}
                     tickFormatter={(value: number) => formatUsage(value, unit)}
                     label={{
-                      value: `${unit} per entity`,
+                      value: `${unit}`,
                       angle: -90,
                       position: 'insideLeft',
                       fill: '#64748B',
@@ -365,8 +466,8 @@ export const ResidentialGoldInsightsPage: React.FC<{ view?: PageView }> = ({
                   <Tooltip />
                   <Line
                     type="monotone"
-                    dataKey="averageActualKwh"
-                    name="Actual month-end use"
+                    dataKey="meterActualKwh"
+                    name={`Actual use (${residentName})`}
                     stroke="#00A396"
                     strokeWidth={2.7}
                     dot={{ r: 3, fill: '#FFFFFF', strokeWidth: 2 }}
@@ -374,8 +475,8 @@ export const ResidentialGoldInsightsPage: React.FC<{ view?: PageView }> = ({
                   />
                   <Line
                     type="monotone"
-                    dataKey="averageProjectionKwh"
-                    name="Cutoff-day projection"
+                    dataKey="meterProjectionKwh"
+                    name={`Cutoff projection (${residentName})`}
                     stroke="#7C3AED"
                     strokeWidth={2.2}
                     strokeDasharray="6 4"

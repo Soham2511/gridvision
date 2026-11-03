@@ -20,7 +20,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
 }) => {
   const [showNotifications, setShowNotifications] = useState(false);
   const location = useLocation();
-  const { currentPersona } = usePersona();
+  const { currentPersona, activeEntity } = usePersona();
 
   const isPlatformScope =
     location.pathname === '/' ||
@@ -29,6 +29,22 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
 
   const showLogo = propShowLogo !== undefined ? propShowLogo : isPlatformScope;
   const isAdmin = propIsAdmin !== undefined ? propIsAdmin : isPlatformScope;
+
+  const numPart = (activeEntity || '2254213').replace(/METER-/i, '').replace(/meter-/i, '');
+  const userDisplayName = isAdmin
+    ? 'Admin'
+    : currentPersona === 'government'
+    ? 'Grid Operations Admin'
+    : currentPersona === 'commercial'
+    ? 'Facility Manager'
+    : `OBJECTID ${numPart}`;
+  const userInitial = isAdmin
+    ? 'A'
+    : currentPersona === 'government'
+    ? 'G'
+    : currentPersona === 'commercial'
+    ? 'C'
+    : 'O';
 
   const personaLabel =
     currentPersona === 'commercial'
@@ -279,7 +295,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
             textDecoration: 'none',
             transition: 'background 0.15s ease',
           }}
-          title={isAdmin ? 'User Profile: Admin' : 'User Profile: Rohit Sharma'}
+          title={`User Profile: ${userDisplayName}`}
         >
           <div
             style={{
@@ -295,10 +311,10 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
               fontSize: '0.88rem',
             }}
           >
-            {isAdmin ? 'A' : 'R'}
+            {userInitial}
           </div>
           <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#0B1F33' }}>
-            {isAdmin ? 'Admin' : 'Rohit Sharma'}
+            {userDisplayName}
           </span>
           <ChevronDown size={14} color="#64748B" />
         </Link>

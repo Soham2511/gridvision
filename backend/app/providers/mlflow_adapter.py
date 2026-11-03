@@ -30,7 +30,7 @@ class MLflowModelAdapter(BaseModelProvider):
         model_name: str | None = None,
         tariff_inr_per_kwh: float | None = None,
     ) -> None:
-        self.tracking_uri = tracking_uri or os.getenv("MLFLOW_TRACKING_URI", "")
+        self.tracking_uri = tracking_uri if tracking_uri is not None else os.getenv("MLFLOW_TRACKING_URI", "")
         self.model_alias = model_alias or os.getenv("MLFLOW_MODEL_ALIAS", "champion")
         self.model_name = model_name or os.getenv(
             "MLFLOW_MODEL_NAME", "customer-bill-prediction"
@@ -53,6 +53,8 @@ class MLflowModelAdapter(BaseModelProvider):
             return None
 
     def _load_model(self, force_reload: bool = False) -> Any:
+        if not force_reload and self._model is not None:
+            return self._model
         if not self.tracking_uri:
             raise MLflowIntegrationError(
                 "MLflow is not configured: MLFLOW_TRACKING_URI is required to load "

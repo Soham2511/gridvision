@@ -4,6 +4,9 @@ flask-cors>=4.0.0
 pydantic>=2.7.0
 python-dotenv>=1.0.0
 waitress>=3.0.0,<4
+langchain>=1.4.0
+langchain-core>=1.7.0
+langchain-groq>=1.1.0
 
 # group: airflow
 apache-airflow==2.10.5

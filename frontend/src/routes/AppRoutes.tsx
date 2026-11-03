@@ -34,6 +34,7 @@ export const AppRoutes: React.FC = () => {
         <Route path="/app/customers" element={<CustomerAnalyticsPage />} />
         <Route path="/app/health" element={<Navigate to="/health" replace />} />
         <Route path="/app/assistant" element={<AiAssistantPage />} />
+        <Route path="/assistant" element={<Navigate to="/app/assistant" replace />} />
         <Route path="/models" element={<CustomerBillModelPage />} />
 
         {/* Deep Grid Analytics Suite */}

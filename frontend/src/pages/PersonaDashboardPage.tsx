@@ -233,10 +233,10 @@ export const PersonaDashboardPage: React.FC = () => {
         <>
           <div>
             <h1 style={{ fontSize: '2.1rem', fontWeight: 800, color: '#0B1F33', margin: '0 0 0.35rem 0', letterSpacing: '-0.025em' }}>
-              Hello, Rohit!
+              Commercial Facility Overview
             </h1>
             <p style={{ fontSize: '0.95rem', color: '#64748B', margin: 0, fontWeight: 500 }}>
-              Here is your commercial energy overview.
+              Building demand forecast and performance metrics.
             </p>
           </div>
 

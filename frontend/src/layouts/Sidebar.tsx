@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { usePersona, PersonaType } from '../context';
+import { analyticsService } from '../services/analyticsService';
 import {
   Home,
   BarChart2,
@@ -18,9 +19,12 @@ import {
 } from 'lucide-react';
 
 export const Sidebar: React.FC = () => {
-  const { currentPersona, setPersona } = usePersona();
+  const { currentPersona, activeEntity, setActiveEntity, setPersona } = usePersona();
   const navigate = useNavigate();
   const [showPersonaMenu, setShowPersonaMenu] = useState(false);
+  const [meterInput, setMeterInput] = useState('');
+  const [meterError, setMeterError] = useState<string | null>(null);
+  const [isValidatingMeter, setIsValidatingMeter] = useState(false);
 
   const personaLabel =
     currentPersona === 'commercial'
@@ -75,6 +79,34 @@ export const Sidebar: React.FC = () => {
   const handleSwitchPersona = () => {
     setPersona(null);
     navigate('/');
+  };
+
+  const handleMeterSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const raw = meterInput.trim();
+    if (!raw) return;
+
+    setIsValidatingMeter(true);
+    setMeterError(null);
+
+    try {
+      const meter = await analyticsService.getResidentialMeter(raw);
+      if (meter && meter.householdId) {
+        if (currentPersona !== 'household') {
+          setPersona('household');
+        }
+        setActiveEntity(meter.objectId ? String(meter.objectId) : meter.householdId.replace(/METER-/i, ''));
+        setMeterInput('');
+        setMeterError(null);
+        navigate('/app');
+      } else {
+        setMeterError(`OBJECTID ${raw} not found`);
+      }
+    } catch {
+      setMeterError(`OBJECTID ${raw} not found`);
+    } finally {
+      setIsValidatingMeter(false);
+    }
   };
 
   const handleLogout = () => {
@@ -274,6 +306,85 @@ export const Sidebar: React.FC = () => {
                   {p === 'household' ? 'Residential' : p === 'commercial' ? 'Commercial' : 'Government & Utilities'}
                 </button>
               ))}
+            </div>
+          )}
+        </div>
+
+        {/* Meter ID Option at Sidebar Bottom */}
+        <div
+          style={{
+            padding: '0.65rem 0.75rem',
+            borderRadius: '8px',
+            backgroundColor: 'rgba(255, 255, 255, 0.04)',
+            border: meterError ? '1px solid #EF4444' : '1px solid rgba(255, 255, 255, 0.08)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '0.45rem',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#00B8A9', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+              OBJECTID
+            </span>
+            <span
+              style={{
+                fontSize: '0.72rem',
+                color: 'rgba(255, 255, 255, 0.85)',
+                fontFamily: 'monospace',
+                fontWeight: 600,
+                backgroundColor: 'rgba(0, 184, 169, 0.15)',
+                padding: '1px 6px',
+                borderRadius: '4px',
+              }}
+            >
+              {currentPersona === 'household' ? (activeEntity || '2254213').replace(/METER-/i, '') : '2254213'}
+            </span>
+          </div>
+
+          <form onSubmit={handleMeterSubmit} style={{ display: 'flex', gap: '0.35rem' }}>
+            <input
+              type="text"
+              value={meterInput}
+              onChange={(e) => {
+                setMeterInput(e.target.value);
+                if (meterError) setMeterError(null);
+              }}
+              placeholder="e.g. 2254213"
+              aria-label="Enter premise OBJECTID"
+              style={{
+                flex: 1,
+                minWidth: 0,
+                padding: '0.35rem 0.5rem',
+                borderRadius: '6px',
+                border: meterError ? '1px solid #EF4444' : '1px solid rgba(255, 255, 255, 0.15)',
+                backgroundColor: '#0B1F33',
+                color: '#FFFFFF',
+                fontSize: '0.78rem',
+                outline: 'none',
+              }}
+            />
+            <button
+              type="submit"
+              disabled={isValidatingMeter || !meterInput.trim()}
+              style={{
+                padding: '0.35rem 0.65rem',
+                borderRadius: '6px',
+                border: 'none',
+                backgroundColor: isValidatingMeter ? '#64748B' : '#00A396',
+                color: '#FFFFFF',
+                fontSize: '0.75rem',
+                fontWeight: 600,
+                cursor: isValidatingMeter ? 'wait' : 'pointer',
+                flexShrink: 0,
+              }}
+            >
+              {isValidatingMeter ? '…' : 'Go'}
+            </button>
+          </form>
+
+          {meterError && (
+            <div style={{ fontSize: '0.72rem', color: '#EF4444', lineHeight: 1.3, fontWeight: 500 }}>
+              {meterError}
             </div>
           )}
         </div>

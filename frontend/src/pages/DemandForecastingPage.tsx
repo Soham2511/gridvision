@@ -45,7 +45,7 @@ export const DemandForecastingPage: React.FC = () => {
 
   // Selected entities
   const [selectedBldgId, setSelectedBldgId] = useState<string>('Panther_office_1');
-  const [selectedMeterId, setSelectedMeterId] = useState<string>('METER-1000');
+  const [selectedMeterId, setSelectedMeterId] = useState<string>('2254213');
   const [selectedSiteId, setSelectedSiteId] = useState<string>('Panther');
 
   // Active time-series horizon
@@ -209,7 +209,7 @@ export const DemandForecastingPage: React.FC = () => {
                 }}
               >
                 <Home size={14} color="var(--gv-color-smart-teal)" />
-                <span>Residential Smart Meters</span>
+                <span>Residential Premises (OBJECTID)</span>
               </button>
 
               <button
@@ -268,7 +268,7 @@ export const DemandForecastingPage: React.FC = () => {
             {sector === 'residential' && (
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                 <label style={{ fontSize: '0.78rem', fontWeight: 600, color: 'var(--gv-text-secondary)' }}>
-                  Selected Meter ID:
+                  Selected OBJECTID:
                 </label>
                 <select
                   value={selectedMeterId}
@@ -286,7 +286,7 @@ export const DemandForecastingPage: React.FC = () => {
                 >
                   {residentialMeters.map((m) => (
                     <option key={m.householdId} value={m.householdId}>
-                      {m.householdId} (Cycle Day {m.elapsedDays})
+                      OBJECTID: {m.objectId || m.householdId.replace(/METER-/i, '')} (Cycle Day {m.elapsedDays})
                     </option>
                   ))}
                 </select>
@@ -350,7 +350,7 @@ export const DemandForecastingPage: React.FC = () => {
 
           {sector === 'residential' && (
             <>
-              <span>Meter ID: <strong style={{ color: 'var(--gv-color-smart-teal)' }}>{currentMeter.householdId}</strong></span>
+              <span>OBJECTID: <strong style={{ color: 'var(--gv-color-smart-teal)' }}>{currentMeter.objectId || currentMeter.householdId.replace(/METER-/i, '')}</strong></span>
               <span>Cycle Progress: <strong>Day {currentMeter.elapsedDays} of month</strong></span>
               <span>Telemetry Coverage: <strong style={{ color: currentMeter.coverageRatio >= 0.9 ? 'var(--gv-color-smart-teal)' : '#B45309' }}>{(currentMeter.coverageRatio * 100).toFixed(1)}%</strong></span>
               <span>Flat Tariff: <strong style={{ color: 'var(--gv-color-grid-blue)' }}>₹10.00 / kWh</strong></span>

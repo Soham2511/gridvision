@@ -39,7 +39,7 @@ def get_residential_meter(household_id: str):
     data_provider = current_app.extensions["data_provider"]
     meter = data_provider.get_residential_meter(household_id)
     if not meter:
-        raise ResourceNotFoundError(f"Residential meter '{household_id}' not found.")
+        raise ResourceNotFoundError(f"Meter with id {household_id} does not exist")
     return success_response(meter)
 
 
