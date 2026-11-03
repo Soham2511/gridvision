@@ -40,6 +40,8 @@ Create this folder in the checkout and copy the source file into it:
 data/
 └── sample/
     └── training_sample_50000.parquet
+└── anomaly_prediction/
+    └── synthetic_2019_normal.parquet
 ```
 
 The source Parquet file is required by the customer, commercial, and government

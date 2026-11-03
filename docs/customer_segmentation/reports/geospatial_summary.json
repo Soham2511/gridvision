@@ -1,9 +1,9 @@
 {
-  "coarse_region_segment_rows": 284,
-  "finer_region_segment_rows": 17335,
+  "coarse_region_segment_rows": 169,
+  "finer_region_segment_rows": 4272,
   "priority_limitations": "Priority is based on building-consumption features only; it does not indicate transformer overload, voltage instability, or network inadequacy.",
-  "survey_priority_regions": 53,
-  "survey_priority_rows": 129,
+  "survey_priority_regions": 49,
+  "survey_priority_rows": 109,
   "target_segments": [],
   "weights": {
     "consumption_variability": 0.3,

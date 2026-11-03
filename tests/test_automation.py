@@ -499,6 +499,9 @@ def test_segmentation_dag_paths_use_bronze_source_and_published_output_dir(
         "GRIDVISION_DATA_DIR": str(data_root),
         "SEGMENTATION_SOURCE_PATH": str(source),
         "SEGMENTATION_OUTPUT_DIR": str(output_dir),
+        "SEGMENTATION_FEATURE_PATH": str(output_dir / "building_features.parquet"),
+        "SEGMENTATION_MODEL_DIR": str(output_dir / "models"),
+        "SEGMENTATION_REPORTS_DIR": str(output_dir / "reports"),
     }
 
     inputs, outputs = automation._dag_dataset_paths(
@@ -507,6 +510,7 @@ def test_segmentation_dag_paths_use_bronze_source_and_published_output_dir(
 
     assert inputs == [source.resolve()]
     assert output_dir / "consumer_assignments.parquet" in outputs
+    assert output_dir / "building_features.parquet" in outputs
     assert output_dir / "reports" / "geospatial_summary.json" in outputs
 
 
@@ -521,6 +525,9 @@ def test_segmentation_dag_runs_when_published_outputs_are_missing(
         "GRIDVISION_DATA_DIR": str(data_root),
         "SEGMENTATION_SOURCE_PATH": str(source),
         "SEGMENTATION_OUTPUT_DIR": str(data_root / "segmentation"),
+        "SEGMENTATION_FEATURE_PATH": str(data_root / "segmentation" / "building_features.parquet"),
+        "SEGMENTATION_MODEL_DIR": str(data_root / "segmentation" / "models"),
+        "SEGMENTATION_REPORTS_DIR": str(data_root / "segmentation" / "reports"),
     }
     calls: list[str] = []
 
@@ -604,6 +611,9 @@ def test_segmentation_dag_adopts_complete_current_outputs_without_running(
         "GRIDVISION_DATA_DIR": str(data_root),
         "SEGMENTATION_SOURCE_PATH": str(source),
         "SEGMENTATION_OUTPUT_DIR": str(output_dir),
+        "SEGMENTATION_FEATURE_PATH": str(output_dir / "building_features.parquet"),
+        "SEGMENTATION_MODEL_DIR": str(output_dir / "models"),
+        "SEGMENTATION_REPORTS_DIR": str(output_dir / "reports"),
     }
 
     result = automation._run_airflow_dag_if_dataset_changed(

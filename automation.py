@@ -417,8 +417,33 @@ def _dag_dataset_paths(
         output_dir = Path(
             env.get("SEGMENTATION_OUTPUT_DIR", data_root / "segmentation")
         ).expanduser().resolve()
+        # Keep the automation freshness check aligned with the locations used by
+        # the DAG and by SegmentationSettings.validate_outputs(). The published
+        # assignments and metadata live in output_dir, while features, reports,
+        # and model bundles have independently configurable shared locations.
+        from training.customer_segmentation.config import SegmentationSettings
+
+        settings = replace(
+            SegmentationSettings.from_environment(),
+            output_dir=output_dir,
+            feature_path=Path(
+                env.get(
+                    "SEGMENTATION_FEATURE_PATH",
+                    data_root / "gold" / "customer_segmentation_features.parquet",
+                )
+            ).expanduser().resolve(),
+            model_dir=Path(
+                env.get("SEGMENTATION_MODEL_DIR", PROJECT_ROOT / "models" / "segmentation")
+            ).expanduser().resolve(),
+            reports_dir=Path(
+                env.get(
+                    "SEGMENTATION_REPORTS_DIR",
+                    PROJECT_ROOT / "docs" / "customer_segmentation" / "reports",
+                )
+            ).expanduser().resolve(),
+        )
         outputs = [
-            output_dir / "building_features.parquet",
+            settings.feature_path,
             output_dir / "consumer_assignments.parquet",
             output_dir / "cluster_profiles.parquet",
             output_dir / "segment_distribution.parquet",
@@ -429,11 +454,11 @@ def _dag_dataset_paths(
             output_dir / "cluster_daily_profile.parquet",
             output_dir / "cluster_monthly_profile.parquet",
             output_dir / "model_metadata.json",
-            output_dir / "model_selection_report.json",
-            output_dir / "feature_diagnostics.json",
-            output_dir / "reports" / "source_profile.json",
-            output_dir / "reports" / "feature_generation.json",
-            output_dir / "reports" / "geospatial_summary.json",
+            settings.reports_dir / "model_selection_report.json",
+            settings.reports_dir / "feature_diagnostics.json",
+            settings.reports_dir / "source_profile.json",
+            settings.reports_dir / "feature_generation.json",
+            settings.reports_dir / "geospatial_summary.json",
         ]
         if float(env.get("SEGMENTATION_BUILDING_SAMPLE_FRACTION", "0.1")) < 1:
             outputs.extend(
@@ -446,8 +471,7 @@ def _dag_dataset_paths(
         if metadata_path.is_file():
             metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
             outputs.extend(
-                output_dir
-                / "models"
+                settings.model_dir
                 / f"{model['model_category'].lower()}_model.joblib"
                 for model in metadata.get("trained_models", [])
             )
@@ -578,13 +602,31 @@ def _existing_dag_outputs_are_reusable(
             source, _ = _dag_dataset_paths(dag_id, env)
             source_path = source[0].resolve()
             source_stat = source_path.stat()
-            source_profile = Path(
-                env.get(
-                    "SEGMENTATION_OUTPUT_DIR",
-                    Path(env.get("GRIDVISION_DATA_DIR", DATA_ROOT))
-                    / "segmentation",
-                )
-            ).expanduser().resolve() / "reports" / "source_profile.json"
+            from training.customer_segmentation.config import SegmentationSettings
+
+            data_root = Path(env.get("GRIDVISION_DATA_DIR", DATA_ROOT)).expanduser()
+            settings = replace(
+                SegmentationSettings.from_environment(),
+                output_dir=Path(
+                    env.get("SEGMENTATION_OUTPUT_DIR", data_root / "segmentation")
+                ).expanduser().resolve(),
+                feature_path=Path(
+                    env.get(
+                        "SEGMENTATION_FEATURE_PATH",
+                        data_root / "gold" / "customer_segmentation_features.parquet",
+                    )
+                ).expanduser().resolve(),
+                model_dir=Path(
+                    env.get("SEGMENTATION_MODEL_DIR", PROJECT_ROOT / "models" / "segmentation")
+                ).expanduser().resolve(),
+                reports_dir=Path(
+                    env.get(
+                        "SEGMENTATION_REPORTS_DIR",
+                        PROJECT_ROOT / "docs" / "customer_segmentation" / "reports",
+                    )
+                ).expanduser().resolve(),
+            )
+            source_profile = settings.reports_dir / "source_profile.json"
             profile = json.loads(source_profile.read_text(encoding="utf-8"))
             if (
                 profile.get("source_path") != str(source_path)
@@ -594,12 +636,11 @@ def _existing_dag_outputs_are_reusable(
                 != float(env.get("SEGMENTATION_BUILDING_SAMPLE_FRACTION", "0.1"))
             ):
                 return False
-            from training.customer_segmentation.config import SegmentationSettings
             from training.customer_segmentation.pipeline import validate_outputs
 
             validate_outputs(
                 replace(
-                    SegmentationSettings.from_environment(),
+                    settings,
                     output_dir=Path(
                         env.get(
                             "SEGMENTATION_OUTPUT_DIR",
@@ -769,7 +810,11 @@ def _run_airflow_dag_if_dataset_changed(
     result = _run_airflow_dag_test(airflow_command, dag_id, dag_env)
     if dag_id == SEGMENTATION_DAG_ID:
         _, outputs = _dag_dataset_paths(dag_id, env)
-    missing_outputs = [str(path) for path in outputs if not path.is_file()]
+    missing_outputs = [
+        str(path)
+        for path in outputs
+        if not path.is_file() or path.stat().st_size == 0
+    ]
     if missing_outputs:
         raise FileNotFoundError(
             f"Airflow DAG {dag_id} succeeded but expected datasets are missing: "
