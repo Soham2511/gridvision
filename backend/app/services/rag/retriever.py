@@ -41,6 +41,11 @@ class RetrievedChunk:
     snippet: str
     score: float
     metadata: Dict[str, Any] = field(default_factory=dict)
+    parent_section_id: Optional[str] = None
+    parent_heading: Optional[str] = None
+    parent_context: Optional[str] = None
+    category: Optional[str] = None
+    tags: List[str] = field(default_factory=list)
 
     def to_citation(self) -> Dict[str, Any]:
         """Convert chunk into user-facing citation contract."""
@@ -53,6 +58,10 @@ class RetrievedChunk:
             "page": self.page_number,
             "text_snippet": self.snippet,
             "chunk_id": self.chunk_id,
+            "category": self.category or self.metadata.get("category"),
+            "parent_heading": self.parent_heading or self.metadata.get("parent_heading") or self.metadata.get("section_heading"),
+            "parent_context": self.parent_context or self.metadata.get("parent_context") or self.metadata.get("parent_path"),
+            "tags": self.tags or self.metadata.get("tags", []),
             "url": self.metadata.get("url") or self.metadata.get("source_url"),
         }
 
@@ -94,7 +103,11 @@ class HybridDocumentRetriever:
                 new_cache: Dict[str, DocumentChunkModel] = {}
                 for ch in chunks:
                     new_cache[ch.id] = ch
-                    searchable_text = f"{ch.document_identifier} {ch.publisher} {ch.heading or ''} {ch.content}"
+                    meta = ch.metadata_json or {}
+                    tags_str = " ".join(meta.get("tags", []))
+                    cat_str = meta.get("category", "")
+                    parent_str = meta.get("parent_path", "")
+                    searchable_text = f"{ch.document_identifier} {ch.publisher} {ch.heading or ''} {cat_str} {parent_str} {tags_str} {ch.content}"
                     new_bm25.add_document(ch.id, searchable_text)
                 self._bm25_index = new_bm25
                 self._chunk_cache = new_cache
@@ -114,6 +127,7 @@ class HybridDocumentRetriever:
         publisher: Optional[str] = None,
         document_identifier: Optional[str] = None,
         chunk_type: Optional[str] = None,
+        category: Optional[str] = None,
         min_score: float = 0.01,
     ) -> List[RetrievedChunk]:
         """Perform hybrid dense + lexical search with reciprocal rank fusion."""
@@ -137,6 +151,12 @@ class HybridDocumentRetriever:
                 continue
             if chunk_type and ch.chunk_type.lower() != chunk_type.lower():
                 continue
+            if category:
+                ch_cat = (ch.metadata_json.get("category") or "").lower()
+                ch_tags = [t.lower() for t in ch.metadata_json.get("tags", [])]
+                cat_lower = category.lower()
+                if ch_cat != cat_lower and cat_lower not in ch_tags:
+                    continue
             eligible_chunk_ids.add(c_id)
 
         if not eligible_chunk_ids:
@@ -189,6 +209,7 @@ class HybridDocumentRetriever:
             text = ch.content
             snippet = text[:280].strip() + ("..." if len(text) > 280 else "")
 
+            meta = dict(ch.metadata_json or {})
             results.append(
                 RetrievedChunk(
                     chunk_id=ch.id,
@@ -203,7 +224,12 @@ class HybridDocumentRetriever:
                     content=ch.content,
                     snippet=snippet,
                     score=round(score, 5),
-                    metadata=ch.metadata_json or {},
+                    metadata=meta,
+                    parent_section_id=meta.get("parent_section_id"),
+                    parent_heading=meta.get("parent_heading") or meta.get("section_heading"),
+                    parent_context=meta.get("parent_context") or meta.get("parent_path"),
+                    category=meta.get("category"),
+                    tags=list(meta.get("tags", [])),
                 )
             )
 

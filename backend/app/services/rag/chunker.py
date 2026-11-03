@@ -50,6 +50,9 @@ class StructureAwareChunker:
         source_id = extracted_doc.get("source_id", "src_unknown")
         doc_id = extracted_doc.get("document_identifier", "doc_unknown")
 
+        doc_category = extracted_doc.get("category", "regulatory")
+        doc_tags = list(extracted_doc.get("tags", []))
+
         common_meta = {
             "source_id": source_id,
             "document_identifier": doc_id,
@@ -57,6 +60,8 @@ class StructureAwareChunker:
             "effective_date": effective_date,
             "jurisdiction": jurisdiction,
             "title": title or doc_id,
+            "category": doc_category,
+            "tags": doc_tags,
         }
 
         # 1. Chunk Sections and Clauses
@@ -88,6 +93,11 @@ class StructureAwareChunker:
                             **common_meta,
                             "section_heading": sec_heading,
                             "parent_path": sec_heading,
+                            "parent_section_id": sec_id,
+                            "parent_heading": sec_heading,
+                            "parent_context": sec_body.strip() if sec_body else sec_heading,
+                            "category": sec.get("category") or doc_category,
+                            "tags": list(set(doc_tags + sec.get("tags", []))),
                         },
                     )
                 )
@@ -123,6 +133,11 @@ class StructureAwareChunker:
                                 "section_heading": sec_heading,
                                 "clause_title": c_title,
                                 "parent_path": f"{sec_heading} > {c_title}" if sec_heading and c_title else (sec_heading or c_title),
+                                "parent_section_id": sec_id,
+                                "parent_heading": sec_heading,
+                                "parent_context": sec_body.strip() if sec_body else sec_heading,
+                                "category": clause.get("category") or sec.get("category") or doc_category,
+                                "tags": list(set(doc_tags + sec.get("tags", []) + clause.get("tags", []))),
                             },
                         )
                     )
@@ -233,6 +248,11 @@ class StructureAwareChunker:
                         "table_caption": caption,
                         "headers": headers,
                         "row_count": len(rows),
+                        "parent_section_id": tbl.get("section_id"),
+                        "parent_heading": tbl.get("section_heading") or caption,
+                        "parent_context": tbl.get("caption") or caption,
+                        "category": tbl.get("category") or doc_category,
+                        "tags": list(set(doc_tags + tbl.get("tags", []))),
                     },
                 )
             )

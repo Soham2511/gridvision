@@ -87,6 +87,10 @@ class SearchRegulatoryDocumentsTool(BaseTool):
                 "page": r.page_number,
                 "content": r.content,
                 "score": r.score,
+                "category": r.category,
+                "parent_heading": r.parent_heading,
+                "parent_context": r.parent_context,
+                "tags": r.tags,
                 "citation": r.to_citation(),
             })
 
