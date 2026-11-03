@@ -304,6 +304,34 @@ class ResidentialAssistantOrchestrator:
             f"All readings are verified from smart meter `{meter_id}` records as of `{billing.get('lastRecordedDate') or 'recent record'}`."
         )
 
+    def _determine_tool_scope(self, prompt: str) -> str:
+        """Dynamically select a focused tool scope to optimize prompt tokens and latency while preserving AI flexibility."""
+        p = prompt.lower()
+        if any(w in p for w in ["standard", "code", "regulation", "is 732", "is732", "nec", "bee", "cea", "clause", "wire", "wiring", "safety", "earthing", "rccb", "neutral", "insulation"]):
+            return "regulatory_and_standards"
+        elif any(w in p for w in ["plan house", "new house", "layout", "connected load", "appliance", "replace", "upgrade", "bldc", "iseer", "inverter ac", "fan", "geyser", "refrigerator", "payback", "purchase", "scenario"]):
+            return "planning_and_upgrades"
+        elif any(w in p for w in ["bill", "consumption", "usage", "history", "trend", "predict", "forecast", "yesterday", "tariff", "peak", "reduce bill", "cost management", "saving", "all-time"]):
+            return "telemetry_and_billing"
+        return "balanced_core"
+
+    def _calculate_adaptive_timeout(self, prompt: str) -> float:
+        """Calculate dynamic timeout: generous for complex/lengthy queries, baseline for short queries."""
+        p_len = len(prompt.strip())
+        is_complex = (
+            p_len > 120
+            or any(w in prompt.lower() for w in [
+                "compare", "detailed", "breakdown", "plan", "scenario", "investment", "payback",
+                "recommendation", "package", "multi", "versus", "vs", "timeline", "future",
+                "step by step", "bedroom", "built-up", "ac", "refrigerator"
+            ])
+        )
+        base = getattr(self.agent_factory, "timeout", 18.0) if self.agent_factory else 18.0
+        complex_timeout = getattr(self.agent_factory, "complex_timeout", 35.0) if self.agent_factory else 35.0
+        if is_complex or p_len > 250:
+            return max(complex_timeout, base + 15.0)
+        return base
+
     def answer_query(
         self,
         prompt: str,
@@ -415,6 +443,9 @@ class ResidentialAssistantOrchestrator:
 
         if self.agent_factory and (self.agent_factory.custom_chat_model is not None or self.agent_factory.is_groq_available()):
             try:
+                tool_scope = self._determine_tool_scope(clean_user_prompt)
+                effective_timeout = self._calculate_adaptive_timeout(clean_user_prompt)
+
                 agent = self.agent_factory.create_agent_for_household(
                     meter_id=meter_id,
                     system_prompt=system_prompt,
@@ -423,6 +454,8 @@ class ResidentialAssistantOrchestrator:
                     include_knowledge_tools=True,
                     retriever=getattr(self, "retriever", None),
                     resolver=getattr(self, "resolver", None),
+                    tool_scope=tool_scope,
+                    timeout=effective_timeout,
                 )
                 agent_messages = self.agent_factory.sanitize_history_and_prompt(
                     prompt=clean_user_prompt,

@@ -34,8 +34,9 @@ class BaseConfig:
     GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-20b")
     ASSISTANT_TEMPERATURE = float(os.getenv("ASSISTANT_TEMPERATURE", "0.2"))
     ASSISTANT_MAX_TOKENS = int(os.getenv("ASSISTANT_MAX_TOKENS", "800"))
-    ASSISTANT_TIMEOUT_SECONDS = float(os.getenv("ASSISTANT_TIMEOUT_SECONDS", "20.0"))
-    ASSISTANT_MAX_RETRIES = int(os.getenv("ASSISTANT_MAX_RETRIES", "2"))
+    ASSISTANT_TIMEOUT_SECONDS = float(os.getenv("ASSISTANT_TIMEOUT_SECONDS", "18.0"))
+    ASSISTANT_COMPLEX_TIMEOUT_SECONDS = float(os.getenv("ASSISTANT_COMPLEX_TIMEOUT_SECONDS", "35.0"))
+    ASSISTANT_MAX_RETRIES = int(os.getenv("ASSISTANT_MAX_RETRIES", "1"))
 
     # Server-side authorized residential meters based on real OBJECTIDs
     AUTHORIZED_RESIDENTIAL_METERS = [

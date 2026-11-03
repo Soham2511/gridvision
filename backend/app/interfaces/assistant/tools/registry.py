@@ -82,11 +82,14 @@ def create_residential_tools(
     include_knowledge_tools: bool = False,
     retriever: Optional[HybridDocumentRetriever] = None,
     resolver: Optional[ReferenceResolver] = None,
+    tool_scope: str = "all",
 ) -> list[BaseTool]:
     """Create and return the set of LangChain tools bound strictly to the authorized meter ID.
 
     The LLM has zero authority to supply or modify the meter ID; it is injected server-side.
     If include_knowledge_tools=True, adds Document RAG, Structured Reference, and Customer Context tools.
+    tool_scope allows dynamic pruning ('all', 'telemetry_and_billing', 'regulatory_and_standards',
+    'planning_and_upgrades', 'balanced_core') to reduce prompt tokens and latency while preserving full AI capabilities.
     """
     repo = repository or HouseholdEnergyRepository()
     engine = analytics_engine or EnergyAnalyticsEngine()
@@ -111,7 +114,7 @@ def create_residential_tools(
     appliance_uc = AnalyzeApplianceScenarioUseCase(repository=repo, tariff_rate=tariff_rate)
     cost_mgmt_uc = ManageEnergyCostUseCase(repository=repo, tariff_rate=tariff_rate)
 
-    tools: list[BaseTool] = [
+    all_tools: list[BaseTool] = [
         QueryConsumptionHistoryTool(
             authorized_meter_id=authorized_meter_id,
             use_case=query_uc,
@@ -152,25 +155,74 @@ def create_residential_tools(
 
     if include_knowledge_tools:
         # Customer operational context tools
-        tools.append(GetCustomerPremisesProfileTool(authorized_meter_id=authorized_meter_id))
-        tools.append(GetCustomerApplianceInventoryTool(authorized_meter_id=authorized_meter_id))
+        all_tools.append(GetCustomerPremisesProfileTool(authorized_meter_id=authorized_meter_id))
+        all_tools.append(GetCustomerApplianceInventoryTool(authorized_meter_id=authorized_meter_id))
 
         # Structured Reference Tools
-        tools.append(ResolveReferenceParameterTool(resolver=resolver))
-        tools.append(LookupApplianceBenchmarkTool(resolver=resolver))
-        tools.append(LookupGridEmissionFactorTool(resolver=resolver))
+        all_tools.append(ResolveReferenceParameterTool(resolver=resolver))
+        all_tools.append(LookupApplianceBenchmarkTool(resolver=resolver))
+        all_tools.append(LookupGridEmissionFactorTool(resolver=resolver))
 
         # Document Knowledge (RAG) Tools
         if retriever is not None:
-            tools.append(SearchRegulatoryDocumentsTool(retriever=retriever))
-            tools.append(GetDocumentClauseTool(retriever=retriever))
+            all_tools.append(SearchRegulatoryDocumentsTool(retriever=retriever))
+            all_tools.append(GetDocumentClauseTool(retriever=retriever))
+
+    if tool_scope == "all":
+        selected_tools = all_tools
+    else:
+        scope_map = {
+            "telemetry_and_billing": {
+                "query_consumption_history",
+                "compare_consumption_periods",
+                "get_consumption_breakdown",
+                "get_peak_consumption_periods",
+                "forecast_consumption",
+                "predict_usage_and_bill",
+                "generate_energy_cost_recommendations",
+                "get_customer_premises_profile",
+            },
+            "regulatory_and_standards": {
+                "search_regulatory_documents",
+                "get_document_clause",
+                "resolve_reference_parameter",
+                "lookup_appliance_benchmark",
+                "lookup_grid_emission_factor",
+                "plan_house_energy",
+                "analyze_appliance_scenario",
+            },
+            "planning_and_upgrades": {
+                "plan_house_energy",
+                "analyze_appliance_scenario",
+                "generate_energy_cost_recommendations",
+                "lookup_appliance_benchmark",
+                "search_regulatory_documents",
+                "predict_usage_and_bill",
+                "get_customer_appliance_inventory",
+            },
+            "balanced_core": {
+                "predict_usage_and_bill",
+                "generate_energy_cost_recommendations",
+                "plan_house_energy",
+                "analyze_appliance_scenario",
+                "search_regulatory_documents",
+                "query_consumption_history",
+                "resolve_reference_parameter",
+            },
+        }
+        allowed_names = scope_map.get(tool_scope, set())
+        if allowed_names:
+            selected_tools = [t for t in all_tools if t.name in allowed_names]
+        else:
+            selected_tools = all_tools
 
     logger.info(
-        "Registered %d residential LangChain tools for authorized meter '%s'",
-        len(tools),
+        "Registered %d residential LangChain tools (scope='%s') for authorized meter '%s'",
+        len(selected_tools),
+        tool_scope,
         authorized_meter_id,
     )
-    return tools
+    return selected_tools
 
 
 def create_multi_knowledge_tools(
