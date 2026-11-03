@@ -46,7 +46,7 @@ def government_customer_segmentation():
         settings = SegmentationSettings.from_environment()
         result = load_or_validate_source_profile(settings)
         compact = {
-            "profile_path": str(settings.output_dir / "reports" / "source_profile.json"),
+            "profile_path": str(settings.reports_dir / "source_profile.json"),
             "row_count": result["row_count"],
             "distinct_buildings": result["distinct_buildings"],
             "distinct_timestamps": result["distinct_timestamps"],

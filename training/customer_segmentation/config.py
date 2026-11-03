@@ -29,6 +29,9 @@ class SegmentationSettings:
     random_seed: int = 42
     min_k: int = 2
     max_k: int = 10
+    feature_path: Path = PROJECT_ROOT / "data" / "gold" / "customer_segmentation_features.parquet"
+    model_dir: Path = PROJECT_ROOT / "models" / "segmentation"
+    reports_dir: Path = PROJECT_ROOT / "docs" / "customer_segmentation" / "reports"
 
     @classmethod
     def from_environment(cls) -> "SegmentationSettings":
@@ -55,6 +58,24 @@ class SegmentationSettings:
             building_sample_fraction=float(
                 os.getenv("SEGMENTATION_BUILDING_SAMPLE_FRACTION", "0.1")
             ),
+            feature_path=Path(
+                os.getenv(
+                    "SEGMENTATION_FEATURE_PATH",
+                    data_root / "gold" / "customer_segmentation_features.parquet",
+                )
+            ).expanduser(),
+            model_dir=Path(
+                os.getenv(
+                    "SEGMENTATION_MODEL_DIR",
+                    PROJECT_ROOT / "models" / "segmentation",
+                )
+            ).expanduser(),
+            reports_dir=Path(
+                os.getenv(
+                    "SEGMENTATION_REPORTS_DIR",
+                    PROJECT_ROOT / "docs" / "customer_segmentation" / "reports",
+                )
+            ).expanduser(),
             window_end=date.fromisoformat(end) if end else None,
             window_months=int(os.getenv("SEGMENTATION_WINDOW_MONTHS", "12")),
             minimum_coverage=float(os.getenv("SEGMENTATION_MIN_COVERAGE", "0.9")),

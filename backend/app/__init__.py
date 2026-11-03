@@ -123,6 +123,7 @@ def create_app(config_class: type[BaseConfig] | None = None) -> Flask:
     )
     government_segmentation_svc = SegmentationService(
         output_dir=app.config["SEGMENTATION_OUTPUT_DIR"],
+        reports_dir=app.config["SEGMENTATION_REPORTS_DIR"],
         max_page_size=app.config["SEGMENTATION_API_MAX_PAGE_SIZE"],
     )
     anomaly_prediction_svc = AnomalyPredictionService(

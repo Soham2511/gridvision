@@ -52,8 +52,8 @@ MODEL_REGISTRY = {
         domain="government",
         task="building_behaviour_clustering",
         description=(
-            "Groups buildings by energy-use behaviour and publishes regional "
-            "and time-profile outputs."
+            "Groups consumer buildings by energy-use behaviour and publishes "
+            "regional, temporal, time-profile, and survey-priority summaries."
         ),
     ),
     "anomaly-prediction": ModelDefinition(

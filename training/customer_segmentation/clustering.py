@@ -178,8 +178,9 @@ def fit_and_publish(
         groups = [("ALL", pd.Series(True, index=feature_rows.index))]
 
     output_dir = settings.output_dir
-    models_dir = output_dir / "models"
+    models_dir = settings.model_dir
     models_dir.mkdir(parents=True, exist_ok=True)
+    settings.reports_dir.mkdir(parents=True, exist_ok=True)
     assignment_frames: list[pd.DataFrame] = []
     profile_rows: list[dict[str, Any]] = []
     evaluation_by_model: dict[str, Any] = {}
@@ -423,7 +424,7 @@ def fit_and_publish(
         }
         model_metadata.append(model_record)
 
-    _atomic_json(output_dir / "feature_diagnostics.json", feature_diagnostics)
+    _atomic_json(settings.reports_dir / "feature_diagnostics.json", feature_diagnostics)
     if assignment_frames:
         current_assignments = pd.concat(assignment_frames, ignore_index=True)
         current_assignments = current_assignments.loc[
@@ -471,7 +472,7 @@ def fit_and_publish(
                 }
             )
     if not assignment_frames:
-        _atomic_json(output_dir / "model_selection_report.json", evaluation_by_model)
+        _atomic_json(settings.reports_dir / "model_selection_report.json", evaluation_by_model)
         raise ValueError("No feature rows were available for segmentation assignments")
     assignments = pd.concat(assignment_frames, ignore_index=True)
     assignments_path = output_dir / "consumer_assignments.parquet"
@@ -490,7 +491,7 @@ def fit_and_publish(
         1, assignments["OBJECTID"].nunique()
     )
     _write_parquet(distribution, output_dir / "segment_distribution.parquet")
-    feature_report_path = output_dir / "reports" / "feature_generation.json"
+    feature_report_path = settings.reports_dir / "feature_generation.json"
     feature_report = (
         json.loads(feature_report_path.read_text(encoding="utf-8"))
         if feature_report_path.is_file()
@@ -524,7 +525,7 @@ def fit_and_publish(
         "unassigned_feature_buildings": int(len(feature_rows) - assignments["OBJECTID"].nunique()),
     }
     _atomic_json(output_dir / "model_metadata.json", output_metadata)
-    _atomic_json(output_dir / "model_selection_report.json", evaluation_by_model)
+    _atomic_json(settings.reports_dir / "model_selection_report.json", evaluation_by_model)
     return output_metadata
 
 

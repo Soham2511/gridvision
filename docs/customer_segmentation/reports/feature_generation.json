@@ -1,0 +1,157 @@
+{
+  "behaviour_feature_columns": [
+    "mean_energy_kwh",
+    "median_energy_kwh",
+    "stddev_energy_kwh",
+    "p95_energy_kwh",
+    "peak_energy_kwh",
+    "night_energy_share",
+    "morning_energy_share",
+    "afternoon_energy_share",
+    "evening_energy_share",
+    "weekday_mean_hourly_energy_kwh",
+    "weekend_mean_hourly_energy_kwh",
+    "coefficient_of_variation",
+    "peak_to_average_ratio",
+    "weekend_to_weekday_ratio",
+    "peak_hour_sin",
+    "peak_hour_cos",
+    "mean_daily_stddev_kwh",
+    "daily_energy_stddev_kwh",
+    "monthly_energy_cv",
+    "monthly_peak_to_average"
+  ],
+  "buildings_by_general_use_type": [
+    {
+      "GeneralUseType": "Commercial",
+      "building_count": 1585
+    },
+    {
+      "GeneralUseType": "Industrial",
+      "building_count": 819
+    },
+    {
+      "GeneralUseType": "Institutional",
+      "building_count": 27
+    },
+    {
+      "GeneralUseType": "Recreational",
+      "building_count": 1
+    },
+    {
+      "GeneralUseType": "Residential",
+      "building_count": 47568
+    }
+  ],
+  "buildings_by_general_use_type_in_source": [
+    {
+      "GeneralUseType": "Residential",
+      "building_count": 47568
+    },
+    {
+      "GeneralUseType": "Commercial",
+      "building_count": 1585
+    },
+    {
+      "GeneralUseType": "Industrial",
+      "building_count": 819
+    },
+    {
+      "GeneralUseType": "Institutional",
+      "building_count": 27
+    },
+    {
+      "GeneralUseType": "Recreational",
+      "building_count": 1
+    }
+  ],
+  "eligible_buildings": 50000,
+  "excluded_low_coverage_buildings": 0,
+  "expected_hourly_observations": 8760,
+  "feature_columns": [
+    "OBJECTID",
+    "observed_hours",
+    "coverage_ratio",
+    "mean_energy_kwh",
+    "median_energy_kwh",
+    "stddev_energy_kwh",
+    "p95_energy_kwh",
+    "peak_energy_kwh",
+    "average_energy_kwh",
+    "night_energy_share",
+    "morning_energy_share",
+    "afternoon_energy_share",
+    "evening_energy_share",
+    "weekday_mean_hourly_energy_kwh",
+    "weekend_mean_hourly_energy_kwh",
+    "weekend_observations",
+    "weekday_observations",
+    "id.grid.coarse",
+    "id.grid.finer",
+    "id.tract",
+    "latitude",
+    "longitude",
+    "GeneralUseType",
+    "SpecificUseType",
+    "usetype",
+    "building.type",
+    "peak_consumption_hour",
+    "coefficient_of_variation",
+    "peak_to_average_ratio",
+    "weekend_to_weekday_ratio",
+    "peak_hour_sin",
+    "peak_hour_cos",
+    "mean_daily_stddev_kwh",
+    "daily_energy_stddev_kwh",
+    "mean_daily_energy_kwh",
+    "monthly_energy_cv",
+    "monthly_peak_to_average"
+  ],
+  "feature_path": "/opt/gridvision/data/segmentation/building_features.parquet",
+  "feature_rows": 50000,
+  "maximum_observed_coverage": 0.9583333333333334,
+  "mean_observed_coverage": 0.9583333333337684,
+  "metadata_columns_excluded_from_clustering": [
+    "GeneralUseType",
+    "OBJECTID",
+    "SpecificUseType",
+    "building.type",
+    "id.grid.coarse",
+    "id.grid.finer",
+    "id.tract",
+    "latitude",
+    "longitude",
+    "usetype"
+  ],
+  "minimum_coverage": 0.9,
+  "minimum_observed_coverage": 0.9583333333333334,
+  "missing_finer_grid_buildings": 156,
+  "null_feature_values_by_column": {
+    "afternoon_energy_share": 0,
+    "coefficient_of_variation": 0,
+    "daily_energy_stddev_kwh": 0,
+    "evening_energy_share": 0,
+    "mean_daily_stddev_kwh": 0,
+    "mean_energy_kwh": 0,
+    "median_energy_kwh": 0,
+    "monthly_energy_cv": 0,
+    "monthly_peak_to_average": 0,
+    "morning_energy_share": 0,
+    "night_energy_share": 0,
+    "p95_energy_kwh": 0,
+    "peak_energy_kwh": 0,
+    "peak_hour_cos": 0,
+    "peak_hour_sin": 0,
+    "peak_to_average_ratio": 0,
+    "stddev_energy_kwh": 0,
+    "weekday_mean_hourly_energy_kwh": 0,
+    "weekend_mean_hourly_energy_kwh": 0,
+    "weekend_to_weekday_ratio": 0
+  },
+  "observation_end_exclusive": "2019-01-01 00:00:00",
+  "observation_start": "2018-01-01 00:00:00",
+  "quantile_method": "DuckDB APPROX_QUANTILE T-Digest estimates for median and p95",
+  "scope": "all GeneralUseType values in the configured Bronze source, including Residential",
+  "source_path": "/opt/gridvision/data/bronze/training_sample_50000.parquet",
+  "window_months": 12
+}

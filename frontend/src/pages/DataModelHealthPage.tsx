@@ -21,22 +21,33 @@ import {
 
 const mapRegistryModel = (model: RegisteredModel): ModelRegistryItem => {
   const rmse = model.testMetrics?.rmse_kwh ?? null;
+  const isSegmentation = model.modelId === 'government-customer-segmentation';
+  const runSummary =
+    model.runSummary ??
+    model.healthSummary ??
+    (model.status === 'configured'
+      ? 'Ready for on-demand inference'
+      : model.error ?? 'Unavailable');
   return {
     id: model.modelId,
     modelName: model.name,
-    personaUsed: model.domain,
+    personaUsed:
+      model.domain === 'customer'
+        ? 'Residential'
+        : model.domain === 'government'
+          ? 'Government & Utilities'
+          : model.domain,
     version:
       model.modelVersion === 'not_deployed'
         ? 'Not deployed'
-        : /^\d+$/.test(model.modelVersion)
-        ? `v${model.modelVersion}`
-        : model.modelVersion,
+        : isSegmentation
+          ? model.modelVersion
+          : /^\d+$/.test(model.modelVersion)
+            ? `v${model.modelVersion}`
+            : model.modelVersion,
     status: model.status === 'configured' ? 'Configured' : 'Unavailable',
-    runSummary:
-      model.runSummary ??
-      (model.status === 'configured'
-        ? 'Ready for on-demand inference'
-        : model.error ?? 'Unavailable'),
+    runSummary,
+    lastInference: runSummary,
     mse: rmse === null ? null : Math.pow(rmse, 2),
     rmse,
     r2: model.testMetrics?.r2 ?? null,
@@ -112,6 +123,10 @@ export const DataModelHealthPage: React.FC = () => {
 
   const handleActionClick = (model: ModelRegistryItem, actionType: string) => {
     setActiveMenuId(null);
+    if (model.id === 'government-customer-segmentation') {
+      navigate('/app/government/segmentation');
+      return;
+    }
     if (!customerModel || model.id !== customerModel.modelId) {
       setActionNotice('Customer model details are unavailable.');
       return;
@@ -719,7 +734,8 @@ export const DataModelHealthPage: React.FC = () => {
 
                         {/* Actions */}
                         <td style={{ padding: '1rem', textAlign: 'center', position: 'relative' }}>
-                          {model.id === 'customer-bill-prediction' && <button
+                          {(model.id === 'customer-bill-prediction' ||
+                            model.id === 'government-customer-segmentation') && <button
                             type="button"
                             onClick={() =>
                               setActiveMenuId(activeMenuId === model.id ? null : model.id)
@@ -741,7 +757,9 @@ export const DataModelHealthPage: React.FC = () => {
                           </button>}
 
                           {/* Context Menu Dropdown */}
-                          {model.id === 'customer-bill-prediction' && activeMenuId === model.id && (
+                          {(model.id === 'customer-bill-prediction' ||
+                            model.id === 'government-customer-segmentation') &&
+                            activeMenuId === model.id && (
                             <div
                               style={{
                                 position: 'absolute',
@@ -759,7 +777,14 @@ export const DataModelHealthPage: React.FC = () => {
                             >
                               <button
                                 type="button"
-                                onClick={() => handleActionClick(model, 'Open Model Workbench')}
+                                onClick={() =>
+                                  handleActionClick(
+                                    model,
+                                    model.id === 'government-customer-segmentation'
+                                      ? 'Open Segmentation Dashboard'
+                                      : 'Open Model Workbench'
+                                  )
+                                }
                                 style={{
                                   width: '100%',
                                   padding: '8px 12px',
@@ -778,9 +803,13 @@ export const DataModelHealthPage: React.FC = () => {
                                 onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
                               >
                                 <Activity size={14} color="#087EBD" />
-                                <span>Open Model Workbench</span>
+                                <span>
+                                  {model.id === 'government-customer-segmentation'
+                                    ? 'Open Segmentation Dashboard'
+                                    : 'Open Model Workbench'}
+                                </span>
                               </button>
-                              <button
+                              {model.id === 'customer-bill-prediction' && <button
                                 type="button"
                                 onClick={() => handleActionClick(model, 'Inspect Schema')}
                                 style={{
@@ -802,8 +831,8 @@ export const DataModelHealthPage: React.FC = () => {
                               >
                                 <FileCode size={14} color="#64748B" />
                                 <span>Inspect Schema</span>
-                              </button>
-                              <button
+                              </button>}
+                              {model.id === 'customer-bill-prediction' && <button
                                 type="button"
                                 onClick={() => handleActionClick(model, 'Show Test Metrics')}
                                 style={{
@@ -825,8 +854,8 @@ export const DataModelHealthPage: React.FC = () => {
                               >
                                 <Activity size={14} color="#00A389" />
                                 <span>Show Test Metrics</span>
-                              </button>
-                              <button
+                              </button>}
+                              {model.id === 'customer-bill-prediction' && <button
                                 type="button"
                                 onClick={() => handleActionClick(model, 'Download Model Metadata')}
                                 style={{
@@ -848,7 +877,7 @@ export const DataModelHealthPage: React.FC = () => {
                               >
                                 <Layers size={14} color="#64748B" />
                                 <span>Download Model Metadata</span>
-                              </button>
+                              </button>}
                             </div>
                           )}
                         </td>

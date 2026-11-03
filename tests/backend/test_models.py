@@ -90,6 +90,73 @@ def test_model_catalog_uses_trained_forecast_provider(monkeypatch):
     assert forecasts["government-load-forecast"]["selectedModel"] == "champion"
 
 
+def test_model_catalog_includes_government_customer_segmentation(
+    client: FlaskClient,
+):
+    response = client.get("/api/v1/models")
+
+    assert response.status_code == 200
+    models = response.get_json()["data"]["models"]
+    model_ids = [model["modelId"] for model in models]
+    assert model_ids == [
+        "customer-bill-prediction",
+        "commercial-building-forecast",
+        "government-load-forecast",
+        "government-customer-segmentation",
+        "anomaly-prediction",
+    ]
+    segmentation = next(
+        model
+        for model in models
+        if model["modelId"] == "government-customer-segmentation"
+    )
+    assert segmentation["name"] == "Government Customer Segmentation"
+    assert segmentation["status"] in {"configured", "unavailable"}
+    if segmentation["status"] == "configured":
+        assert segmentation["assignmentCount"] > 0
+        assert segmentation["trainedModelCount"] > 0
+        assert segmentation["modelVersion"].startswith("segmentation-v1-")
+    else:
+        assert segmentation["error"]
+
+
+def test_model_catalog_uses_forecast_provider_status(
+    client: FlaskClient, monkeypatch
+):
+    monkeypatch.setattr(
+        client.application.extensions["model_provider"],
+        "get_model_status",
+        lambda: {
+            "models": {
+                "commercial": {
+                    "status": "ready",
+                    "model_version": "19",
+                    "provider": "mlflow_registered_alias",
+                    "test_metrics": {"rmse_kwh": 30.2},
+                },
+                "government": {
+                    "status": "ready",
+                    "model_version": "20",
+                    "provider": "mlflow_registered_alias",
+                    "test_metrics": {"rmse_kwh": 1068.8},
+                },
+            },
+        },
+    )
+
+    response = client.get("/api/v1/models")
+
+    assert response.status_code == 200
+    models = {
+        model["modelId"]: model
+        for model in response.get_json()["data"]["models"]
+    }
+    assert models["commercial-building-forecast"]["status"] == "configured"
+    assert models["commercial-building-forecast"]["modelVersion"] == "19"
+    assert models["government-load-forecast"]["status"] == "configured"
+    assert models["government-load-forecast"]["modelVersion"] == "20"
+
+
 def test_customer_bill_model_replays_gold_record(client: FlaskClient):
     records_response = client.get(
         "/api/v1/models/customer-bill-prediction/records?limit=1"

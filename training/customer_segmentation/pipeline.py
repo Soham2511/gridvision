@@ -123,7 +123,6 @@ def _run_stage(
 
 def validate_outputs(settings: SegmentationSettings) -> dict[str, Any]:
     required = (
-        "building_features.parquet",
         "consumer_assignments.parquet",
         "cluster_profiles.parquet",
         "segment_distribution.parquet",
@@ -134,11 +133,6 @@ def validate_outputs(settings: SegmentationSettings) -> dict[str, Any]:
         "cluster_daily_profile.parquet",
         "cluster_monthly_profile.parquet",
         "model_metadata.json",
-        "model_selection_report.json",
-        "feature_diagnostics.json",
-        "reports/source_profile.json",
-        "reports/feature_generation.json",
-        "reports/geospatial_summary.json",
     )
     missing = [
         name
@@ -146,6 +140,21 @@ def validate_outputs(settings: SegmentationSettings) -> dict[str, Any]:
         if not (settings.output_dir / name).is_file()
         or (settings.output_dir / name).stat().st_size == 0
     ]
+    required_reports = (
+        "source_profile.json",
+        "feature_generation.json",
+        "geospatial_summary.json",
+        "model_selection_report.json",
+        "feature_diagnostics.json",
+    )
+    missing.extend(
+        f"reports/{name}"
+        for name in required_reports
+        if not (settings.reports_dir / name).is_file()
+        or (settings.reports_dir / name).stat().st_size == 0
+    )
+    if not settings.feature_path.is_file() or settings.feature_path.stat().st_size == 0:
+        missing.append(str(settings.feature_path))
     if missing:
         raise FileNotFoundError(f"Segmentation outputs are incomplete: {missing}")
     metadata = json.loads((settings.output_dir / "model_metadata.json").read_text())
@@ -156,6 +165,9 @@ def validate_outputs(settings: SegmentationSettings) -> dict[str, Any]:
         for name in required
         if name.endswith(".parquet")
     }
+    parquet_rows[settings.feature_path.name] = (
+        pq.ParquetFile(settings.feature_path).metadata.num_rows
+    ) if settings.feature_path.is_file() else 0
     for name, row_count in parquet_rows.items():
         if row_count <= 0:
             raise ValueError(f"Segmentation output is empty: {name}")
@@ -168,13 +180,11 @@ def validate_outputs(settings: SegmentationSettings) -> dict[str, Any]:
         for model in metadata.get("trained_models", [])
         if (
             not (
-                settings.output_dir
-                / "models"
+                settings.model_dir
                 / f"{model['model_category'].lower()}_model.joblib"
             ).is_file()
             or (
-                settings.output_dir
-                / "models"
+                settings.model_dir
                 / f"{model['model_category'].lower()}_model.joblib"
             ).stat().st_size
             == 0
@@ -185,6 +195,9 @@ def validate_outputs(settings: SegmentationSettings) -> dict[str, Any]:
     report = {
         "status": "complete",
         "output_dir": str(settings.output_dir.resolve()),
+        "feature_path": str(settings.feature_path.resolve()),
+        "model_dir": str(settings.model_dir.resolve()),
+        "reports_dir": str(settings.reports_dir.resolve()),
         "required_outputs": list(required),
         "model_version": metadata.get("model_version"),
         "assignment_count": metadata.get("assignment_count"),
@@ -200,7 +213,7 @@ def validate_outputs(settings: SegmentationSettings) -> dict[str, Any]:
 
 def write_execution_summary(settings: SegmentationSettings, summary: dict[str, Any]) -> Path:
     """Atomically publish a JSON summary for CLI or Airflow executions."""
-    summary_path = settings.output_dir / "reports" / "execution_summary.json"
+    summary_path = settings.reports_dir / "execution_summary.json"
     _atomic_json(summary_path, summary)
     logger.info("Published segmentation execution summary: %s", summary_path)
     return summary_path
@@ -232,7 +245,7 @@ def run_pipeline(settings: SegmentationSettings, *, register_mlflow: bool = True
         "Cluster buildings and write segment assignments",
         3,
         total_stages,
-        lambda: fit_and_publish(settings.output_dir / "building_features.parquet", settings),
+        lambda: fit_and_publish(settings.feature_path, settings),
         pipeline_started,
         stage_durations,
     )
@@ -278,7 +291,7 @@ def run_pipeline(settings: SegmentationSettings, *, register_mlflow: bool = True
             ],
         },
         "execution_summary_path": str(
-            (settings.output_dir / "reports" / "execution_summary.json").resolve()
+            (settings.reports_dir / "execution_summary.json").resolve()
         ),
     }
     write_execution_summary(settings, summary)

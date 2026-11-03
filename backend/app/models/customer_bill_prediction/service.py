@@ -184,30 +184,35 @@ class CustomerBillPredictionService:
             summary["error"] = model_error
         return summary
 
-    def get_model_catalog(self) -> list[dict[str, Any]]:
+    def get_model_catalog(
+        self, forecast_status: dict[str, dict[str, Any]] | None = None
+    ) -> list[dict[str, Any]]:
         catalog = []
-        catalog_provider = self.forecast_model_provider or self.model_provider
-        if hasattr(catalog_provider, "get_horizon_model_status"):
-            forecast_status = catalog_provider.get_horizon_model_status()
-        else:
-            provider_status = catalog_provider.get_model_status()
-            provider_name = provider_status.get("provider", "unknown")
-            provider_error = provider_status.get(
-                "description",
-                "The backend is not configured with the trained forecast model provider.",
-            )
-            forecast_status = {
-                key: {
-                    "status": "unavailable",
-                    "provider": provider_name,
-                    "model_version": "not_deployed",
-                    "model_alias": "not_deployed",
-                    "error": provider_error,
-                    "test_metrics": {},
-                    "features": [],
-                }
-                for key in ("commercial", "government")
-            }
+        if forecast_status is None:
+            catalog_provider = self.forecast_model_provider or self.model_provider
+            if hasattr(catalog_provider, "get_horizon_model_status"):
+                forecast_status = catalog_provider.get_horizon_model_status()
+            else:
+                provider_status = catalog_provider.get_model_status()
+                forecast_status = provider_status.get("models")
+                if forecast_status is None:
+                    provider_name = provider_status.get("provider", "unknown")
+                    provider_error = provider_status.get(
+                        "description",
+                        "The backend is not configured with the trained forecast model provider.",
+                    )
+                    forecast_status = {
+                        key: {
+                            "status": "unavailable",
+                            "provider": provider_name,
+                            "model_version": "not_deployed",
+                            "model_alias": "not_deployed",
+                            "error": provider_error,
+                            "test_metrics": {},
+                            "features": [],
+                        }
+                        for key in ("commercial", "government")
+                    }
         for model_id, definition in MODEL_REGISTRY.items():
             if model_id == "customer-bill-prediction":
                 catalog.append(self.get_summary())
