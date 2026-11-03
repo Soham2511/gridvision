@@ -6,6 +6,8 @@ from app.providers.llm.base import BaseLLMProvider, LLMInferenceError
 
 logger = logging.getLogger("gridvision.providers.llm.groq")
 
+FALLBACK_MODELS = ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "qwen/qwen3.8-27b"]
+
 
 class GroqLLMAdapter(BaseLLMProvider):
     """Integrates with Groq's high-speed inference engine with retry resilience."""
@@ -74,8 +76,9 @@ class GroqLLMAdapter(BaseLLMProvider):
         messages: list[dict[str, str]],
         temperature: float = 0.2,
         max_tokens: int = 800,
+        model_override: str | None = None,
     ) -> str:
-        """Generate a chat completion using Groq with retry resilience."""
+        """Generate a chat completion using Groq with multi-model failover resilience."""
         if not self.is_available():
             raise LLMInferenceError("Groq API key is not configured.")
 
@@ -83,46 +86,49 @@ class GroqLLMAdapter(BaseLLMProvider):
         if not client:
             raise LLMInferenceError("Groq client could not be initialized.")
 
+        primary_model = (model_override or self.effective_model).strip()
+        candidate_models = [primary_model]
+        for fb in FALLBACK_MODELS:
+            if fb not in candidate_models:
+                candidate_models.append(fb)
+
         last_exc: Exception | None = None
-        for attempt in range(self.max_retries + 1):
-            try:
-                response = client.chat.completions.create(
-                    model=self.effective_model,
-                    messages=messages,
-                    temperature=temperature,
-                    max_tokens=max_tokens,
-                )
-                choice = response.choices[0]
-                content = choice.message.content or ""
-                return content.strip()
-            except Exception as exc:
-                last_exc = exc
-                err_str = str(exc).lower()
-                is_token_overflow = "limit" in err_str and ("requested" in err_str or "itpm" in err_str or "tpm" in err_str)
-                if is_token_overflow:
-                    logger.warning("Groq input token rate limit overflow detected. Aborting retry loop immediately.")
+        for cand_model in candidate_models:
+            for attempt in range(self.max_retries + 1):
+                try:
+                    response = client.chat.completions.create(
+                        model=cand_model,
+                        messages=messages,
+                        temperature=temperature,
+                        max_tokens=max_tokens,
+                    )
+                    choice = response.choices[0]
+                    content = choice.message.content or ""
+                    return content.strip()
+                except Exception as exc:
+                    last_exc = exc
+                    err_str = str(exc).lower()
+                    is_token_overflow = any(k in err_str for k in ["rate limit", "429", "limit", "itpm", "tpd", "tokens per day", "rate_limit_exceeded"])
+                    if is_token_overflow:
+                        logger.warning(
+                            "Groq model '%s' rate limited; switching to next fallback model: %s",
+                            cand_model,
+                            exc,
+                        )
+                        break  # Immediately move to next candidate model
+
+                    is_transient = any(
+                        k in err_str
+                        for k in ["timeout", "connection", "503", "temporarily"]
+                    )
+                    if is_transient and attempt < self.max_retries:
+                        time.sleep(0.3)
+                        continue
                     break
 
-                is_transient = any(
-                    k in err_str
-                    for k in ["rate limit", "429", "timeout", "connection", "503", "temporarily"]
-                )
-                if is_transient and attempt < self.max_retries:
-                    backoff = 0.5 * (2**attempt)
-                    logger.warning(
-                        "Groq inference attempt %d/%d encountered transient error. Retrying in %.1fs: %s",
-                        attempt + 1,
-                        self.max_retries + 1,
-                        backoff,
-                        exc,
-                    )
-                    time.sleep(backoff)
-                    continue
-                break
-
         logger.error(
-            "Groq chat completion failed for model '%s': %s",
-            self.effective_model,
+            "Groq chat completion failed across all candidate models %s: %s",
+            candidate_models,
             last_exc,
         )
         raise LLMInferenceError(f"Groq API error: {last_exc}") from last_exc

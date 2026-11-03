@@ -273,3 +273,4 @@ def compact_history_for_llm(
             sanitized.append({"role": "assistant", "content": text})
 
     return sanitized
+

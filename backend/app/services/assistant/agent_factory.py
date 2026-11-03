@@ -87,12 +87,13 @@ class ResidentialAgentFactory:
         """Return True if a valid Groq API key is present."""
         return bool(self.api_key and len(self.api_key) > 5)
 
-    def build_chat_model(self, timeout: float | None = None) -> BaseChatModel:
-        """Construct the underlying BaseChatModel (ChatGroq or MockChatModel) with optional adaptive timeout."""
+    def build_chat_model(self, timeout: float | None = None, model_override: str | None = None) -> BaseChatModel:
+        """Construct the underlying BaseChatModel (ChatGroq or MockChatModel) with optional adaptive timeout and model override."""
         if self.custom_chat_model is not None:
             return self.custom_chat_model
 
         effective_timeout = timeout if timeout is not None else self.timeout
+        effective_model = (model_override or self.model_name).strip()
 
         if self.is_groq_available():
             try:
@@ -106,13 +107,13 @@ class ResidentialAgentFactory:
 
                 logger.info(
                     "Configuring ChatGroq with model '%s' (base_url=%s, timeout=%.1fs, retries=%d)",
-                    self.model_name,
+                    effective_model,
                     clean_base_url,
                     effective_timeout,
                     self.max_retries,
                 )
                 return ChatGroq(
-                    model=self.model_name,
+                    model=effective_model,
                     api_key=self.api_key,
                     base_url=clean_base_url,
                     temperature=self.temperature,
@@ -138,12 +139,13 @@ class ResidentialAgentFactory:
         resolver: Any = None,
         tool_scope: str = "all",
         timeout: float | None = None,
+        model_override: str | None = None,
     ) -> Any:
         """Construct or retrieve a compiled LangChain agent for the authorized household.
 
-        Caches compiled graphs per (meter_id, tool_scope, timeout) to eliminate per-request graph compile latency.
+        Caches compiled graphs per (meter_id, tool_scope, timeout, model_override) to eliminate per-request graph compile latency.
         """
-        cache_key = f"{meter_id}:{tool_scope}:{timeout}"
+        cache_key = f"{meter_id}:{tool_scope}:{timeout}:{model_override}"
         if not additional_tools and cache_key in self._agent_cache:
             return self._agent_cache[cache_key]
 
@@ -159,7 +161,7 @@ class ResidentialAgentFactory:
         if additional_tools:
             tools.extend(additional_tools)
 
-        chat_model = self.build_chat_model(timeout=timeout)
+        chat_model = self.build_chat_model(timeout=timeout, model_override=model_override)
 
         # Compile standard LangChain tool-calling agent loop
         agent = create_agent(

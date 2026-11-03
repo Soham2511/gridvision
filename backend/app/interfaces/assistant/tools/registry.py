@@ -144,10 +144,6 @@ def create_residential_tools(
             authorized_meter_id=authorized_meter_id,
             use_case=house_plan_uc,
         ),
-        PlanHouseAreaM2Tool(
-            authorized_meter_id=authorized_meter_id,
-            use_case=house_plan_uc,
-        ),
         AnalyzeApplianceScenarioTool(
             authorized_meter_id=authorized_meter_id,
             use_case=appliance_uc,
@@ -157,6 +153,15 @@ def create_residential_tools(
             use_case=cost_mgmt_uc,
         ),
     ]
+
+    # Include LLM alias tools when planning scope is selected
+    if tool_scope in ("planning_and_upgrades", "balanced_core"):
+        all_tools.append(
+            PlanHouseAreaM2Tool(
+                authorized_meter_id=authorized_meter_id,
+                use_case=house_plan_uc,
+            )
+        )
 
     if include_knowledge_tools:
         # Customer operational context tools
