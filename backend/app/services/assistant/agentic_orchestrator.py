@@ -75,7 +75,7 @@ class AgenticKnowledgeOrchestrator:
             primary_mode = explicit_mode
         elif any(k in p for k in ["new house", "planning", "wiring", "wiring requirements", "electrical layout", "bedroom", "built-up", "lighting circuit"]):
             primary_mode = "house_planning"
-        elif any(k in p for k in ["replac", "lifecycle", "payback", "star ac", "star model", "iseer", "5-star", "appliance", "refrigerator", "purchase"]):
+        elif any(k in p for k in ["ac", "air condition", "air conditioner", "tier", "star", "replac", "lifecycle", "payback", "iseer", "5-star", "appliance", "refrigerator", "purchase", "geyser", "fan", "bldc", "heater"]):
             primary_mode = "appliance_lifecycle"
         elif any(k in p for k in ["reduce bill", "cost management", "saving", "save", "lower consumption", "reduce electricity", "compromis", "package", "balanced efficiency", "priority", "step", "execute", "investment", "cut bill"]):
             primary_mode = "cost_management"
@@ -258,8 +258,40 @@ class AgenticKnowledgeOrchestrator:
                     limitations=limitations,
                 )
 
-        # 3. Standards-Grounded Regulatory Search (Scenario A & D)
-        if self.retriever is not None:
+        # Check for simple arithmetic / math query (e.g. 2+2, calculate 150*10)
+        p_clean = prompt.strip().lower()
+        math_expr = p_clean
+        for prefix in ["what is ", "calculate ", "how much is ", "solve "]:
+            if p_clean.startswith(prefix):
+                math_expr = p_clean[len(prefix):].replace("?", "").strip()
+                break
+        else:
+            math_expr = p_clean.replace("?", "").strip()
+
+        if math_expr and all(c in "0123456789+-*/. ()" for c in math_expr) and any(c in "+-*/" for c in math_expr):
+            try:
+                result_val = eval(compile(math_expr, "<math>", "eval"), {"__builtins__": None}, {})
+                return AssistantResponseContract(
+                    answer=f"### Calculation Result\n\n$$\\text{{{math_expr}}} = {result_val}$$",
+                    mode="general_chat",
+                    entityId=meter_id,
+                    customerName=customer_name,
+                    status="success",
+                    provenance=AssistantProvenance(knowledge_sources_used=["deterministic_arithmetic"]),
+                )
+            except Exception:
+                pass
+
+        # 3. Standards-Grounded Regulatory Search ONLY for standards/codes/safety queries
+        is_standards_query = any(
+            k in p for k in [
+                "standard", "code", "regulation", "is 732", "is732", "nec", "bee", "cea",
+                "clause", "wiring", "rule", "safety", "earthing", "rccb", "neutral",
+                "insulation", "lpd", "surge", "spd", "tariff order", "conductor"
+            ]
+        )
+
+        if self.retriever is not None and is_standards_query:
             sources_used.append(KnowledgeSourceType.DOCUMENT_RAG.value)
             docs: List[RetrievedChunk] = self.retriever.search(query=prompt, top_k=4)
 
@@ -304,13 +336,19 @@ class AgenticKnowledgeOrchestrator:
                 limitations=limitations,
             )
 
-        # Fallback
+        # Conversational / General Chat Fallback (Natural, helpful, direct)
         return AssistantResponseContract(
-            answer=f"Your inquiry regarding `{prompt}` was processed for authorized meter `{meter_id}`.",
+            answer=(
+                f"Hello! I am GridVision's AI Energy Assistant for meter `{meter_id}` ({customer_name or 'Resident'}).\n\n"
+                f"I can help you analyze your household electricity usage, explain your bills, plan a new home electrical layout, "
+                f"evaluate appliance upgrades (like BEE 3-Star vs 5-Star ACs), or check compliance with Indian Electrical Standards (IS 732).\n\n"
+                f"*How can I assist you with your energy needs today?*"
+            ),
             mode="general_chat",
             entityId=meter_id,
             customerName=customer_name,
             status="success",
+            provenance=AssistantProvenance(knowledge_sources_used=["conversational_fallback"]),
         )
 
     # =================================================================
@@ -494,7 +532,7 @@ class AgenticKnowledgeOrchestrator:
             )
 
         # Determine if query is comparing two AC models (Scenario D)
-        is_comparison = "compare" in p or ("which is more" in p and "ac" in p)
+        is_comparison = any(k in p for k in ["compare", "which is more", "which is better", "best for me", "which tier", "what tier", "which ac", "what star", "should i buy", "which one", "recommend"])
 
         if is_comparison:
             answer = (
