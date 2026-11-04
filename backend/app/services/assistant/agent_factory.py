@@ -177,23 +177,23 @@ class ResidentialAgentFactory:
     def sanitize_history_and_prompt(
         prompt: str,
         history: list[dict[str, Any]] | None = None,
-        max_prompt_chars: int = 2000,
         max_history_turns: int = 4,
     ) -> list[BaseMessage]:
-        """Sanitize and compact conversation history and prompt to prevent prompt injection and token overflow.
+        """Sanitize and compact conversation history while guaranteeing the user prompt is NEVER truncated.
 
-        - Uses compact_history_for_llm to prune bulky prior markdown tables and disclaimers.
-        - Guarantees the prompt + history remains well within Groq ITPM (7,000) token ceilings.
+        - Uses compact_history_for_llm to prune bulky prior markdown tables, ASCII charts, and disclaimers.
+        - Guarantees the user's active prompt is preserved at 100% full fidelity (never truncated).
+        - Budgets context tokens so total input remains safely within model per-request limits.
         """
-        clean_prompt = (prompt or "").strip()[:max_prompt_chars]
+        clean_prompt = (prompt or "").strip()
         messages: list[BaseMessage] = []
 
         if history:
             compacted = compact_history_for_llm(
                 history,
                 max_turns=max_history_turns,
-                max_assistant_chars=350,
-                max_user_chars=400,
+                max_assistant_chars=250,
+                max_user_chars=350,
             )
             for item in compacted:
                 role = item["role"]

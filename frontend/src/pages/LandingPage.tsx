@@ -1,6 +1,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { usePersona, PersonaType } from '../context';
+import { useAuth } from '../context/AuthContext';
 import { TopHeader } from '../layouts/TopHeader';
 import {
   Home,
@@ -14,10 +15,15 @@ import {
 export const LandingPage: React.FC = () => {
   const navigate = useNavigate();
   const { setPersona } = usePersona();
+  const { isAuthenticated } = useAuth();
 
   const handleSelectPersona = (persona: PersonaType) => {
     setPersona(persona);
-    navigate('/app');
+    if (!isAuthenticated) {
+      navigate('/login?redirect=/app');
+    } else {
+      navigate('/app');
+    }
   };
 
   const personaCards = [

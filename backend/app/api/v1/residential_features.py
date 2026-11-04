@@ -34,6 +34,8 @@ _FEATURE_SESSIONS: Dict[str, Dict[str, Any]] = {}
 def _authorize_request(req) -> tuple[UserPrincipal, str]:
     """Helper to authenticate and extract the authorized principal and meter ID."""
     principal = HouseholdAuthService.resolve_principal(req)
+    if principal.persona.lower() != "residential":
+        raise AuthorizationError(f"Access denied: Persona '{principal.persona}' cannot access residential features.")
     req_json = req.get_json(silent=True) or {}
     requested_meter = (
         req_json.get("meter_id")

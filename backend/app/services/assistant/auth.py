@@ -8,8 +8,9 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any
-from flask import Request, current_app
+from functools import wraps
+from typing import Any, Callable, Optional
+from flask import Request, current_app, g, jsonify, request
 
 logger = logging.getLogger("gridvision.assistant.auth")
 
@@ -29,6 +30,9 @@ class UserPrincipal:
     user_id: str
     persona: str
     authorized_meters: tuple[str, ...]
+    role: str = "RESIDENTIAL_USER"
+    email: str = ""
+    username: str = ""
     is_authenticated: bool = True
 
     def is_meter_authorized(self, meter_id: str) -> bool:
@@ -57,21 +61,33 @@ class HouseholdAuthService:
         app_config = current_app.config
         is_dev_auth_enabled = app_config.get("DEVELOPMENT_AUTH_ENABLED", False)
 
-        # 1. Production Authentication Path: Check server-side session or verified token
+        # 1. Verified Access Token Path (Signed JWT Bearer)
         auth_header = request.headers.get("Authorization", "")
         if auth_header.startswith("Bearer "):
             token = auth_header[7:].strip()
-            # Production JWT verification hook
             if token and token != "dev-token":
-                # When production auth is deployed, decode trusted claims:
-                # payload = jwt.decode(token, app_config["SECRET_KEY"], algorithms=["HS256"])
-                # return UserPrincipal(user_id=payload["sub"], persona=payload["persona"], authorized_meters=tuple(payload["meters"]))
-                pass
+                try:
+                    from app.services.auth_service import auth_service
+                    payload = auth_service.verify_access_token(token)
+                    meters = tuple(payload.get("meters", []))
+                    return UserPrincipal(
+                        user_id=str(payload.get("sub", "")),
+                        persona=str(payload.get("persona", "RESIDENTIAL")).lower(),
+                        authorized_meters=meters,
+                        role=str(payload.get("role", "RESIDENTIAL_USER")),
+                        email=str(payload.get("email", "")),
+                        username=str(payload.get("username", "")),
+                        is_authenticated=True,
+                    )
+                except Exception as e:
+                    logger.warning("Access token rejected: %s", e)
+                    # If invalid token is presented, fail closed even in dev mode
+                    raise AuthenticationError(f"Invalid or expired credentials: {e}")
 
         # 2. If production auth is required and no valid token is present, fail closed
         if not is_dev_auth_enabled:
             logger.warning("Authentication failed: No trusted authentication credentials provided.")
-            raise AuthenticationError("Authentication required to access household energy assistant.")
+            raise AuthenticationError("Authentication required to access GridVision features.")
 
         # 3. Development / Staging Identity Resolution (Strictly isolated to non-production)
         dev_mapping: dict[str, list[str]] = app_config.get("DEV_USER_METER_MAPPING", {
@@ -128,6 +144,13 @@ class HouseholdAuthService:
                         persona="residential",
                         authorized_meters=tuple(allowed),
                     )
+            # In development mode, dynamically authorize requested telemetry meter for local testing
+            clean_num = requested_entity.replace("METER-", "")
+            return UserPrincipal(
+                user_id=f"usr-{clean_num}",
+                persona="residential",
+                authorized_meters=(clean_num, f"METER-{clean_num}"),
+            )
 
         # Default development user if no specific entity requested
         default_uid = app_config.get("DEV_DEFAULT_USER", "2254213")
@@ -156,7 +179,7 @@ class HouseholdAuthService:
         clean_id = requested_meter_id.strip().upper()
         if not principal.is_meter_authorized(clean_id):
             logger.warning(
-                "Access denied: User '%s' attempted unauthorized access to meter '%s' (authorized: %s)",
+                "Access denied: User '%s' attempted to access unauthorized meter '%s'. Authorized: %s",
                 principal.user_id,
                 clean_id,
                 principal.authorized_meters,
@@ -169,3 +192,52 @@ class HouseholdAuthService:
             num_part = clean_id.replace("METER-", "")
             return f"METER-{num_part}"
         return clean_id
+
+
+
+def require_auth(fn: Callable) -> Callable:
+    """Decorator ensuring an authenticated UserPrincipal is attached to request context."""
+    @wraps(fn)
+    def wrapper(*args: Any, **kwargs: Any):
+        try:
+            principal = HouseholdAuthService.resolve_principal(request)
+            g.current_user = principal
+            g.principal = principal
+        except AuthenticationError as e:
+            return jsonify({"success": False, "error": {"code": "UNAUTHENTICATED", "message": str(e)}}), 401
+        except AuthorizationError as e:
+            return jsonify({"success": False, "error": {"code": "FORBIDDEN", "message": str(e)}}), 403
+        return fn(*args, **kwargs)
+    return wrapper
+
+
+def require_persona(*allowed_personas: str) -> Callable:
+    """Decorator restricting endpoint access to specified persona(s) (e.g. 'RESIDENTIAL')."""
+    allowed = {p.upper() for p in allowed_personas}
+
+    def decorator(fn: Callable) -> Callable:
+        @wraps(fn)
+        def wrapper(*args: Any, **kwargs: Any):
+            try:
+                principal = HouseholdAuthService.resolve_principal(request)
+                g.current_user = principal
+                g.principal = principal
+            except AuthenticationError as e:
+                return jsonify({"success": False, "error": {"code": "UNAUTHENTICATED", "message": str(e)}}), 401
+            except AuthorizationError as e:
+                return jsonify({"success": False, "error": {"code": "FORBIDDEN", "message": str(e)}}), 403
+
+            if principal.persona.upper() not in allowed:
+                return (
+                    jsonify({
+                        "success": False,
+                        "error": {
+                            "code": "FORBIDDEN_PERSONA",
+                            "message": f"Endpoint restricted to persona(s): {', '.join(sorted(allowed))}. Current persona: '{principal.persona.upper()}'.",
+                        },
+                    }),
+                    403,
+                )
+            return fn(*args, **kwargs)
+        return wrapper
+    return decorator

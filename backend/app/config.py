@@ -18,6 +18,17 @@ class BaseConfig:
     PROJECT_ROOT = Path(__file__).resolve().parents[2]
     SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-key-gridvision-2026")
     API_PREFIX = "/api/v1"
+
+    # Centralized Initial Residential OBJECTID Mapping (Single Source of Truth)
+    INITIAL_RESIDENTIAL_OBJECTID = os.getenv("INITIAL_RESIDENTIAL_OBJECTID", "2254213")
+
+    # Centralized Authentication & JWT / Session Settings
+    JWT_SECRET_KEY = os.getenv("JWT_SECRET_KEY", os.getenv("SECRET_KEY", "dev-secret-key-gridvision-2026"))
+    JWT_ACCESS_TOKEN_EXPIRES_SECONDS = int(os.getenv("JWT_ACCESS_TOKEN_EXPIRES_SECONDS", "3600"))
+    JWT_REFRESH_TOKEN_EXPIRES_DAYS = int(os.getenv("JWT_REFRESH_TOKEN_EXPIRES_DAYS", "14"))
+    AUTH_COOKIE_NAME = os.getenv("AUTH_COOKIE_NAME", "gv_refresh_token")
+    AUTH_COOKIE_SECURE = os.getenv("AUTH_COOKIE_SECURE", "false").lower() == "true"
+    AUTH_COOKIE_SAMESITE = os.getenv("AUTH_COOKIE_SAMESITE", "Lax")
     CORS_ORIGINS = [
         origin.strip()
         for origin in os.getenv(

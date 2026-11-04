@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { usePersona } from '../context';
+import { usePersona, useAuth } from '../context';
 import { analyticsService } from '../services/analyticsService';
 import { ChatMessageRenderer } from '../components/chat/ChatMessageRenderer';
 import {
@@ -292,7 +292,9 @@ const AssistantMessageBubble: React.FC<{ message: ChatMessage }> = ({ message })
 
 export const AiAssistantPage: React.FC = () => {
   const { currentPersona, activeEntity } = usePersona();
+  const { user } = useAuth();
   const persona = currentPersona || 'household';
+  const effectiveEntity = persona === 'household' ? (user?.meters?.[0] || '2254213') : activeEntity;
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // Active Feature Mode for Household Scope
@@ -336,16 +338,15 @@ export const AiAssistantPage: React.FC = () => {
   const suggestedPrompts = suggestedPromptsMap[persona] || suggestedPromptsMap.household;
 
   const residentName = useMemo(() => {
-    const numPart = (activeEntity || '2254213').replace(/METER-/i, '').replace(/meter-/i, '');
-    return `OBJECTID ${numPart}`;
-  }, [activeEntity]);
+    return user?.username || user?.email?.split('@')[0] || 'Resident';
+  }, [user]);
 
   const [inputPrompt, setInputPrompt] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
     const initialGreeting =
       persona === 'household'
-        ? `Hello **${residentName}**! I am GridVision Assistant, operating in **RESIDENTIAL** scope for **OBJECTID ${(activeEntity || '2254213').replace(/METER-/i, '')}**. How can I help you analyze your household consumption, review forecasts, or explain your tariff bill today?`
-        : `Hello! I am GridVision Assistant, operating in **${persona.toUpperCase()}** scope for **${activeEntity}**. How can I help you analyze telemetry, forecast trends, or explain tariff calculations today?`;
+        ? `Hello **${residentName}**! I am GridVision Assistant, operating in **RESIDENTIAL** scope. How can I help you analyze your household consumption, review forecasts, or explain your tariff bill today?`
+        : `Hello! I am GridVision Assistant, operating in **${persona.toUpperCase()}** scope. How can I help you analyze telemetry, forecast trends, or explain tariff calculations today?`;
     return [
       {
         id: 'init-1',
@@ -429,7 +430,7 @@ export const AiAssistantPage: React.FC = () => {
       }));
 
     try {
-      const res = await analyticsService.askAssistant(trimmed, persona, activeEntity, formattedHistory);
+      const res = await analyticsService.askAssistant(trimmed, persona, effectiveEntity, formattedHistory);
       const replyMsg: ChatMessage = {
         id: `ast-${Date.now() + 1}`,
         sender: 'assistant',
@@ -464,7 +465,7 @@ export const AiAssistantPage: React.FC = () => {
     setIsCalculating(true);
     setCalculationError(null);
 
-    const meterId = (activeEntity || '2254213').replace(/METER-/i, '');
+    const meterId = (effectiveEntity || '2254213').replace(/METER-/i, '');
 
     try {
       if (activeFeature === 'house_energy_planning') {
@@ -571,7 +572,7 @@ export const AiAssistantPage: React.FC = () => {
               Residential Energy Intelligence Platform
             </h1>
             <p style={{ fontSize: '0.85rem', color: 'var(--gv-text-secondary)', margin: '0.25rem 0 0 0' }}>
-              Conversational intelligence & dedicated engineering analytics grounded in verified telemetry ({persona.toUpperCase()} scope • OBJECTID {(activeEntity || '2254213').replace(/METER-/i, '')}).
+              Conversational intelligence & dedicated engineering analytics grounded in verified telemetry ({persona.toUpperCase()} scope).
             </p>
           </div>
         </div>

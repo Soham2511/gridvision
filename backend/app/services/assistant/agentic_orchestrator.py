@@ -436,23 +436,90 @@ class AgenticKnowledgeOrchestrator:
             except Exception:
                 pass
 
+        # 2b. Historical Database Query (Ground Truth Telemetry from DuckDB / Parquet)
+        month_specs = {
+            "january": ("01", 31), "jan": ("01", 31),
+            "february": ("02", 28), "feb": ("02", 28),
+            "march": ("03", 31), "mar": ("03", 31),
+            "april": ("04", 30), "apr": ("04", 30),
+            "may": ("05", 31),
+            "june": ("06", 30), "jun": ("06", 30),
+            "july": ("07", 31), "jul": ("07", 31),
+            "august": ("08", 31), "aug": ("08", 31),
+            "september": ("09", 30), "sep": ("09", 30),
+            "october": ("10", 31), "oct": ("10", 31),
+            "november": ("11", 30), "nov": ("11", 30),
+            "december": ("12", 31), "dec": ("12", 31),
+        }
+        matched_m = None
+        matched_num = None
+        matched_days = 30
+        for m_k, (m_n, m_d) in month_specs.items():
+            if re.search(r"\b" + m_k + r"\b", p):
+                matched_m = m_k.capitalize()
+                matched_num = m_n
+                matched_days = m_d
+                break
+        y_m = re.search(r"\b(201[789]|202[0-9])\b", p)
+        tgt_year = y_m.group(1) if y_m else ("2018" if matched_m else None)
+
+        if matched_m and tgt_year and any(w in p for w in ["database", "query", "usage", "consumption", "bill", "kwh", "recorded", "actual"]):
+            try:
+                from app.application.energy_analytics.query_consumption import QueryConsumptionUseCase
+                from app.domain.energy.schemas import ConsumptionQueryRequest
+                q_uc = QueryConsumptionUseCase()
+                st_d = f"{tgt_year}-{matched_num}-01"
+                en_d = f"{tgt_year}-{matched_num}-{matched_days:02d}"
+                q_res = q_uc.execute(meter_id=meter_id, request=ConsumptionQueryRequest(start_date=st_d, end_date=en_d))
+                if q_res.status == "success" and q_res.results:
+                    tot_kwh = q_res.results.get("totalConsumptionKwh", 0.0)
+                    pts = q_res.results.get("dataPoints", [])
+                    obs = len(pts) or matched_days
+                    daily_avg = round(tot_kwh / obs, 2) if obs > 0 else 0.0
+                    tot_bill = round(tot_kwh * self.tariff_rate, 2)
+                    ans_text = (
+                        f"### Verified Telemetry Records for **{matched_m} {tgt_year}** (`{meter_id}`)\n\n"
+                        f"- **Data Source**: `Verified Smart Meter Database` (Ground Truth Records, Not a Prediction)\n"
+                        f"- **Total Recorded Consumption**: **{tot_kwh:.2f} kWh**\n"
+                        f"- **Calculated Bill**: **₹{tot_bill:,.2f}** (at ₹{self.tariff_rate:.2f}/kWh across {obs} recorded days)\n"
+                        f"- **Daily Average Consumption**: **{daily_avg:.2f} kWh/day**"
+                    )
+                    return AssistantResponseContract(
+                        answer=ans_text,
+                        mode="general_chat",
+                        entityId=meter_id,
+                        customerName=customer_name,
+                        status="success",
+                        provenance=AssistantProvenance(knowledge_sources_used=["household_telemetry"]),
+                    )
+            except Exception as e:
+                logger.warning("Historical query in AgenticKnowledgeOrchestrator failed: %s", e)
+
         # 3. Standards-Grounded Regulatory Search ONLY for standards/codes/safety queries
         is_standards_query = any(
             k in p for k in [
                 "standard", "code", "regulation", "is 732", "is732", "nec", "bee", "cea",
                 "clause", "wiring", "rule", "safety", "earthing", "rccb", "neutral",
-                "insulation", "lpd", "surge", "spd", "tariff order", "conductor"
+                "insulation", "lpd", "surge", "spd", "tariff order", "conductor",
+                "guideline", "guidelines", "precaution", "precautions", "hazard", "shock", "fire",
+                "overload", "leakage"
             ]
         )
 
         if self.retriever is not None and is_standards_query:
             sources_used.append(KnowledgeSourceType.DOCUMENT_RAG.value)
-            docs: List[RetrievedChunk] = self.retriever.search(query=prompt, top_k=4)
-
-            # Adaptive Bounded Loop: If initial retrieval yielded low scores or empty, refine query
-            if not docs or docs[0].score < 0.012:
-                refined_query = f"{prompt} electrical standards wiring safety BEE CEA IS 732"
-                docs = self.retriever.search(query=refined_query, top_k=4)
+            is_safety_specific = any(
+                w in p for w in ["safety", "guideline", "guidelines", "precaution", "shock", "hazard", "earthing", "rccb", "overload"]
+            )
+            if is_safety_specific:
+                safety_query = f"{prompt} IS 732 Clause 6 Protective Earthing Shock Hazards RCCB residential home safety"
+                docs: List[RetrievedChunk] = self.retriever.search(query=safety_query, top_k=4)
+            else:
+                docs = self.retriever.search(query=prompt, top_k=4)
+                # Adaptive Bounded Loop: If initial retrieval yielded low scores or empty, refine query
+                if not docs or docs[0].score < 0.012:
+                    refined_query = f"{prompt} electrical standards wiring safety BEE CEA IS 732"
+                    docs = self.retriever.search(query=refined_query, top_k=4)
 
             for d in docs:
                 citations.append(d.to_citation())
@@ -467,13 +534,15 @@ class AgenticKnowledgeOrchestrator:
                 )
 
             answer = (
-                f"### Authoritative Standards & Regulatory Information\n\n"
+                f"### Authoritative Electrical Safety Guidelines & Standards (IS 732 / NEC)\n\n"
                 f"In response to your query: *\"{prompt}\"*:\n\n"
                 + "\n\n---\n\n".join(doc_excerpts_md)
-                + "\n\n### Practical Engineering Summary:\n"
-                "- **Wiring & Safety:** Compliance with **IS 732** and the **National Electrical Code (NEC)** is mandatory for residential premises.\n"
-                "- **Appliance Selection:** Energy-consuming equipment should adhere to **BEE Star Rating** standards for maximum efficiency.\n"
-                "- **Earth Leakage Protection:** Ensure residual current device (RCD/ELCB) protection rated $\\le 30\\text{ mA}$ is installed for wet locations."
+                + "\n\n### Practical Household Electrical Safety Guidelines:\n"
+                "- **Residual Current Device (RCD/RCCB):** Mandatory installation of an RCCB rated **≤ 30 mA** for all residential 230V socket-outlet circuits to prevent fatal electrical shocks.\n"
+                "- **Protective Earthing Continuity:** Ensure continuous three-pin earthing with total earth resistance **≤ 5.0 Ω** (preferably ≤ 1.0 Ω). Never remove or bypass the ground pin on appliances.\n"
+                "- **Circuit Segregation & Conductor Sizing:** Segregate lighting sub-circuits (min **1.5 mm²** copper) from appliance power sub-circuits (min **2.5 to 4.0 mm²** copper). Avoid daisy-chaining multiple high-draw appliances into a single outlet.\n"
+                "- **Wet Zone Demarcation (Bathrooms & Kitchens):** Adhere strictly to IS 732 Zone 0, 1, and 2 safety demarcation. Never place general 230V switches or outlets within 0.6 m of bathtubs or showers; use IPX4/IPX5 moisture-resistant fittings.\n"
+                "- **Overcurrent & Fire Protection:** Equip all sub-circuits with Type-B or Type-C MCBs matched to conductor current limits. Never bridge tripped breakers or blown fuses with copper wire."
             )
             assumptions.append("Excerpts derived from official BIS, CEA, BEE, and DISCOM publications.")
             limitations.append("Specific site installation must be certified by a licensed electrical contractor under CEA safety regulations.")

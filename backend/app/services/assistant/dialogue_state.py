@@ -34,6 +34,55 @@ SELECTION_PATTERN = re.compile(
 
 
 @dataclass
+class CustomerLongTermMemory:
+    """Persistent Long-Term Memory (LTM) for customer and household premises."""
+    meter_id: str
+    customer_name: str
+    persona: str = "RESIDENTIAL"
+    tariff_rate_inr_per_kwh: float = 10.0
+    baseline_daily_average_kwh: Optional[float] = None
+    baseline_monthly_average_kwh: Optional[float] = None
+    contracted_load_kw: Optional[float] = None
+    supply_phase: Optional[str] = "Single Phase (230V)"
+
+    def format_compact_context(self) -> str:
+        """Serialize LTM into a compact grounding block (< 150 tokens) to prevent rate limits."""
+        parts = [
+            f"METER: {self.meter_id}",
+            f"CUSTOMER: {self.customer_name}",
+            f"TARIFF: ₹{self.tariff_rate_inr_per_kwh:.2f}/kWh",
+        ]
+        if self.baseline_daily_average_kwh is not None:
+            parts.append(f"DAILY_BASELINE: {self.baseline_daily_average_kwh:.1f} kWh/day")
+        if self.baseline_monthly_average_kwh is not None:
+            parts.append(f"MONTHLY_BASELINE: {self.baseline_monthly_average_kwh:.1f} kWh")
+        return " | ".join(parts)
+
+
+@dataclass
+class ConversationShortTermMemory:
+    """Sliding-window Short-Term Memory (STM) tracking recent dialogue turns and active intent."""
+    recent_turns: List[Dict[str, str]] = field(default_factory=list)
+    active_intent_mode: str = "general_chat"
+    active_tool_scope: str = "balanced_core"
+
+    @classmethod
+    def from_history(
+        cls,
+        history: Optional[List[Dict[str, Any]]],
+        active_mode: str = "general_chat",
+        active_scope: str = "balanced_core",
+        max_turns: int = 4,
+    ) -> "ConversationShortTermMemory":
+        compacted = compact_history_for_llm(history, max_turns=max_turns)
+        return cls(
+            recent_turns=compacted,
+            active_intent_mode=active_mode,
+            active_tool_scope=active_scope,
+        )
+
+
+@dataclass
 class ResolvedDialogueState:
     """Carries resolved dialogue context for multi-turn conversational execution."""
     raw_prompt: str
@@ -43,14 +92,26 @@ class ResolvedDialogueState:
     effective_prompt: str
     pending_proposal_summary: Optional[str] = None
     parameters: Dict[str, Any] = field(default_factory=dict)
+    long_term_memory: Optional[CustomerLongTermMemory] = None
+    short_term_memory: Optional[ConversationShortTermMemory] = None
+
+
+CORRECTION_PATTERNS = [
+    re.compile(r"\b(dont|don't|do not|no)\s+(predict|predic|forecast|estimate)\b", re.IGNORECASE),
+    re.compile(r"\b(query|fetch|get|find|look up)\s+(it|data|database|telemetry|records?)\b", re.IGNORECASE),
+    re.compile(r"\bfrom\s+(the\s+)?(database|telemetry|records)\b", re.IGNORECASE),
+    re.compile(r"\b(not\s+predict|not\s+prediction|actual\s+data|real\s+data|historical\s+data)\b", re.IGNORECASE),
+]
 
 
 def is_affirmative_or_continuation(prompt: str) -> bool:
-    """Return True if user prompt is a short affirmative, selection, or continuation phrase."""
+    """Return True if user prompt is a short affirmative, selection, continuation, or corrective phrase."""
     p = prompt.strip().lower()
     if p in AFFIRMATIVE_KEYWORDS:
         return True
-    if len(p.split()) <= 4 and (AFFIRMATIVE_PATTERN.match(p) or SELECTION_PATTERN.match(p)):
+    if any(pat.search(p) for pat in CORRECTION_PATTERNS):
+        return True
+    if len(p.split()) <= 5 and (AFFIRMATIVE_PATTERN.match(p) or SELECTION_PATTERN.match(p)):
         return True
     return False
 
@@ -96,9 +157,42 @@ def resolve_dialogue_context(
                 break
 
     # If this is an affirmative follow-up, inherit domain context from last assistant message
-    if is_continuation and last_assistant_turn:
-        last_low = last_assistant_turn.lower()
-        
+    if is_continuation and (last_assistant_turn or last_user_turn):
+        last_low = f"{last_assistant_turn} {last_user_turn}".lower()
+
+        # 0. Historical Query Correction Context (e.g. "dont predic it, query it", "from database not predict")
+        is_query_correction = any(
+            w in p_lower for w in [
+                "dont predict", "don't predict", "dont predic", "don't predic", "do not predict",
+                "query it", "from database", "not prediction", "not predict", "actual data",
+                "query database", "find in database", "real data"
+            ]
+        )
+        if is_query_correction:
+            prior_text = f"{last_user_turn} {last_assistant_turn}".lower()
+            months = [
+                "january", "february", "march", "april", "may", "june",
+                "july", "august", "september", "october", "november", "december",
+                "jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"
+            ]
+            found_month = ""
+            for m in months:
+                if re.search(r"\b" + m + r"\b", prior_text):
+                    found_month = m.capitalize()
+                    break
+            y_match = re.search(r"\b(201[789]|202[0-9])\b", prior_text)
+            found_year = y_match.group(1) if y_match else ""
+            target_period = f"{found_month} {found_year}".strip() if found_month else "the requested month"
+
+            effective_prompt = f"Find from the database actual historical telemetry usage and bill for {target_period}. Do not predict."
+            return ResolvedDialogueState(
+                raw_prompt=clean_p,
+                is_continuation=True,
+                resolved_mode="general_chat",
+                tool_scope="telemetry_and_billing",
+                effective_prompt=effective_prompt,
+            )
+
         # 1. House Energy Planning Context
         if any(w in last_low for w in ["energy plan", "house energy", "connected load", "peak demand", "balanced tier", "high-efficiency plan", "bedroom", "built-up", "equipment schedule", "diversified"]):
             proposal_summary = "Updated house energy plan with requested efficiency optimizations and solar provisions."
@@ -158,6 +252,22 @@ def resolve_dialogue_context(
                 effective_prompt=f"User confirmed: '{clean_p}'. Provide the requested billing or consumption breakdown from verified telemetry.",
             )
 
+    # 0. Safety, Regulations, Guidelines & Standards (Highest priority to activate RAG knowledge tools)
+    if any(k in p_lower for k in [
+        "safety", "guideline", "guidelines", "precaution", "precautions",
+        "hazard", "shock", "electric shock", "earthing", "grounding",
+        "rccb", "elcb", "mcb", "fuse", "overload", "fire", "electrical safety",
+        "standard", "code", "regulation", "is 732", "is732", "nec", "bee",
+        "cea", "clause", "wiring rule", "wiring standard"
+    ]):
+        return ResolvedDialogueState(
+            raw_prompt=clean_p,
+            is_continuation=False,
+            resolved_mode="general_chat",
+            tool_scope="regulatory_and_standards",
+            effective_prompt=clean_p,
+        )
+
     # Standard direct classification for standalone prompts
     if any(k in p_lower for k in ["new house", "planning", "wiring", "electrical layout", "bedroom", "built-up", "lighting circuit", "connected load", "peak demand"]):
         return ResolvedDialogueState(
@@ -186,7 +296,7 @@ def resolve_dialogue_context(
             effective_prompt=clean_p,
         )
 
-    if any(k in p_lower for k in ["bill", "tariff", "kwh", "consumption", "usage", "meter", "reading", "cost", "yesterday", "forecast", "predict", "daily", "average", "peak", "power", "electricity", "energy", "standard", "code", "regulation", "is 732", "is732", "nec", "bee", "cea", "voltage", "amp", "load", "hello", "hi", "hey"]):
+    if any(k in p_lower for k in ["bill", "tariff", "kwh", "consumption", "usage", "meter", "reading", "cost", "yesterday", "forecast", "predict", "daily", "average", "peak", "power", "electricity", "energy", "voltage", "amp", "load", "hello", "hi", "hey"]):
         return ResolvedDialogueState(
             raw_prompt=clean_p,
             is_continuation=False,

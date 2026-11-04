@@ -17,8 +17,7 @@ user_meters = Table(
     "user_meters",
     Base.metadata,
     Column("user_id", Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
-    Column("meter_id", String, primary_key=True),
-    UniqueConstraint("meter_id", name="uq_user_meter"),
+    Column("meter_id", String, ForeignKey("meters.id", ondelete="CASCADE"), primary_key=True),
 )
 
 class User(Base):
@@ -26,8 +25,9 @@ class User(Base):
 
     * `username` – case‑insensitive unique identifier used for login.
     * `email` – unique, stored normalized to lower‑case.
-    * `password_hash` – Argon2id hash (never plain text).
+    * `password_hash` – secure password hash (never plain text).
     * `persona` – currently fixed to ``RESIDENTIAL`` for all new users.
+    * `role` – authorization role (default ``RESIDENTIAL_USER``).
     * `is_active` – flag for account status.
     * timestamps – for audit and last‑login tracking.
     """
@@ -35,14 +35,17 @@ class User(Base):
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, autoincrement=True)
-    username = Column(String(150), nullable=False, unique=True)
-    email = Column(String(255), nullable=False, unique=True)
+    username = Column(String(150), nullable=False, unique=True, index=True)
+    email = Column(String(255), nullable=False, unique=True, index=True)
     password_hash = Column(String(255), nullable=False)
     persona = Column(String(50), nullable=False, default="RESIDENTIAL")
+    role = Column(String(50), nullable=False, default="RESIDENTIAL_USER")
     is_active = Column(Boolean, nullable=False, default=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
     last_login_at = Column(DateTime, nullable=True)
+    failed_login_attempts = Column(Integer, nullable=False, default=0)
+    locked_until = Column(DateTime, nullable=True)
 
     # Relationship to authorized meters (OBJECTIDs)
     meters = relationship(
@@ -52,8 +55,36 @@ class User(Base):
         cascade="all, delete",
     )
 
+    # Relationship to active sessions
+    sessions = relationship(
+        "UserSession",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+
     def __repr__(self) -> str:
         return f"<User id={self.id} username={self.username!r}>"
+
+
+class UserSession(Base):
+    """Persistent user session / refresh token record for token rotation and revocation."""
+
+    __tablename__ = "user_sessions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    token_hash = Column(String(255), unique=True, nullable=False, index=True)
+    expires_at = Column(DateTime, nullable=False)
+    is_revoked = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    last_used_at = Column(DateTime, nullable=True)
+    user_agent = Column(String(255), nullable=True)
+    ip_address = Column(String(100), nullable=True)
+
+    user = relationship("User", back_populates="sessions")
+
+    def __repr__(self) -> str:
+        return f"<UserSession id={self.id} user_id={self.user_id} revoked={self.is_revoked}>"
 
 class Meter(Base):
     """Simple representation of a household OBJECTID / meter.

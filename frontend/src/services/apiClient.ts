@@ -73,10 +73,12 @@ class ApiClient {
     const fullUrl = this.buildUrl(path, params);
     const activeHousehold = typeof window !== 'undefined' ? localStorage.getItem('gv_active_entity_household') : null;
     const defaultDevUser = activeHousehold ? activeHousehold.replace(/METER-/i, '') : '2254213';
+    const accessToken = typeof window !== 'undefined' ? localStorage.getItem('gv_access_token') : null;
 
     const headers: Record<string, string> = {
       Accept: 'application/json',
       'Content-Type': 'application/json',
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
       ...(defaultDevUser ? { 'X-Dev-User-Id': defaultDevUser } : {}),
       ...((options.headers as Record<string, string>) || {}),
     };
@@ -90,6 +92,7 @@ class ApiClient {
 
     try {
       const response = await fetch(fullUrl, {
+        credentials: 'include',
         ...options,
         headers,
         signal: controller.signal,

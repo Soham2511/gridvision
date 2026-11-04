@@ -177,6 +177,13 @@ def create_app(config_class: type[BaseConfig] | None = None) -> Flask:
     # Register API v1 blueprint
     app.register_blueprint(api_v1_bp, url_prefix=app.config.get("API_PREFIX", "/api/v1"))
 
+    # Seed verified initial residential account if not present
+    try:
+        from app.services.auth_service import auth_service
+        auth_service.seed_initial_residential_user()
+    except Exception as exc:
+        logging.getLogger("gridvision.auth").warning("Initial residential account seeding deferred: %s", exc)
+
     # Root service index
     @app.route("/", methods=["GET"])
     def root_index():

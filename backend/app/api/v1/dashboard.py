@@ -3,7 +3,12 @@
 from __future__ import annotations
 
 from flask import Blueprint, current_app, request
-from app.utils.responses import success_response
+from app.services.assistant.auth import (
+    AuthenticationError,
+    AuthorizationError,
+    HouseholdAuthService,
+)
+from app.utils.responses import error_response, success_response
 
 bp = Blueprint("dashboard", __name__)
 
@@ -28,8 +33,40 @@ def commercial_dashboard():
 def household_dashboard():
     """Consumption overview and daily curve for Household / Residential."""
     household_id = request.args.get("household_id")
+    try:
+        principal = HouseholdAuthService.resolve_principal(request)
+        if principal.persona.lower() != "residential":
+            return error_response(
+                f"Access denied: Persona '{principal.persona}' cannot access residential dashboard.",
+                code="FORBIDDEN_PERSONA",
+                status_code=403,
+            )
+        # If a specific household_id was requested, strictly authorize it
+        if household_id:
+            meter_id = HouseholdAuthService.authorize_meter_access(principal, household_id)
+        elif not principal.authorized_meters:
+            # Clean isolated state for users with no assigned meter yet
+            return success_response({
+                "householdId": None,
+                "customerName": principal.username or "Residential Customer",
+                "status": "NO_METER_LINKED",
+                "message": "No smart meter is currently provisioned for this account.",
+                "currentCycleKwh": 0.0,
+                "projectedCycleKwh": 0.0,
+                "projectedBillInr": 0.0,
+                "activeAppliances": 0,
+                "consumptionCurve": [],
+                "recentAnomalies": [],
+            })
+        else:
+            meter_id = HouseholdAuthService.authorize_meter_access(principal, None)
+    except AuthenticationError as exc:
+        return error_response(str(exc), code="UNAUTHENTICATED", status_code=401)
+    except AuthorizationError as exc:
+        return error_response(str(exc), code="UNAUTHORIZED", status_code=403)
+
     service = current_app.extensions["dashboard_service"]
-    data = service.get_household_overview(household_id=household_id)
+    data = service.get_household_overview(household_id=meter_id)
     return success_response(data)
 
 

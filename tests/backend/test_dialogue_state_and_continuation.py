@@ -193,6 +193,87 @@ class TestDialogueStateAndContinuation(unittest.TestCase):
         self.assertEqual(resp_data.get("mode"), "house_planning")
         self.assertIn("Before vs. After", resp_data.get("answer", ""))
 
+    # 7. Topic switch from billing to safety guidelines with prior history
+    def test_topic_switch_to_safety_guidelines_with_billing_history(self):
+        """Verify safety guidelines query following billing history activates RAG and provides IS 732 guidance."""
+        history = [
+            {"role": "user", "content": "What is my current electricity bill?"},
+            {"role": "assistant", "content": "Your accrued bill is ₹2,334.00 and estimated month-end bill is ₹3,742.00."},
+            {"role": "user", "content": "Show daily average consumption."},
+            {"role": "assistant", "content": "Your daily average is 11.2 kWh."},
+        ]
+        prompt = "tell me electricity safety guidelines at home"
+        state = resolve_dialogue_context(prompt, history=history)
+        self.assertEqual(state.tool_scope, "regulatory_and_standards")
+        self.assertFalse(state.is_continuation)
+        self.assertEqual(state.effective_prompt, prompt)
+
+        resp = self.orchestrator.answer_query(
+            prompt=prompt,
+            entity_id="METER-1000",
+            history=history,
+        )
+        self.assertEqual(resp.get("status"), "success")
+        answer = resp.get("answer", "")
+        # Must provide safety guidelines and citations, NOT refuse with "only have meter data"
+        self.assertIn("IS 732", answer)
+        self.assertIn("Earthing", answer)
+        self.assertIn("RCCB", answer)
+        self.assertNotIn("only have meter data", answer.lower())
+        self.assertNotIn("cannot provide general home safety", answer.lower())
+
+    # 8. Query historical past month from database without predicting
+    def test_query_past_month_does_not_predict(self):
+        """Historical database queries for past months must query telemetry and not return ML predictions."""
+        prompt = "find from the database, what was my usage on march 2018"
+        resp = self.orchestrator.answer_query(
+            prompt=prompt,
+            entity_id="METER-1000",
+            history=[],
+        )
+        self.assertEqual(resp.get("status"), "success")
+        answer = resp.get("answer", "")
+        # Must indicate telemetry / historical records and not be framed as forward prediction
+        self.assertNotIn("forward-ML", answer)
+        self.assertNotIn("predicted energy usage", answer.lower())
+        # Should contain telemetry details or recorded data
+        self.assertTrue(
+            "telemetry" in answer.lower() or "recorded" in answer.lower() or "database" in answer.lower() or "kwh" in answer.lower(),
+            f"Expected database telemetry in answer, got: {answer}",
+        )
+
+    # 9. Corrective follow-up "dont predic it, query it" resolves to historical query
+    def test_corrective_continuation_dont_predict_query_it(self):
+        """Corrective command 'dont predic it, query it' must resolve context and query database."""
+        history = [
+            {"role": "user", "content": "what was bill on march 2018"},
+            {"role": "assistant", "content": "The predicted bill for March 2018 is ₹3266.85."},
+            {"role": "user", "content": "find from the database, what was my usage on march 2018"},
+            {"role": "assistant", "content": "Your predicted energy usage for March 2018 was 326.68 kWh."},
+        ]
+        prompt = "dont predic it, query it"
+        state = resolve_dialogue_context(prompt, history=history)
+        self.assertTrue(state.is_continuation)
+        self.assertEqual(state.tool_scope, "telemetry_and_billing")
+        self.assertIn("march", state.effective_prompt.lower())
+        self.assertIn("2018", state.effective_prompt)
+
+        resp = self.orchestrator.answer_query(
+            prompt=prompt,
+            entity_id="METER-1000",
+            history=history,
+        )
+        self.assertEqual(resp.get("status"), "success")
+        answer = resp.get("answer", "")
+        # Must never trigger out-of-scope domain notice
+        self.assertNotIn("Domain Scope Notice", answer)
+        self.assertNotIn("appears outside of residential electricity", answer)
+        # Must query telemetry records
+        self.assertTrue(
+            "telemetry" in answer.lower() or "records" in answer.lower() or "recorded" in answer.lower() or "march 2018" in answer.lower(),
+            f"Expected historical records in answer, got: {answer}",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

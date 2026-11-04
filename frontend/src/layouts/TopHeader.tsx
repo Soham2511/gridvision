@@ -1,12 +1,15 @@
 import React, { useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { usePersona } from '../context';
+import { useAuth } from '../context/AuthContext';
 import {
   Bell,
   Calendar,
   ChevronDown,
   X,
   Layers,
+  LogOut,
+  LogIn,
 } from 'lucide-react';
 
 export interface TopHeaderProps {
@@ -20,7 +23,9 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
 }) => {
   const [showNotifications, setShowNotifications] = useState(false);
   const location = useLocation();
-  const { currentPersona, activeEntity } = usePersona();
+  const navigate = useNavigate();
+  const { currentPersona } = usePersona();
+  const { user, isAuthenticated, logout } = useAuth();
 
   const isPlatformScope =
     location.pathname === '/' ||
@@ -30,21 +35,28 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   const showLogo = propShowLogo !== undefined ? propShowLogo : isPlatformScope;
   const isAdmin = propIsAdmin !== undefined ? propIsAdmin : isPlatformScope;
 
-  const numPart = (activeEntity || '2254213').replace(/METER-/i, '').replace(/meter-/i, '');
-  const userDisplayName = isAdmin
+  const userDisplayName = user?.username
+    ? user.username
+    : user?.email
+    ? user.email
+    : isAdmin
     ? 'Admin'
     : currentPersona === 'government'
     ? 'Grid Operations Admin'
     : currentPersona === 'commercial'
     ? 'Facility Manager'
-    : `OBJECTID ${numPart}`;
-  const userInitial = isAdmin
+    : 'Household Resident';
+  const userInitial = user?.username
+    ? user.username.charAt(0).toUpperCase()
+    : user?.email
+    ? user.email.charAt(0).toUpperCase()
+    : isAdmin
     ? 'A'
     : currentPersona === 'government'
     ? 'G'
     : currentPersona === 'commercial'
     ? 'C'
-    : 'O';
+    : 'H';
 
   const personaLabel =
     currentPersona === 'commercial'
@@ -283,41 +295,91 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
           )}
         </div>
 
-        {/* Profile Entry Point */}
-        <Link
-          to="/profile"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.65rem',
-            padding: '0.25rem 0.5rem',
-            borderRadius: '999px',
-            textDecoration: 'none',
-            transition: 'background 0.15s ease',
-          }}
-          title={`User Profile: ${userDisplayName}`}
-        >
-          <div
+        {isAuthenticated ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+            {/* Profile Entry Point */}
+            <Link
+              to="/profile"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.65rem',
+                padding: '0.25rem 0.5rem',
+                borderRadius: '999px',
+                textDecoration: 'none',
+                transition: 'background 0.15s ease',
+              }}
+              title={`User Profile: ${userDisplayName}`}
+            >
+              <div
+                style={{
+                  width: '32px',
+                  height: '32px',
+                  borderRadius: '50%',
+                  backgroundColor: '#D1E5EE',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#0B1F33',
+                  fontWeight: 700,
+                  fontSize: '0.88rem',
+                }}
+              >
+                {userInitial}
+              </div>
+              <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#0B1F33' }}>
+                {userDisplayName}
+              </span>
+              <ChevronDown size={14} color="#64748B" />
+            </Link>
+
+            <button
+              type="button"
+              onClick={async () => {
+                await logout();
+                navigate('/login');
+              }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.35rem',
+                background: 'none',
+                border: '1px solid var(--gv-border-subtle, #E2E8F0)',
+                borderRadius: '8px',
+                padding: '0.35rem 0.65rem',
+                color: '#64748B',
+                fontSize: '0.78rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+              }}
+              title="Sign out of your session"
+            >
+              <LogOut size={14} />
+              <span>Sign Out</span>
+            </button>
+          </div>
+        ) : (
+          <Link
+            to="/login"
             style={{
-              width: '32px',
-              height: '32px',
-              borderRadius: '50%',
-              backgroundColor: '#D1E5EE',
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'center',
-              color: '#0B1F33',
-              fontWeight: 700,
-              fontSize: '0.88rem',
+              gap: '0.35rem',
+              backgroundColor: 'var(--gv-color-smart-teal, #00A396)',
+              color: '#FFFFFF',
+              borderRadius: '8px',
+              padding: '0.4rem 0.85rem',
+              fontSize: '0.82rem',
+              fontWeight: 600,
+              textDecoration: 'none',
+              boxShadow: '0 2px 4px rgba(0, 163, 150, 0.2)',
             }}
           >
-            {userInitial}
-          </div>
-          <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#0B1F33' }}>
-            {userDisplayName}
-          </span>
-          <ChevronDown size={14} color="#64748B" />
-        </Link>
+            <LogIn size={14} />
+            <span>Sign In</span>
+          </Link>
+        )}
       </div>
     </header>
   );

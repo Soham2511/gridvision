@@ -1,12 +1,14 @@
 import React from 'react';
-import { PersonaProvider } from './context';
+import { AuthProvider, PersonaProvider } from './context';
 import { AppRoutes } from './routes/AppRoutes';
 
 export const App: React.FC = () => {
   return (
-    <PersonaProvider>
-      <AppRoutes />
-    </PersonaProvider>
+    <AuthProvider>
+      <PersonaProvider>
+        <AppRoutes />
+      </PersonaProvider>
+    </AuthProvider>
   );
 };
 

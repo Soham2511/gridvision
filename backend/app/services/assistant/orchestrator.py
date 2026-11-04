@@ -102,7 +102,8 @@ class ResidentialAssistantOrchestrator:
             f"1. You must answer ALL aspects of the user's prompt (e.g., if the user asks for current bill AND prediction for next month, address both clearly).\n"
             f"2. Every number, date, rate, and metric MUST be derived strictly from the verified data schema below. Do not invent any numbers.\n"
             f"3. Do NOT output robotic ASCII tables, rigid template placeholders, or boilerplate disclaimers.\n"
-            f"4. Format currency cleanly as ₹ and electrical energy as kWh.\n\n"
+            f"4. Format currency cleanly as ₹ and electrical energy as kWh.\n"
+            f"5. If 'queried_historical_telemetry' is in the schema, this represents GROUND TRUTH HISTORICAL RECORDS queried directly from the smart meter database. Clearly present the actual recorded kWh usage and bill as verified telemetry, and do NOT refer to it as a prediction or estimate.\n\n"
             f"--- VERIFIED DATA SCHEMA ---\n"
             f"{json.dumps(schema_data, indent=2, default=str)}"
         )
@@ -134,6 +135,20 @@ class ResidentialAssistantOrchestrator:
         recent = context.get("recentConsumptionMetrics") or context.get("recentTelemetrySummary") or {}
         hist = context.get("historicalProfile") or {}
         tariff = ident.get("tariffRateInrPerKwh", self.tariff_rate)
+
+        # 0. Check if query touches electrical safety guidelines or standards
+        if any(w in p for w in ["safety", "guideline", "guidelines", "precaution", "precautions", "hazard", "shock", "earthing", "grounding", "rccb", "elcb", "is 732", "nec"]):
+            if getattr(self, "agentic_orchestrator", None) is not None:
+                try:
+                    contract = self.agentic_orchestrator.process_query(
+                        prompt=prompt,
+                        meter_id=meter_id,
+                        customer_name=cust_name,
+                    )
+                    if contract and contract.answer:
+                        return contract.answer, False
+                except Exception as exc:
+                    logger.warning("Safety fallback query via AgenticKnowledgeOrchestrator failed: %s", exc)
 
         # Gentle out-of-scope response if live LLM is offline and query is outside energy domain
         if not self._is_energy_related_query(prompt):
@@ -171,23 +186,75 @@ class ResidentialAssistantOrchestrator:
             "daily_baseline_average_kwh": recent.get("baselineDailyAverageKwh", recent.get("dailyAverageKwh")),
         }
 
-        # 2. If user query touches future/next month predictions, execute prediction model
-        if any(w in p for w in ["predict", "forecast", "future", "upcoming", "next month", "january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december", "2019", "2018"]):
+        # 2. Distinguish Historical Database Queries vs. Forward ML Predictions
+        month_specs = {
+            "january": ("01", 31), "jan": ("01", 31),
+            "february": ("02", 28), "feb": ("02", 28),
+            "march": ("03", 31), "mar": ("03", 31),
+            "april": ("04", 30), "apr": ("04", 30),
+            "may": ("05", 31),
+            "june": ("06", 30), "jun": ("06", 30),
+            "july": ("07", 31), "jul": ("07", 31),
+            "august": ("08", 31), "aug": ("08", 31),
+            "september": ("09", 30), "sep": ("09", 30),
+            "october": ("10", 31), "oct": ("10", 31),
+            "november": ("11", 30), "nov": ("11", 30),
+            "december": ("12", 31), "dec": ("12", 31),
+        }
+
+        matched_month_name = None
+        matched_month_num = None
+        matched_month_days = 30
+        for m_key, (m_num, m_days) in month_specs.items():
+            if re.search(r"\b" + m_key + r"\b", p):
+                matched_month_name = m_key.capitalize()
+                matched_month_num = m_num
+                matched_month_days = m_days
+                break
+
+        year_match = re.search(r"\b(201[789]|202[0-9])\b", p)
+        target_year = year_match.group(1) if year_match else ("2018" if matched_month_name else None)
+
+        is_negated_predict = any(w in p for w in ["dont predict", "don't predict", "dont predic", "don't predic", "not predict", "do not predict"])
+        is_explicit_query = any(w in p for w in ["database", "query", "recorded", "actual", "history", "historical", "was my", "what was", "usage on", "bill on", "find from", "find in", "show me"]) or is_negated_predict
+        is_forward_predict = any(w in p for w in ["predict", "forecast", "future", "upcoming", "next month", "projected"]) and not is_negated_predict
+
+        # 2a. Historical Database Query (Ground Truth Telemetry from DuckDB / Parquet)
+        if matched_month_name and target_year and (is_explicit_query or not is_forward_predict):
+            try:
+                from app.application.energy_analytics.query_consumption import QueryConsumptionUseCase
+                from app.domain.energy.schemas import ConsumptionQueryRequest
+
+                start_d = f"{target_year}-{matched_month_num}-01"
+                end_d = f"{target_year}-{matched_month_num}-{matched_month_days:02d}"
+                query_uc = QueryConsumptionUseCase()
+                q_resp = query_uc.execute(meter_id=meter_id, request=ConsumptionQueryRequest(start_date=start_d, end_date=end_d))
+                if q_resp.status == "success" and q_resp.results:
+                    res_kwh = q_resp.results.get("totalConsumptionKwh", 0.0)
+                    data_pts = q_resp.results.get("dataPoints", [])
+                    obs_days = len(data_pts) or matched_month_days
+                    daily_avg = round(res_kwh / obs_days, 2) if obs_days > 0 else 0.0
+                    calc_bill = round(res_kwh * tariff, 2)
+                    schema_data["queried_historical_telemetry"] = {
+                        "month_name": f"{matched_month_name} {target_year}",
+                        "period_window": f"{start_d} to {end_d}",
+                        "total_consumption_kwh": res_kwh,
+                        "calculated_bill_inr": calc_bill,
+                        "daily_average_kwh": daily_avg,
+                        "days_recorded": obs_days,
+                        "data_source": "verified_smart_meter_database",
+                        "is_prediction": False,
+                    }
+            except Exception as exc:
+                logger.warning("Historical consumption query failed: %s", exc)
+
+        # 2b. Forward ML Prediction (ONLY for future / prediction requests)
+        elif is_forward_predict or any(w in p for w in ["next month", "upcoming"]):
             try:
                 from app.application.energy_analytics.predict_bill import PredictBillUseCase
                 from app.domain.energy.schemas import BillPredictionQueryRequest
 
-                target_m = "2019-01"
-                for m_name, m_num in [
-                    ("jan", "01"), ("feb", "02"), ("mar", "03"), ("apr", "04"),
-                    ("may", "05"), ("jun", "06"), ("jul", "07"), ("aug", "08"),
-                    ("sep", "09"), ("oct", "10"), ("nov", "11"), ("dec", "12"),
-                ]:
-                    if m_name in p:
-                        year_val = "2019" if "2019" in p else "2018"
-                        target_m = f"{year_val}-{m_num}"
-                        break
-
+                target_m = f"{target_year or '2019'}-{matched_month_num or '01'}"
                 predict_uc = PredictBillUseCase(
                     prediction_service=self.prediction_service,
                     tariff_rate=self.tariff_rate,
@@ -286,6 +353,17 @@ class ResidentialAssistantOrchestrator:
                 ],
             }
 
+        # 5c. If user query touches electrical safety guidelines or standards
+        if any(w in p for w in ["safety", "guideline", "guidelines", "precaution", "hazard", "shock", "earthing", "grounding", "rccb", "elcb", "mcb", "is 732"]):
+            schema_data["electrical_safety_standards_is732"] = {
+                "authoritative_code": "IS 732 / National Electrical Code of India (NEC)",
+                "protective_earthing": "Every residential installation must maintain continuous 3-pin earthing with total earth resistance <= 5.0 ohms (preferably <= 1.0 ohm). Never remove the ground pin.",
+                "shock_hazard_protection": "Mandatory Residual Current Device (RCD/RCCB) rated <= 30 mA for all residential 230V socket-outlet circuits and wet locations to prevent electric shocks.",
+                "circuit_segregation": "Lighting sub-circuits (min 1.5 sq.mm Cu wire, max 800W or 10 points) must be segregated from appliance power sub-circuits (min 2.5-4.0 sq.mm Cu wire, max 3000W or 2 outlets).",
+                "wet_zones": "Bathrooms strictly demarcated into Zones 0, 1, 2 under IS 732. No general 230V switches or outlets within 0.6m of water sources; IPX4/IPX5 moisture ingress protection required.",
+                "overload_protection": "All sub-circuits must have Type-B or Type-C MCBs matching cable ratings. Never bridge blown fuses or bypass breakers with copper wire.",
+            }
+
         # 6. SYNTHESIZE RESPONSE VIA LLM BASED ON QUERY AND VERIFIED SCHEMA
         llm_response = self._synthesize_grounded_response_with_llm(
             prompt=prompt,
@@ -324,6 +402,15 @@ class ResidentialAssistantOrchestrator:
                 f"- **All-Time Total Consumption**: **{h_stat.get('total_consumption_kwh', 0):.1f} kWh**\n"
                 f"- **Historical Daily Average**: **{h_stat.get('daily_average_kwh', 0):.1f} kWh/day**\n"
                 f"- **Peak Consumption Day**: {highest_day_str}"
+            )
+        if "queried_historical_telemetry" in schema_data:
+            ht = schema_data["queried_historical_telemetry"]
+            parts.append(
+                f"### Verified Telemetry Records for **{ht['month_name']}** ({meter_id})\n\n"
+                f"- **Data Source**: `{ht['data_source']}` (Ground Truth Records, Not a Prediction)\n"
+                f"- **Total Recorded Consumption**: **{ht['total_consumption_kwh']:.2f} kWh**\n"
+                f"- **Calculated Bill**: **₹{ht['calculated_bill_inr']:,.2f}** (at ₹{tariff:.2f}/kWh across {ht['days_recorded']} recorded days)\n"
+                f"- **Daily Average Consumption**: **{ht['daily_average_kwh']:.2f} kWh/day**"
             )
         if "next_month_ml_prediction" in schema_data:
             pred = schema_data["next_month_ml_prediction"]
@@ -366,6 +453,7 @@ class ResidentialAssistantOrchestrator:
             "rccb", "mcb", "earthing", "neutral", "phase", "sub-circuit", "lighting", "bedroom",
             "house", "home", "planning", "layout", "gridvision", "spend", "owing", "payback",
             "show", "summary", "overview", "status", "profile", "baseline", "telemetry", "month",
+            "query", "database", "record", "records", "actual", "find",
             "hi", "hello", "hey", "help", "thank"
         ]
         return any(term in p for term in energy_terms)
@@ -373,7 +461,12 @@ class ResidentialAssistantOrchestrator:
     def _determine_tool_scope(self, prompt: str) -> str:
         """Dynamically select a focused tool scope to optimize prompt tokens and latency while preserving AI flexibility."""
         p = prompt.lower()
-        if any(w in p for w in ["standard", "code", "regulation", "is 732", "is732", "nec", "bee", "cea", "clause", "wire", "wiring", "safety", "earthing", "rccb", "neutral", "insulation"]):
+        if any(w in p for w in [
+            "standard", "code", "regulation", "is 732", "is732", "nec", "bee", "cea",
+            "clause", "wire", "wiring", "safety", "guideline", "guidelines", "precaution",
+            "precautions", "hazard", "shock", "electric shock", "earthing", "grounding",
+            "rccb", "elcb", "mcb", "fuse", "overload", "fire", "electrical safety", "neutral", "insulation"
+        ]):
             return "regulatory_and_standards"
         elif any(w in p for w in ["plan house", "new house", "layout", "connected load", "appliance", "replace", "upgrade", "bldc", "iseer", "inverter ac", "fan", "geyser", "refrigerator", "payback", "purchase", "scenario"]):
             return "planning_and_upgrades"
@@ -561,9 +654,8 @@ class ResidentialAssistantOrchestrator:
             last_recorded_date=last_recorded,
         )
 
+        # Active user prompt is preserved at full fidelity (never truncated)
         clean_user_prompt = prompt.strip()
-        if len(clean_user_prompt) > 2000:
-            clean_user_prompt = clean_user_prompt[:2000]
 
         # Early check for Complaint Registration / Grievance Filing intent
         complaint_routing = self._check_complaint_intent(clean_user_prompt, meter_id, customer_name)
@@ -692,6 +784,8 @@ class ResidentialAssistantOrchestrator:
             "appliance", "replace", "upgrade", "bldc", "iseer", "inverter ac", "fan", "geyser", "refrigerator", "payback",
             "reduce bill", "cost management", "saving", "lower consumption", "balanced efficiency",
             "standard", "code", "regulation", "is 732", "is732", "nec", "bee", "cea", "wiring", "clause",
+            "safety", "guideline", "guidelines", "precaution", "precautions", "hazard", "shock", "earthing",
+            "grounding", "rccb", "elcb", "mcb", "fuse", "overload", "fire", "electrical safety",
             "yes", "generate", "proceed", "do it"
         ])
         if (not answer) and is_knowledge_mode and (time_elapsed < 18.0) and (self.agentic_orchestrator is not None):

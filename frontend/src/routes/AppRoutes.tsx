@@ -2,6 +2,9 @@ import React from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { MainLayout } from '../layouts/MainLayout';
 import { LandingPage } from '../pages/LandingPage';
+import { LoginPage } from '../pages/LoginPage';
+import { RegisterPage } from '../pages/RegisterPage';
+import { ProtectedRoute } from '../components/auth/ProtectedRoute';
 import { PersonaDashboardPage } from '../pages/PersonaDashboardPage';
 import { HistoricalAnalysisPage } from '../pages/HistoricalAnalysisPage';
 import { DataModelHealthPage } from '../pages/DataModelHealthPage';
@@ -29,16 +32,18 @@ const PersonaCustomerSegmentationPage: React.FC = () => {
 export const AppRoutes: React.FC = () => {
   return (
     <Routes>
-      {/* 1. Public Landing Page with 3 Persona Cards */}
+      {/* 1. Public Landing Page & Auth Routes */}
       <Route path="/" element={<LandingPage />} />
       <Route path="/landing" element={<LandingPage />} />
+      <Route path="/login" element={<LoginPage />} />
+      <Route path="/register" element={<RegisterPage />} />
 
       {/* Dedicated Platform Data & Model Health Page (No Sidebar, Admin Header) */}
       <Route path="/health" element={<DataModelHealthPage />} />
       <Route path="/data-model-health" element={<Navigate to="/health" replace />} />
 
-      {/* 2. Authenticated / Selected Persona Workspace Shell */}
-      <Route element={<MainLayout />}>
+      {/* 2. Authenticated Persona Workspace Shell */}
+      <Route element={<ProtectedRoute><MainLayout /></ProtectedRoute>}>
         {/* Persona Navigation Tabs */}
         <Route path="/app" element={<PersonaDashboardPage />} />
         <Route path="/app/historical" element={<HistoricalAnalysisPage />} />
