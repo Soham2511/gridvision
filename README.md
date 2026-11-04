@@ -555,14 +555,24 @@ DuckDB spill files use `~/.cache/gridvision/duckdb_temp` by default so WSL store
 
 The backend loads the registered MLflow alias from the same persistent `data/mlflow` directory mounted read-only inside its container. The pickle is a local training artifact; production inference uses the MLflow registry alias.
 
-### Run the workflow on an AWS EC2 Ubuntu instance
+### Deploy the prepared serving stack on AWS EC2
 
-1. Launch an Ubuntu 22.04 EC2 instance. Choose CPU, memory, and EBS storage based on the actual Parquet size and the intermediate datasets; check the source size with `ls -lh`. Allow enough free disk for bronze/silver/gold files and DuckDB spill data. In the security group, allow SSH (port 22) only from your IP and, for a temporary UI demo, port 8082 only from your IP. Do **not** expose ports 5000, 5001, or 8081 publicly.
-2. SSH into the instance, install Docker Engine/Compose and Python 3.10, then log out/in after adding your user to the Docker group:
+This deployment path serves the prepared datasets and registered models without
+running Airflow or retraining. Run data preparation locally first if any
+required published outputs are missing. The checked-out release and all
+generated files must belong to the same GridVision revision.
+
+1. Launch an Ubuntu 22.04 EC2 instance with enough RAM and persistent EBS
+   storage for the backend image, MLflow store, prepared data, model artifacts,
+   and runtime databases. In the security group, allow SSH (port 22) only from
+   your IP and, for a temporary UI demo, port 8082 only from your IP. Do
+   **not** expose ports 5000, 5001, 8081, or 11434 publicly.
+2. Install Docker Engine and Compose, then log out/in after adding your user to
+   the Docker group:
 
    ```bash
    sudo apt-get update
-   sudo apt-get install -y ca-certificates curl python3.10 python3.10-venv python3-pip
+   sudo apt-get install -y ca-certificates curl
    sudo install -m 0755 -d /etc/apt/keyrings
    sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
    sudo chmod a+r /etc/apt/keyrings/docker.asc
@@ -572,38 +582,82 @@ The backend loads the registered MLflow alias from the same persistent `data/mlf
    sudo usermod -aG docker "$USER"
    ```
 
-3. Clone this project onto the instance (replace the placeholder with your repository URL), then create the input directory:
+3. Clone the exact release revision onto the instance and create the persistent
+   data directory. Do not use the example branch name until the intended
+   `reports` commit and its local changes have been reviewed and published:
 
    ```bash
-   git clone YOUR_REPOSITORY_URL ~/gridvision_2
-   mkdir -p ~/gridvision_2/data/sample
+   git clone YOUR_REPOSITORY_URL ~/gridvision
+   cd ~/gridvision
+   git checkout YOUR_RELEASE_COMMIT
+   sudo mkdir -p /srv/gridvision/data
+   sudo chown "$USER":"$USER" /srv/gridvision
    ```
 
-   Copy the source file into `data/sample/training_sample_50000.parquet`. The dataset may be too large for Git; use SCP or an S3 bucket. From your local Windows PowerShell, an example SCP command is:
+   Copy the prepared `data/` tree (including `mlflow/`, Gold/Silver data,
+   government and anomaly inputs, and `segmentation/`) into
+   `/srv/gridvision/data`. Also copy the generated `models/` tree,
+   `docs/customer_segmentation/reports/`, and any existing `instance/` or
+   `reports/` state that must be retained. Use SCP or a private S3 bucket for
+   files that are not in Git. Include `data/reference.db`; Compose mounts it
+   separately for the residential reference-data database. These generated datasets and models are not
+   reliably delivered by cloning the source repository alone. For example,
+   from local Windows PowerShell:
 
    ```powershell
-   scp -i C:\path\to\key.pem D:\path\to\training_sample_50000.parquet ubuntu@EC2_PUBLIC_IP:~/gridvision_2/data/sample/
+   scp -i C:\path\to\key.pem -r D:\path\to\gridvision-final\data ubuntu@EC2_PUBLIC_IP:/srv/gridvision/
+   scp -i C:\path\to\key.pem -r D:\path\to\gridvision-final\models ubuntu@EC2_PUBLIC_IP:~/gridvision/
+   scp -i C:\path\to\key.pem -r D:\path\to\gridvision-final\docs\customer_segmentation\reports ubuntu@EC2_PUBLIC_IP:~/gridvision/docs/customer_segmentation/
    ```
 
-4. After reconnecting over SSH, create and install the Python environment from the project root:
+   Before starting, verify that the segmentation tables and reports, four
+   category model bundles, customer and commercial Gold datasets, government
+   artifacts, anomaly inputs/model, and MLflow database/artifacts are present.
+   The model files in `models/` and the MLflow artifact store must come from
+   compatible training runs.
+4. Create an ignored root `.env` file from `.env.example`. Set
+   `GRIDVISION_DATA_DIR=/srv/gridvision/data`, a strong stable `SECRET_KEY`,
+   unique demo credentials, and `GRIDVISION_OLLAMA_BASE_URL` to the **private**
+   Ollama endpoint reachable from the backend container. Generate a fresh
+   stable Flask signing key; do not keep the example placeholder. Leave optional
+   `TAVILY_API_KEY` and SMTP settings empty unless those services are
+   configured. The frontend defaults to the same-origin `/api/v1` route
+   through Nginx; do not set it to `localhost` or the EC2 private address.
 
    ```bash
-   cd ~/gridvision_2
-   python3.10 -m venv ~/.venvs/gridvision
-   source ~/.venvs/gridvision/bin/activate
-   python -m pip install --upgrade pip
-   python scripts/filter_requirements.py requirements.txt /tmp/gridvision-automation-requirements.txt \
-     --groups airflow model-serving government-assistant
-   pip install -r /tmp/gridvision-automation-requirements.txt \
-     --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-2.10.5/constraints-3.10.txt"
+   cd ~/gridvision
+   cp .env.example .env
+   chmod 600 .env
+   openssl rand -base64 48
    ```
 
-5. Run `python automation.py` from that activated environment. It builds and starts MLflow, runs ETL and training, starts Airflow, then builds and starts the API/UI. Visit `http://EC2_PUBLIC_IP:8082` from an allowed IP. Use a domain and HTTPS reverse proxy/load balancer before exposing this beyond a temporary demo. Keep `data/` on persistent EBS storage and back it up; it contains the trained data products and MLflow registry/artifacts.
+   Replace the example `SECRET_KEY`, demo credentials, and local Ollama URL
+   in `.env` with the generated key, unique credentials, and private endpoint.
 
-To access Airflow and MLflow from your computer without opening their ports publicly, create an SSH tunnel:
+5. Start only the serving services. This command does **not** start the Airflow
+   service:
+
+   ```bash
+   docker compose up -d --build mlflow backend frontend
+   docker compose ps
+   docker compose logs --tail=100 mlflow backend frontend
+   ```
+
+   Check `/api/v1/health`, `/api/v1/ready`, and `/api/v1/models` through the
+   frontend origin, and verify representative forecasts, anomaly results,
+   segmentation, and assistant requests. The browser should call
+   `http://EC2_HOST:8082/api/...`; it must not try to call localhost on the
+   viewer's computer. Keep `/srv/gridvision/data` and the checkout on persistent
+   storage and back up the data and MLflow database/artifacts together.
+   Stop or restart only the serving stack with `docker compose stop` or
+   `docker compose up -d`; use a domain and HTTPS reverse proxy before
+   exposing the application beyond a restricted demo.
+
+The EC2 serving command does not start Airflow. To inspect the loopback-only
+MLflow UI without opening its port publicly, create an SSH tunnel:
 
 ```powershell
-ssh -i C:\path\to\key.pem -L 8081:127.0.0.1:8081 -L 15001:127.0.0.1:15001 ubuntu@EC2_PUBLIC_IP
+ssh -i C:\path\to\key.pem -L 15001:127.0.0.1:15001 ubuntu@EC2_PUBLIC_IP
 ```
 
-Then use `http://localhost:8081` for Airflow and `http://localhost:15001` for MLflow. The Airflow generated login details are on the instance in `logs/airflow/standalone.log`.
+Then use `http://localhost:15001` for MLflow.

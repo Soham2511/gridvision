@@ -159,21 +159,21 @@ services:
       GRIDVISION_REPORT_GENERATOR_ENABLED: ${GRIDVISION_REPORT_GENERATOR_ENABLED:-true}
       GRIDVISION_REPORT_LLM_PROVIDER: ${GRIDVISION_REPORT_LLM_PROVIDER:-ollama}
       GRIDVISION_REPORT_LLM_MODEL: ${GRIDVISION_REPORT_LLM_MODEL:-gemma3:1b}
-      GRIDVISION_REPORT_LLM_BASE_URL: ${GRIDVISION_REPORT_DOCKER_BASE_URL:-http://host.docker.internal:11434/api/chat}
+      GRIDVISION_REPORT_LLM_BASE_URL: ${GRIDVISION_REPORT_DOCKER_BASE_URL:-${GRIDVISION_OLLAMA_BASE_URL:-http://host.docker.internal:11434}/api/chat}
       CUSTOMER_SILVER_DATASET_PATH: /data/silver/customer_silver.parquet
       CUSTOMER_SILVER_METADATA_PATH: /data/metadata/dataset_versions/customer_silver/latest.json
       COMMERCIAL_SILVER_DATASET_PATH: /data/silver/commercial_silver.parquet
       COMMERCIAL_SILVER_METADATA_PATH: /data/metadata/commercial/dataset_versions/silver/latest.json
       AI_DATABASE_PATH: /instance/gridvision_app.sqlite
       AI_PRIVATE_STORAGE_ROOT: /instance/ai_private
-      REPORT_EMAIL_FROM_ADDRESS: ${REPORT_EMAIL_FROM_ADDRESS:-kanak.nagar64@gmail.com}
-      REPORT_EMAIL_SMTP_HOST: ${REPORT_EMAIL_SMTP_HOST:-smtp.gmail.com}
+      REPORT_EMAIL_FROM_ADDRESS: ${REPORT_EMAIL_FROM_ADDRESS:-}
+      REPORT_EMAIL_SMTP_HOST: ${REPORT_EMAIL_SMTP_HOST:-}
       REPORT_EMAIL_SMTP_PORT: ${REPORT_EMAIL_SMTP_PORT:-587}
-      REPORT_EMAIL_SMTP_USERNAME: ${REPORT_EMAIL_SMTP_USERNAME:-kanak.nagar64@gmail.com}
-      REPORT_EMAIL_SMTP_PASSWORD: ${REPORT_EMAIL_SMTP_PASSWORD:-losbwveudqvfqwjv}
-      REPORT_EMAIL_DEFAULT_RECIPIENT: ${REPORT_EMAIL_DEFAULT_RECIPIENT:-kanak.nagar64@gmail.com}
+      REPORT_EMAIL_SMTP_USERNAME: ${REPORT_EMAIL_SMTP_USERNAME:-}
+      REPORT_EMAIL_SMTP_PASSWORD: ${REPORT_EMAIL_SMTP_PASSWORD:-}
+      REPORT_EMAIL_DEFAULT_RECIPIENT: ${REPORT_EMAIL_DEFAULT_RECIPIENT:-}
       MLFLOW_TRACKING_URI: http://mlflow:5001
-      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-${GRIDVISION_OLLAMA_BASE_URL:-http://host.docker.internal:11434}}
       OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3:8b}
       ASSISTANT_TIMEOUT_SECONDS: ${ASSISTANT_TIMEOUT_SECONDS:-60}
       ASSISTANT_COMPLEX_TIMEOUT_SECONDS: ${ASSISTANT_COMPLEX_TIMEOUT_SECONDS:-75}
@@ -185,7 +185,7 @@ services:
       GOVERNMENT_MLFLOW_MODEL_NAME: ${GOVERNMENT_MLFLOW_MODEL_NAME:-gridvision-government-load-forecast}
       GOVERNMENT_MLFLOW_MODEL_ALIAS: ${GOVERNMENT_MLFLOW_MODEL_ALIAS:-${MLFLOW_MODEL_ALIAS:-champion}}
       CUSTOMER_TARIFF_INR_PER_KWH: ${CUSTOMER_TARIFF_INR_PER_KWH:-10.0}
-      TAVILY_API_KEY_FILE: /run/secrets/tavily_api_key
+      TAVILY_API_KEY: ${TAVILY_API_KEY:-}
       CUSTOMER_GOLD_DATASET_PATH: /data/gold/customer_gold.parquet
       CUSTOMER_MODEL_METADATA_PATH: /models/customer_bill_prediction.metadata.json
       COMMERCIAL_FORECAST_DATA_PATH: /data/gold/commercial_gold.parquet
@@ -201,14 +201,14 @@ services:
       ANOMALY_MODEL_PATH: /models/anomaly_prediction/gridvision_anomaly_model.joblib
       ANOMALY_RUNS_PATH: /reports/anomaly_prediction/application_runs
       GRIDVISION_ANOMALY_VECTOR_DB_PATH: /app/ai/anamoly/vector_store/storage/chroma/persistent_db
-      GRIDVISION_ANOMALY_OLLAMA_BASE_URL: ${GRIDVISION_ANOMALY_OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      GRIDVISION_ANOMALY_OLLAMA_BASE_URL: ${GRIDVISION_ANOMALY_OLLAMA_BASE_URL:-${GRIDVISION_OLLAMA_BASE_URL:-http://host.docker.internal:11434}}
       GRIDVISION_ANOMALY_SECRETS_DIR: /run/secrets/gridvision-anomaly
       GRIDVISION_ANOMALY_LANGSMITH_TRACING: ${GRIDVISION_ANOMALY_LANGSMITH_TRACING:-false}
       GRIDVISION_ANOMALY_CHAT_MODEL: ${GRIDVISION_ANOMALY_CHAT_MODEL:-qwen3:8b}
       GRIDVISION_ANOMALY_EMBEDDING_MODEL: ${GRIDVISION_ANOMALY_EMBEDDING_MODEL:-qwen3-embedding:0.6b}
       GRIDVISION_ROUTER_MODEL: ${GRIDVISION_ROUTER_MODEL:-qwen3:8b}
-      GRIDVISION_ROUTER_OLLAMA_URL: ${GRIDVISION_ROUTER_OLLAMA_URL:-${GRIDVISION_ANOMALY_OLLAMA_BASE_URL:-http://host.docker.internal:11434}}
-      OLLAMA_HOST: ${OLLAMA_HOST:-http://host.docker.internal:11434}
+      GRIDVISION_ROUTER_OLLAMA_URL: ${GRIDVISION_ROUTER_OLLAMA_URL:-${GRIDVISION_OLLAMA_BASE_URL:-http://host.docker.internal:11434}}
+      OLLAMA_HOST: ${OLLAMA_HOST:-${GRIDVISION_OLLAMA_BASE_URL:-http://host.docker.internal:11434}}
       OLLAMA_QUERY_MODEL: ${OLLAMA_QUERY_MODEL:-qwen3:1.7b}
       OLLAMA_RESPONSE_MODEL: ${OLLAMA_RESPONSE_MODEL:-batiai/gemma4-e2b:q4}
       ENERGY_QUERY_MODEL: ${ENERGY_QUERY_MODEL:-qwen3:1.7b}
@@ -226,13 +226,14 @@ services:
       DEMO_USER_ID: ${DEMO_USER_ID:?Set DEMO_USER_ID in your local .env}
       DEMO_PASSWORD: ${DEMO_PASSWORD:?Set DEMO_PASSWORD in your local .env}
       COMMERCIAL_LLM_PROVIDER: ${COMMERCIAL_LLM_PROVIDER:-ollama}
-      COMMERCIAL_OLLAMA_BASE_URL: ${COMMERCIAL_OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      COMMERCIAL_OLLAMA_BASE_URL: ${COMMERCIAL_OLLAMA_BASE_URL:-${GRIDVISION_OLLAMA_BASE_URL:-http://host.docker.internal:11434}}
       COMMERCIAL_OLLAMA_PRIMARY_MODEL: ${COMMERCIAL_OLLAMA_PRIMARY_MODEL:-qwen3:8b}
       COMMERCIAL_OLLAMA_FALLBACK_MODEL: ${COMMERCIAL_OLLAMA_FALLBACK_MODEL:-gemma3:4b}
       COMMERCIAL_OLLAMA_TIMEOUT_SECONDS: ${COMMERCIAL_OLLAMA_TIMEOUT_SECONDS:-180}
       COMMERCIAL_RAG_UPLOAD_ROOT: /app/data/commercial/rag/uploads
     volumes:
       - ${GRIDVISION_DATA_DIR:?Set GRIDVISION_DATA_DIR}/backend:/data
+      - ${GRIDVISION_DATA_DIR:?Set GRIDVISION_DATA_DIR}/reference.db:/data/reference.db
       - ${GRIDVISION_DATA_DIR:?Set GRIDVISION_DATA_DIR}/mlflow:/mlflow:ro
       - ${GRIDVISION_DATA_DIR:?Set GRIDVISION_DATA_DIR}/gold:/data/gold:ro
       - ${GRIDVISION_DATA_DIR:?Set GRIDVISION_DATA_DIR}/silver:/data/silver:ro
@@ -262,7 +263,6 @@ services:
       - ./models/segmentation:/models/segmentation:ro
       - ./models/commercial:/models/commercial:ro
       - ./models/customer_bill_prediction.metadata.json:/models/customer_bill_prediction.metadata.json:ro
-      - ./key_vault/tavily/api.key:/run/secrets/tavily_api_key:ro
       - ${GRIDVISION_LOG_DIR:-./logs}:/logs
     ports:
       - "127.0.0.1:${GRIDVISION_BACKEND_HOST_PORT:-5000}:5000"
@@ -286,7 +286,7 @@ services:
       context: ${GRIDVISION_BUILD_CONTEXT:-.}
       dockerfile: Dockerfile.frontend
       args:
-        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8082/api/v1}
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api/v1}
         VITE_MAP_TILE_URL: ${VITE_MAP_TILE_URL:-https://tile.openstreetmap.org/{z}/{x}/{y}.png}
     depends_on:
       backend:
