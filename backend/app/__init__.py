@@ -26,7 +26,7 @@ from app.services.anomaly_service import AnomalyService
 from app.services.customer_service import CustomerService
 from app.services.insight_service import InsightService
 from app.services.assistant_service import AssistantService
-from app.providers.llm import GroqLLMAdapter
+from app.providers.llm import OllamaLLMAdapter, GroqLLMAdapter
 from app.models.customer_bill_prediction import CustomerBillPredictionService
 from app.services.segmentation_service import SegmentationService
 from app.models.anomaly_prediction import AnomalyPredictionService
@@ -110,11 +110,10 @@ def create_app(config_class: type[BaseConfig] | None = None) -> Flask:
         model_provider = DevelopmentModelProvider()
         customer_model_provider = model_provider
 
-    # Instantiate LLM provider for conversational assistant
-    llm_provider = GroqLLMAdapter(
-        api_key=app.config.get("GROQ_API_KEY"),
-        base_url=app.config.get("GROQ_BASE_URL", "https://api.groq.com/openai/v1"),
-        model=app.config.get("GROQ_MODEL", "openai/gpt-oss-20b"),
+    # Instantiate LLM provider for conversational assistant (Ollama Active Runtime)
+    llm_provider = OllamaLLMAdapter(
+        base_url=app.config.get("OLLAMA_BASE_URL", "http://localhost:11434"),
+        model=app.config.get("OLLAMA_MODEL", "qwen3:8b"),
     )
 
     # Instantiate business services

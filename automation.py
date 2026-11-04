@@ -129,19 +129,14 @@ def _airflow_command(compose_command: list[str] | None = None) -> list[str]:
             "Apache Airflow is not supported on native Windows. Run automation.py "
             "from WSL2 or use Docker Desktop with WSL integration."
         )
-def _airflow_command() -> list[str]:
     executable = shutil.which("airflow")
-    if executable and platform.system() != "Windows":
+    if executable:
         return [executable]
     raise FileNotFoundError(
         "Airflow CLI was not found. Install the airflow and model-serving groups "
         "from the root requirements.txt using the Airflow constraints URL "
         "documented in the README."
     )
-
-    # Native direct Python execution: fastest, completely offline, zero container build or network issues
-    return ["python-direct-runner"]
-
 
 def _compose_command() -> list[str]:
     docker = shutil.which("docker")
@@ -154,14 +149,11 @@ def _compose_command() -> list[str]:
                 docker = str(candidate)
                 break
     if not docker:
-    cli = shutil.which("docker") or shutil.which("podman")
-    if not cli:
         raise FileNotFoundError(
             "Docker CLI was not found. Install and start Docker Desktop, or install "
             "Docker Engine and Compose on Linux."
-            "Neither Docker nor Podman CLI was found. Install Docker Desktop or Podman."
         )
-    command = [cli, "compose", "version"]
+    command = [docker, "compose", "version"]
     result = subprocess.run(
         command,
         cwd=PROJECT_ROOT,
@@ -193,24 +185,22 @@ def _compose_command() -> list[str]:
             )
             if standalone_result.returncode == 0:
                 return [standalone]
-        if "podman" in Path(cli).name.lower() and shutil.which("podman-compose"):
-            return [shutil.which("podman-compose")]
         details = "\n".join(
             output.strip()
             for output in (result.stdout, result.stderr)
             if output.strip()
         )
         if not details:
-            details = f"{cli} returned no diagnostic output."
+            details = "Docker returned no diagnostic output."
         raise RuntimeError(
             "Docker Compose could not run. Check that Docker Desktop or Docker "
             "Engine is running and install Docker Compose (the Docker Compose "
             "plugin or the standalone docker-compose command). "
-            f"Compose could not run with {cli}. "
+            f"Compose could not run with {docker}. "
             f"Command: {' '.join(command)}; exit code: {result.returncode}. "
             f"Details:\n{details}"
         )
-    return [cli, "compose"]
+    return [docker, "compose"]
 
 
 def _stage_wsl_build_context() -> tempfile.TemporaryDirectory[str] | None:
@@ -408,13 +398,6 @@ def _run_airflow_dag_test(
                         }
                     )
                     train_hybrid_model(training_settings)
-    else:
-        subprocess.run(
-            airflow_command + ["dags", "test", dag_id, execution_date],
-            cwd=PROJECT_ROOT,
-            env=env,
-            check=True,
-        )
     result = {"dag_id": dag_id, "execution_date": execution_date}
     print(
         f"Airflow DAG run completed: {dag_id} ({execution_date}).",
@@ -1572,27 +1555,12 @@ def main(argv: list[str] | None = None) -> int:
                 check=True,
             ).returncode,
         )
+
         if skip_customer_pipeline:
-        airflow_command = [airflow]
-
-        if airflow_command != ["python-direct-runner"] and not arguments.etl_only:
-            run_step(
-                "Initialize Airflow metadata database",
-                lambda: subprocess.run(
-                    airflow_command + ["db", "migrate"],
-                    cwd=PROJECT_ROOT,
-                    env=env,
-                    check=True,
-                ).returncode,
-            )
-
-        if arguments.skip_data_pipeline:
             print(
-                "\n[SKIPPED] Reusing the existing customer gold dataset and government features",
+                "\n[SKIPPED] Reusing the existing customer gold dataset",
                 flush=True,
             )
-            os.environ["GOVERNMENT_PIPELINE_REUSE_PREPARED"] = "1"
-            env["GOVERNMENT_PIPELINE_REUSE_PREPARED"] = "1"
         else:
             run_step(
                 "Run customer bronze → silver → gold Airflow DAG",
@@ -1601,9 +1569,6 @@ def main(argv: list[str] | None = None) -> int:
                     DAG_ID,
                     env,
                     force=arguments.force_airflow_dags,
-                ),
-                lambda: _run_airflow_dag_test(
-                    airflow_command, DAG_ID, env, is_etl_only=arguments.etl_only
                 ),
             )
 
@@ -1628,11 +1593,10 @@ def main(argv: list[str] | None = None) -> int:
         run_step(
             "Prepare commercial Gold and train/evaluate/register commercial champion",
             lambda: _run_commercial_workflow(
-                airflow_command, env,
+                airflow_command,
+                env,
                 skip_data_pipeline=skip_commercial_pipeline,
                 force_airflow=arguments.force_airflow_dags,
-            ),
-                is_etl_only=arguments.etl_only,
             ),
         )
 

@@ -446,6 +446,8 @@ class SampleDataProvider(BaseDataProvider):
 
     def get_residential_meter(self, household_id: str) -> dict[str, Any] | None:
         target = household_id.strip()
+        alias_map = {"2254213": "METER-1000", "meter-2254213": "METER-1000", "293861": "METER-1001", "meter-293861": "METER-1001", "537421": "METER-1002", "meter-537421": "METER-1002", "679900": "METER-1003", "meter-679900": "METER-1003"}
+        target = alias_map.get(target.lower(), target)
         for m in self._residential_meters:
             hid = m["householdId"].strip()
             if hid.lower() == target.lower():

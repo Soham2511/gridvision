@@ -13,6 +13,7 @@ import re
 import time
 from typing import Any
 
+from app.config import BaseConfig
 from app.providers.data_provider import BaseDataProvider
 from app.providers.llm.base import BaseLLMProvider, LLMInferenceError
 from app.services.assistant.dialogue_state import (
@@ -27,6 +28,10 @@ from app.services.assistant.agentic_orchestrator import AgenticKnowledgeOrchestr
 from app.services.rag.retriever import HybridDocumentRetriever
 from app.services.reference.resolver import ReferenceResolver
 from app.infrastructure.database.connection import SessionLocal
+from app.services.assistant.context_manager import ConversationContextManager
+from app.services.assistant.intelligent_router import IntelligentRouter
+from app.services.assistant.memory_contracts import PendingQuestion, ToolExecutionReference
+
 
 logger = logging.getLogger("gridvision.services.assistant.residential")
 
@@ -61,7 +66,7 @@ class ResidentialAssistantOrchestrator:
         )
         if agent_factory is not None:
             self.agent_factory = agent_factory
-        elif llm_provider is None or type(llm_provider).__name__ == "GroqLLMAdapter":
+        elif llm_provider is None or type(llm_provider).__name__ in ("OllamaLLMAdapter", "GroqLLMAdapter"):
             self.agent_factory = ResidentialAgentFactory(
                 temperature=temperature,
                 max_tokens=max_tokens,
@@ -83,6 +88,10 @@ class ResidentialAssistantOrchestrator:
         except Exception as e:
             logger.warning("Could not initialize AgenticKnowledgeOrchestrator: %s", e)
             self.agentic_orchestrator = None
+
+        self.context_manager = ConversationContextManager()
+        self.router = IntelligentRouter()
+
 
     def _synthesize_grounded_response_with_llm(
         self,
@@ -122,7 +131,7 @@ class ResidentialAssistantOrchestrator:
             logger.warning("LLM schema synthesis failed: %s", exc)
             return None
 
-    def _generate_fallback_response(self, prompt: str, context: dict[str, Any]) -> tuple[str, bool]:
+    def _generate_fallback_response(self, prompt: str, context: dict[str, Any], turn_ctx: Optional[Any] = None) -> tuple[str, bool]:
         """Collect verified domain schemas and synthesize a natural, grounded response via LLM.
         
         Returns (response_text, was_llm_generated).
@@ -425,7 +434,7 @@ class ResidentialAssistantOrchestrator:
             parts.insert(
                 0,
                 f"### Verified Billing Summary for **{meter_id}** ({cust_name})\n\n"
-                f"**Current Billing Status**: For the active billing cycle (as of {b_stat.get('last_recorded_date')}, Day {b_stat.get('billing_window_elapsed_days')} of 30), "
+                f"**Latest Recorded Billing Status**: For the latest recorded billing cycle (as of {b_stat.get('last_recorded_date')}, Day {b_stat.get('billing_window_elapsed_days')} of 30), "
                 f"recorded usage is **{b_stat.get('cycle_consumption_kwh_so_far', 0):.1f} kWh** (accrued: **{accrued_str}**). "
                 f"Projected month-end total is **{b_stat.get('estimated_month_end_kwh', 0):.1f} kWh** (estimated invoice: **₹{b_stat.get('estimated_month_end_bill_inr', 0):,.2f}**)."
             )
@@ -476,9 +485,9 @@ class ResidentialAssistantOrchestrator:
 
     def _calculate_adaptive_timeout(self, prompt: str) -> float:
         """Calculate dynamic timeout: generous for complex/lengthy queries, baseline for short queries.
-        
-        Capped strictly at 14.0s so that any upstream LLM latency failure always leaves ample
-        time (≥ 15s) for instant deterministic fallback before the request budget expires.
+
+        Uses agent_factory configured timeouts (60s base / 75s complex for Ollama) rather
+        than hardcoded low caps that caused premature fallback with qwen3:8b inference times.
         """
         p_len = len(prompt.strip())
         is_complex = (
@@ -489,11 +498,11 @@ class ResidentialAssistantOrchestrator:
                 "step by step", "bedroom", "built-up", "ac", "refrigerator"
             ])
         )
-        base = getattr(self.agent_factory, "timeout", 10.0) if self.agent_factory else 10.0
-        complex_timeout = getattr(self.agent_factory, "complex_timeout", 14.0) if self.agent_factory else 14.0
+        base = getattr(self.agent_factory, "timeout", BaseConfig.ASSISTANT_TIMEOUT_SECONDS) if self.agent_factory else BaseConfig.ASSISTANT_TIMEOUT_SECONDS
+        complex_timeout = getattr(self.agent_factory, "complex_timeout", getattr(BaseConfig, "ASSISTANT_COMPLEX_TIMEOUT_SECONDS", 75.0)) if self.agent_factory else getattr(BaseConfig, "ASSISTANT_COMPLEX_TIMEOUT_SECONDS", 75.0)
         if is_complex or p_len > 250:
-            return min(complex_timeout, 14.0)
-        return min(base, 10.0)
+            return complex_timeout
+        return base
 
     def _check_complaint_intent(
         self,
@@ -579,6 +588,8 @@ class ResidentialAssistantOrchestrator:
         prompt: str,
         entity_id: str | None = None,
         history: list[dict[str, Any]] | None = None,
+        user_id: str | None = None,
+        conversation_id: str | None = None,
     ) -> dict[str, Any]:
         """Execute single-meter conversational query."""
         request_start_time = time.time()
@@ -662,25 +673,37 @@ class ResidentialAssistantOrchestrator:
         if complaint_routing:
             return complaint_routing
 
-        # Resolve dialogue state, tracking conversational continuity, affirmative answers, and anaphora
-        resolved_state = resolve_dialogue_context(
-            clean_user_prompt,
-            history=history,
-        )
-        effective_prompt = resolved_state.effective_prompt
-        tool_scope = resolved_state.tool_scope
-        is_continuation = resolved_state.is_continuation
+        # Resolve trusted customer identity for memory isolation
+        auth_user_id = (user_id or "").strip() or f"usr-{num_part}"
 
-        # 4. Assemble chat message history (compacted to prevent Groq 7,000 ITPM rate limit)
-        messages: list[dict[str, str]] = [
-            {"role": "system", "content": system_prompt}
-        ]
-        compacted_history = compact_history_for_llm(
-            history,
-            max_turns=4,
-            max_assistant_chars=350,
-            max_user_chars=400,
+        # Context manager assembles the 7 layers of context
+        turn_ctx = self.context_manager.assemble_context(
+            user_id=auth_user_id,
+            meter_id=meter_id,
+            customer_name=customer_name,
+            tariff_rate=context["householdIdentity"]["tariffRateInrPerKwh"],
+            prompt=clean_user_prompt,
+            history=history,
+            conversation_id=conversation_id,
         )
+        resolved_state = turn_ctx.resolved_state
+        routing_plan = self.router.create_routing_plan(
+            prompt=clean_user_prompt,
+            resolved_state=resolved_state,
+            active_state=turn_ctx.active_state,
+        )
+        effective_prompt = routing_plan.effective_prompt
+        tool_scope = routing_plan.resolved_tool_scope
+        is_continuation = routing_plan.is_continuation
+
+        # Grounding block with verified customer profile, persistent memories, active state, and summaries
+        enriched_system_prompt = system_prompt + "\n\n" + turn_ctx.grounding_system_block
+
+        # 4. Assemble chat message history (compacted recent turns)
+        messages: list[dict[str, str]] = [
+            {"role": "system", "content": enriched_system_prompt}
+        ]
+        compacted_history = turn_ctx.recent_messages
         messages.extend(compacted_history)
         messages.append({"role": "user", "content": effective_prompt})
 
@@ -688,20 +711,36 @@ class ResidentialAssistantOrchestrator:
         answer = None
         is_llm_generated = False
         rate_limit_encountered = False
+        required_tool_execution_failed = False
+        direct_rag_intents = {
+            "regulatory_standards_rag",
+            "electricity_knowledge_rag",
+        }
 
-        if self.agent_factory and (self.agent_factory.custom_chat_model is not None or self.agent_factory.is_groq_available()):
+        if (
+            tool_scope != "context_only"
+            and routing_plan.primary_intent not in direct_rag_intents
+            and self.agent_factory
+            and (
+                self.agent_factory.custom_chat_model is not None
+                or self.agent_factory.is_available()
+            )
+        ):
             try:
                 effective_timeout = self._calculate_adaptive_timeout(effective_prompt)
 
                 agent = self.agent_factory.create_agent_for_household(
                     meter_id=meter_id,
-                    system_prompt=system_prompt,
+                    system_prompt=enriched_system_prompt,
                     prediction_service=self.prediction_service,
                     tariff_rate=self.tariff_rate,
                     include_knowledge_tools=True,
                     retriever=getattr(self, "retriever", None),
                     resolver=getattr(self, "resolver", None),
                     tool_scope=tool_scope,
+                    recommended_tools=routing_plan.recommended_tools,
+                    routed_tool_arguments=routing_plan.routed_tool_arguments,
+                    requires_tool_execution=routing_plan.requires_tool_execution,
                     timeout=effective_timeout,
                 )
                 agent_messages = self.agent_factory.sanitize_history_and_prompt(
@@ -710,6 +749,18 @@ class ResidentialAssistantOrchestrator:
                 )
                 res = agent.invoke({"messages": agent_messages})
                 if res and "messages" in res and res["messages"]:
+                    if routing_plan.requires_tool_execution and routing_plan.recommended_tools:
+                        completed_tool_names = {
+                            getattr(message, "name", None)
+                            for message in res["messages"]
+                            if getattr(message, "type", None) == "tool"
+                        }
+                        if not completed_tool_names.intersection(
+                            routing_plan.recommended_tools
+                        ):
+                            raise RuntimeError(
+                                "The required routed tool did not execute before the model answered."
+                            )
                     last_msg = res["messages"][-1]
                     raw_ans = last_msg.content if hasattr(last_msg, "content") else str(last_msg)
                     if isinstance(raw_ans, list):
@@ -718,50 +769,24 @@ class ResidentialAssistantOrchestrator:
                         answer = raw_ans.strip()
                         is_llm_generated = True
             except Exception as exc:
-                err_text = str(exc).lower()
+                required_tool_execution_failed = routing_plan.requires_tool_execution
                 logger.warning(
-                    "LangChain agent execution failed or timed out: %s; attempting model fallback or schema synthesis",
+                    "LangChain tool-calling agent failed or timed out: %s",
                     exc,
                 )
-                time_elapsed = time.time() - request_start_time
-                if any(w in err_text for w in ["rate limit", "429", "tpd", "tokens per day", "rate_limit_exceeded"]):
-                    rate_limit_encountered = True
-                    # Only attempt fallback agent if sufficient wall-clock time remains (< 12s elapsed)
-                    if time_elapsed < 12.0:
-                        for fb_model in ["openai/gpt-oss-120b", "openai/gpt-oss-20b"]:
-                            if fb_model == getattr(self.agent_factory, "model_name", ""):
-                                continue
-                            try:
-                                logger.info("Attempting LangChain agent failover with fallback model '%s'", fb_model)
-                                fb_agent = self.agent_factory.create_agent_for_household(
-                                    meter_id=meter_id,
-                                    system_prompt=system_prompt,
-                                    prediction_service=self.prediction_service,
-                                    tariff_rate=self.tariff_rate,
-                                    include_knowledge_tools=True,
-                                    retriever=getattr(self, "retriever", None),
-                                    resolver=getattr(self, "resolver", None),
-                                    tool_scope=tool_scope,
-                                    timeout=8.0,
-                                    model_override=fb_model,
-                                )
-                                fb_res = fb_agent.invoke({"messages": agent_messages})
-                                if fb_res and "messages" in fb_res and fb_res["messages"]:
-                                    last_msg = fb_res["messages"][-1]
-                                    raw_ans = last_msg.content if hasattr(last_msg, "content") else str(last_msg)
-                                    if isinstance(raw_ans, list):
-                                        raw_ans = "".join(part.get("text", "") if isinstance(part, dict) else str(part) for part in raw_ans)
-                                    if raw_ans and isinstance(raw_ans, str) and raw_ans.strip():
-                                        answer = raw_ans.strip()
-                                        is_llm_generated = True
-                                        rate_limit_encountered = False
-                                        break
-                            except Exception as fb_exc:
-                                logger.warning("Fallback agent model '%s' failed: %s", fb_model, fb_exc)
 
         # 6. Direct LLM completion fallback (ONLY if not rate-limited and within budget)
         time_elapsed = time.time() - request_start_time
-        if not answer and not rate_limit_encountered and (time_elapsed < 16.0) and self.llm_provider and self.llm_provider.is_available():
+        max_budget = getattr(BaseConfig, "ASSISTANT_COMPLEX_TIMEOUT_SECONDS", 75.0)
+        if (
+            not answer
+            and not routing_plan.requires_tool_execution
+            and tool_scope != "context_only"
+            and not rate_limit_encountered
+            and time_elapsed < max_budget
+            and self.llm_provider
+            and self.llm_provider.is_available()
+        ):
             try:
                 answer = self.llm_provider.generate_chat_completion(
                     messages=messages,
@@ -779,7 +804,14 @@ class ResidentialAssistantOrchestrator:
         time_elapsed = time.time() - request_start_time
         contract = None
         p_low = effective_prompt.lower()
-        is_knowledge_mode = is_continuation or any(k in p_low for k in [
+        is_knowledge_mode = (
+            routing_plan.primary_intent in direct_rag_intents
+            or routing_plan.primary_intent in {
+                "house_energy_planning",
+                "appliance_lifecycle_analysis",
+            }
+            or is_continuation
+            or any(k in p_low for k in [
             "plan house", "new house", "electrical layout", "connected load", "room", "bedroom",
             "appliance", "replace", "upgrade", "bldc", "iseer", "inverter ac", "fan", "geyser", "refrigerator", "payback",
             "reduce bill", "cost management", "saving", "lower consumption", "balanced efficiency",
@@ -787,8 +819,15 @@ class ResidentialAssistantOrchestrator:
             "safety", "guideline", "guidelines", "precaution", "precautions", "hazard", "shock", "earthing",
             "grounding", "rccb", "elcb", "mcb", "fuse", "overload", "fire", "electrical safety",
             "yes", "generate", "proceed", "do it"
-        ])
-        if (not answer) and is_knowledge_mode and (time_elapsed < 18.0) and (self.agentic_orchestrator is not None):
+            ])
+        )
+        if (
+            (not answer)
+            and not required_tool_execution_failed
+            and is_knowledge_mode
+            and (time_elapsed < 18.0)
+            and (self.agentic_orchestrator is not None)
+        ):
             try:
                 contract = self.agentic_orchestrator.process_query(
                     prompt=effective_prompt,
@@ -803,12 +842,71 @@ class ResidentialAssistantOrchestrator:
         if contract is not None:
             citations_data = [c.model_dump() for c in contract.citations]
             provenance_data = contract.provenance.model_dump()
+            ans_text = contract.answer
+
+            # Track pending question in active state if assistant asks the customer for required information
+            ans_low = ans_text.lower()
+            if any(q in ans_low for q in ["which city", "property located", "what city is your property"]):
+                turn_ctx.active_state.awaiting_user_response = True
+                turn_ctx.active_state.pending_question = PendingQuestion(
+                    field="location_city",
+                    question="Which city is your property located in?",
+                    expected_response_type="string",
+                    workflow="house_planning",
+                )
+                self.context_manager.repository.update_session_state(
+                    conversation_id=turn_ctx.conversation_id,
+                    user_id=turn_ctx.user_id,
+                    active_state=turn_ctx.active_state,
+                )
+            elif any(q in ans_low for q in ["how many bedrooms", "how many rooms do you need"]):
+                turn_ctx.active_state.awaiting_user_response = True
+                turn_ctx.active_state.pending_question = PendingQuestion(
+                    field="bedrooms_count",
+                    question="How many bedrooms do you have?",
+                    expected_response_type="integer",
+                    workflow="house_planning",
+                )
+                self.context_manager.repository.update_session_state(
+                    conversation_id=turn_ctx.conversation_id,
+                    user_id=turn_ctx.user_id,
+                    active_state=turn_ctx.active_state,
+                )
+
+            gen_title = None
+            try:
+                self.context_manager.repository.save_message(
+                    conversation_id=turn_ctx.conversation_id,
+                    user_id=turn_ctx.user_id,
+                    role="user",
+                    content=clean_user_prompt,
+                    mode=contract.mode,
+                )
+                self.context_manager.repository.save_message(
+                    conversation_id=turn_ctx.conversation_id,
+                    user_id=turn_ctx.user_id,
+                    role="assistant",
+                    content=ans_text,
+                    mode=contract.mode,
+                )
+                # Auto-generate meaningful conversation title on initial interaction
+                gen_title = self.context_manager.repository.auto_generate_session_title(
+                    conversation_id=turn_ctx.conversation_id,
+                    user_id=turn_ctx.user_id,
+                    first_user_message=clean_user_prompt,
+                    first_assistant_message=ans_text,
+                )
+            except Exception as exc:
+                logger.warning("Could not persist conversation messages: %s", exc)
+
             return {
                 "answer": contract.answer,
                 "content": contract.answer,
                 "persona": "household",
                 "entityId": meter_id,
                 "customerName": customer_name,
+                "conversationId": turn_ctx.conversation_id,
+                "conversationTitle": gen_title or "New Chat",
                 "status": contract.status,
                 "isLlmGenerated": False,
                 "mode": contract.mode,
@@ -822,10 +920,20 @@ class ResidentialAssistantOrchestrator:
 
         # 8. Schema-grounded response synthesis (ALWAYS formulated by LLM if available)
         if not answer:
-            fallback_ans, fallback_is_llm = self._generate_fallback_response(clean_user_prompt, context)
-            answer = fallback_ans
-            if fallback_is_llm:
-                is_llm_generated = True
+            if routing_plan.requires_tool_execution:
+                required_tool_execution_failed = True
+                answer = (
+                    "I couldn't complete the required verified data lookup because Ollama "
+                    "or the selected energy tool did not finish successfully. No unverified "
+                    "answer was generated; please try again."
+                )
+            else:
+                fallback_ans, fallback_is_llm = self._generate_fallback_response(
+                    clean_user_prompt, context, turn_ctx=turn_ctx
+                )
+                answer = fallback_ans
+                if fallback_is_llm:
+                    is_llm_generated = True
 
         is_relevant = self._is_energy_related_query(clean_user_prompt)
         final_mode = (
@@ -834,10 +942,65 @@ class ResidentialAssistantOrchestrator:
             else ("general_chat" if is_relevant else "irrelevant")
         )
         relevance_val = "relevant" if is_relevant else "irrelevant"
-        status_val = "success"
+        status_val = "error" if required_tool_execution_failed else "success"
 
         if answer:
             answer = re.sub(r"Before[\s\u202f]+vs\.?[\s\u202f]+After", "Before vs. After", answer, flags=re.IGNORECASE)
+
+        # Track pending question in active state if assistant asks the customer for required information
+        ans_low = (answer or "").lower()
+        if any(q in ans_low for q in ["which city", "property located", "what city is your property"]):
+            turn_ctx.active_state.awaiting_user_response = True
+            turn_ctx.active_state.pending_question = PendingQuestion(
+                field="location_city",
+                question="Which city is your property located in?",
+                expected_response_type="string",
+                workflow="house_planning",
+            )
+            self.context_manager.repository.update_session_state(
+                conversation_id=turn_ctx.conversation_id,
+                user_id=turn_ctx.user_id,
+                active_state=turn_ctx.active_state,
+            )
+        elif any(q in ans_low for q in ["how many bedrooms", "how many rooms do you need"]):
+            turn_ctx.active_state.awaiting_user_response = True
+            turn_ctx.active_state.pending_question = PendingQuestion(
+                field="bedrooms_count",
+                question="How many bedrooms do you have?",
+                expected_response_type="integer",
+                workflow="house_planning",
+            )
+            self.context_manager.repository.update_session_state(
+                conversation_id=turn_ctx.conversation_id,
+                user_id=turn_ctx.user_id,
+                active_state=turn_ctx.active_state,
+            )
+
+        gen_title = None
+        try:
+            self.context_manager.repository.save_message(
+                conversation_id=turn_ctx.conversation_id,
+                user_id=turn_ctx.user_id,
+                role="user",
+                content=clean_user_prompt,
+                mode=final_mode,
+            )
+            self.context_manager.repository.save_message(
+                conversation_id=turn_ctx.conversation_id,
+                user_id=turn_ctx.user_id,
+                role="assistant",
+                content=answer or "",
+                mode=final_mode,
+            )
+            # Auto-generate meaningful conversation title on initial interaction
+            gen_title = self.context_manager.repository.auto_generate_session_title(
+                conversation_id=turn_ctx.conversation_id,
+                user_id=turn_ctx.user_id,
+                first_user_message=clean_user_prompt,
+                first_assistant_message=answer,
+            )
+        except Exception as exc:
+            logger.warning("Could not persist conversation messages: %s", exc)
 
         return {
             "answer": answer,
@@ -845,6 +1008,8 @@ class ResidentialAssistantOrchestrator:
             "persona": "household",
             "entityId": meter_id,
             "customerName": customer_name,
+            "conversationId": turn_ctx.conversation_id,
+            "conversationTitle": gen_title or "New Chat",
             "status": status_val,
             "relevance": relevance_val,
             "isLlmGenerated": is_llm_generated,

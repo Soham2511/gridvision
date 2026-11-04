@@ -15,6 +15,7 @@ import { SchemaQuestionnaire } from '../components/residential/SchemaQuestionnai
 import { HousePlanningResultsView } from '../components/residential/HousePlanningResultsView';
 import { ApplianceAnalysisResultsView } from '../components/residential/ApplianceAnalysisResultsView';
 import { CostManagementResultsView } from '../components/residential/CostManagementResultsView';
+import { ConversationSidebar, ConversationItem } from '../components/chat/ConversationSidebar';
 import {
   Bot,
   Send,
@@ -359,6 +360,121 @@ export const AiAssistantPage: React.FC = () => {
 
   const [isTyping, setIsTyping] = useState<boolean>(false);
 
+  // Persistent Conversation Sessions State
+  const [conversations, setConversations] = useState<ConversationItem[]>([]);
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
+  const [isLoadingConversations, setIsLoadingConversations] = useState<boolean>(false);
+
+  const fetchConversations = async () => {
+    if (persona !== 'household') return;
+    try {
+      setIsLoadingConversations(true);
+      const items = await analyticsService.listConversations();
+      setConversations(items || []);
+      if (!activeConversationId && items && items.length > 0) {
+        setActiveConversationId(items[0].id);
+      }
+    } catch (err) {
+      console.warn('Could not load chat conversations:', err);
+    } finally {
+      setIsLoadingConversations(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchConversations();
+  }, [persona]);
+
+  const handleNewChat = async () => {
+    try {
+      const newSession = await analyticsService.createConversation({ title: 'New Chat' });
+      setConversations((prev) => [newSession, ...prev]);
+      setActiveConversationId(newSession.id);
+      setMessages([
+        {
+          id: `init-${Date.now()}`,
+          sender: 'assistant',
+          text: `Hello **${residentName}**! I am GridVision Assistant, operating in **RESIDENTIAL** scope. How can I help you analyze your household consumption, review forecasts, or explain your tariff bill today?`,
+          timestamp: 'Just now',
+        },
+      ]);
+      setHousePlanningResult(null);
+      setApplianceResult(null);
+      setCostResult(null);
+      setCalculationError(null);
+      setActiveFeature('general_chat');
+      setActiveTab('chat');
+    } catch (err) {
+      console.error('Failed to create new conversation:', err);
+    }
+  };
+
+  const handleSelectConversation = async (convId: string) => {
+    if (convId === activeConversationId) return;
+    setActiveConversationId(convId);
+    try {
+      const res = await analyticsService.getConversation(convId);
+      if (res && res.messages && res.messages.length > 0) {
+        setMessages(
+          res.messages.map((m) => ({
+            id: m.id,
+            sender: m.role === 'assistant' ? 'assistant' : 'user',
+            text: m.content,
+            timestamp: m.created_at
+              ? new Date(m.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+              : 'Earlier',
+            mode: m.mode,
+          }))
+        );
+      } else {
+        setMessages([
+          {
+            id: `init-${Date.now()}`,
+            sender: 'assistant',
+            text: `Resumed chat: **${res?.session?.title || 'New Chat'}**. Ask any question to continue!`,
+            timestamp: 'Just now',
+          },
+        ]);
+      }
+    } catch (err) {
+      console.error('Failed to load conversation history:', err);
+    }
+  };
+
+  const handleRenameConversation = async (convId: string, newTitle: string) => {
+    try {
+      const updated = await analyticsService.updateConversation(convId, { title: newTitle });
+      setConversations((prev) =>
+        prev.map((c) => (c.id === convId ? { ...c, title: updated.title, is_title_custom: true } : c))
+      );
+    } catch (err) {
+      console.error('Failed to rename conversation:', err);
+    }
+  };
+
+  const handleDeleteConversation = async (convId: string) => {
+    try {
+      await analyticsService.deleteConversation(convId);
+      setConversations((prev) => prev.filter((c) => c.id !== convId));
+      if (activeConversationId === convId) {
+        handleNewChat();
+      }
+    } catch (err) {
+      console.error('Failed to delete conversation:', err);
+    }
+  };
+
+  const handleArchiveConversation = async (convId: string, isArchived: boolean) => {
+    try {
+      const updated = await analyticsService.updateConversation(convId, { is_archived: isArchived });
+      setConversations((prev) =>
+        prev.map((c) => (c.id === convId ? { ...c, is_archived: updated.is_archived } : c))
+      );
+    } catch (err) {
+      console.error('Failed to archive conversation:', err);
+    }
+  };
+
   // Listen for navigation requests from chat action links (e.g. #feature:house_energy_planning)
   useEffect(() => {
     const handleFeatureNav = (e: Event) => {
@@ -430,7 +546,13 @@ export const AiAssistantPage: React.FC = () => {
       }));
 
     try {
-      const res = await analyticsService.askAssistant(trimmed, persona, effectiveEntity, formattedHistory);
+      const res = await analyticsService.askAssistant(
+        trimmed,
+        persona,
+        effectiveEntity,
+        formattedHistory,
+        activeConversationId || undefined
+      );
       const replyMsg: ChatMessage = {
         id: `ast-${Date.now() + 1}`,
         sender: 'assistant',
@@ -444,6 +566,36 @@ export const AiAssistantPage: React.FC = () => {
         missingInformation: res.missing_information || [],
       };
       setMessages((prev) => [...prev, replyMsg]);
+
+      // Automatically update conversation in sidebar with confirmed ID and title
+      const convId = (res as any).conversationId || activeConversationId;
+      if (convId) {
+        setActiveConversationId(convId);
+        const convTitle = (res as any).conversationTitle;
+        setConversations((prev) => {
+          const exists = prev.some((c) => c.id === convId);
+          if (exists) {
+            return prev.map((c) =>
+              c.id === convId
+                ? {
+                    ...c,
+                    title: convTitle && !c.is_title_custom ? convTitle : c.title,
+                    updated_at: new Date().toISOString(),
+                  }
+                : c
+            );
+          } else {
+            return [
+              {
+                id: convId,
+                title: convTitle || 'New Chat',
+                updated_at: new Date().toISOString(),
+              },
+              ...prev,
+            ];
+          }
+        });
+      }
     } catch (err) {
       const replyMsg: ChatMessage = {
         id: `ast-${Date.now() + 1}`,
@@ -541,7 +693,7 @@ export const AiAssistantPage: React.FC = () => {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', maxWidth: '1050px', margin: '0 auto', width: '100%', padding: '0.5rem 0 2rem 0' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem', maxWidth: '1280px', margin: '0 auto', width: '100%', padding: '0.5rem 0 2rem 0' }}>
       {/* Header */}
       <div
         style={{
@@ -578,17 +730,33 @@ export const AiAssistantPage: React.FC = () => {
         </div>
       </div>
 
-      {/* Feature Selector Cards for Residential Persona */}
-      {persona === 'household' && (
-        <FeatureEntryCards
-          activeFeature={activeFeature}
-          onSelectFeature={(featId) => {
-            setActiveFeature(featId);
-            setActiveTab('workflow');
-            setCalculationError(null);
-          }}
-        />
-      )}
+      {/* Main Split Layout: Sidebar + Main Content Area */}
+      <div style={{ display: 'flex', gap: '1.25rem', width: '100%', alignItems: 'flex-start' }}>
+        {persona === 'household' && (
+          <ConversationSidebar
+            conversations={conversations}
+            activeConversationId={activeConversationId}
+            onSelectConversation={handleSelectConversation}
+            onNewChat={handleNewChat}
+            onRenameConversation={handleRenameConversation}
+            onDeleteConversation={handleDeleteConversation}
+            onArchiveConversation={handleArchiveConversation}
+            isLoading={isLoadingConversations}
+          />
+        )}
+
+        <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+          {/* Feature Selector Cards for Residential Persona */}
+          {persona === 'household' && (
+            <FeatureEntryCards
+              activeFeature={activeFeature}
+              onSelectFeature={(featId) => {
+                setActiveFeature(featId);
+                setActiveTab('workflow');
+                setCalculationError(null);
+              }}
+            />
+          )}
 
       {/* Active Dedicated Feature View */}
       {persona === 'household' && activeFeature !== 'general_chat' && (
@@ -968,6 +1136,8 @@ export const AiAssistantPage: React.FC = () => {
           </div>
         </>
       )}
+        </div>
+      </div>
     </div>
   );
 };

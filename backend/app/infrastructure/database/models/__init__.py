@@ -18,6 +18,12 @@ from app.infrastructure.database.models.rag import (
     RAGQueryAuditModel,
 )
 from app.infrastructure.database.models.complaint import ComplaintModel
+from app.infrastructure.database.models.conversation_memory import (
+    ConversationMessageModel,
+    ConversationSessionModel,
+    CustomerMemoryModel,
+    ToolExecutionModel,
+)
 from app.infrastructure.database.models.user import (
     Meter,
     User,
@@ -40,6 +46,10 @@ __all__ = [
     "DocumentChunkModel",
     "RAGQueryAuditModel",
     "ComplaintModel",
+    "CustomerMemoryModel",
+    "ConversationSessionModel",
+    "ConversationMessageModel",
+    "ToolExecutionModel",
     "User",
     "Meter",
     "UserSession",

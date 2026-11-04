@@ -2,10 +2,12 @@
 flask>=3.0.0
 flask-cors>=4.0.0
 pydantic>=2.7.0
+SQLAlchemy>=2.0,<3
 python-dotenv>=1.0.0
 waitress>=3.0.0,<4
 langchain>=1.4.0
 langchain-core>=1.7.0
+langchain-ollama>=0.3.0
 langchain-groq>=1.1.0
 
 # group: airflow

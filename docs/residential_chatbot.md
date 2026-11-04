@@ -28,14 +28,17 @@ flowchart TD
         Calculator --> Metrics["Consistent Baseline & Cycle Averages"]
     end
 
-    subgraph LLMLayer["Inference & Deterministic Fallback"]
+    subgraph LLMLayer["Inference & Grounded Synthesis"]
         Orchestrator --> PromptMgr["prompts.py (System Prompt Formatter)"]
-        PromptMgr --> GroqAdapter["GroqLLMAdapter (with Exponential Backoff Retry)"]
-        GroqAdapter -->|API Available| GroqCloud["Groq Cloud (openai/gpt-oss-20b)"]
-        GroqAdapter -->|Outage / Timeout / Rate Limit| Fallback["Deterministic Grounded Fallback"]
+        PromptMgr --> AgentFactory["ResidentialAgentFactory + LangChain create_agent"]
+        AgentFactory --> ChatOllama["ChatOllama (qwen3:8b, reasoning=false)"]
+        ChatOllama -->|Native tool calls and chat messages| OllamaRuntime["Ollama Service (configured OLLAMA_BASE_URL)"]
+        AgentFactory -->|Meter-bound tools / ToolMessage results| ToolRegistry["Existing residential tools"]
+        ChatOllama -->|Unavailable / invalid completion| DiagnosticErr["Logged actionable error (No Silent Groq Fallback)"]
+        ChatOllama -->|No required tool / grounded context| Fallback["Grounded response synthesis"]
     end
 
-    GroqCloud --> Response["Formatted Assistant Answer"]
+    OllamaRuntime --> Response["Formatted Assistant Answer"]
     Fallback --> Response
     Response --> Renderer["React ChatMessageRenderer (Markdown + GFM + ErrorBoundary Charts)"]
     Renderer --> Client
@@ -85,16 +88,16 @@ All settings are centralized in `app/config.py` and configurable via `.env`:
 
 | Variable | Default Value | Description |
 | :--- | :--- | :--- |
-| `GROQ_API_KEY` | `""` | API key for Groq Cloud inference. |
-| `GROQ_BASE_URL` | `https://api.groq.com/openai/v1` | OpenAI-compatible endpoint. |
-| `GROQ_MODEL` | `openai/gpt-oss-20b` | Model name for inference. |
+| `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama server URL; Docker Compose defaults to `http://host.docker.internal:11434` for host-installed Ollama. |
+| `OLLAMA_MODEL` | `qwen3:8b` | Model tag pulled into Ollama. |
 | `ASSISTANT_TEMPERATURE` | `0.2` | Sampling temperature for analytical determinism. |
 | `ASSISTANT_MAX_TOKENS` | `800` | Maximum token limit for completions. |
-| `ASSISTANT_TIMEOUT_SECONDS` | `20.0` | HTTP request timeout. |
-| `ASSISTANT_MAX_RETRIES` | `2` | Number of retries on transient errors (429, timeouts). |
+| `ASSISTANT_TIMEOUT_SECONDS` | `60.0` | Ollama request timeout. |
+| `ASSISTANT_MAX_RETRIES` | `0` | Number of configured retries for assistant requests. |
 | `CUSTOMER_TARIFF_INR_PER_KWH` | `10.0` | Prototype billing tariff rate (₹/kWh). |
 | `DEVELOPMENT_AUTH_ENABLED` | `true` (dev) / `false` (prod) | Controls whether development principal resolution is allowed. |
 | `AUTHORIZED_RESIDENTIAL_METERS` | `METER-1000,METER-1001,METER-1002,METER-1003` | Server-authorized residential smart meters pool. |
+| `GROQ_API_KEY` / `GROQ_MODEL` | Inactive | Retained for manual switch-back; not used by the active Ollama runtime. |
 
 ---
 
@@ -192,7 +195,7 @@ flowchart LR
     Builder --> Repo["HistoricalSnapshotRepository (Sidecar JSON)"]
     Repo --> ContextBuilder["HouseholdContextBuilder (contextSchemaVersion 2.0)"]
     ContextBuilder --> Prompts["prompts.py (Historical Directives)"]
-    Prompts --> LLM["Groq / OpenAI LLM"]
+    Prompts --> LLM["OllamaLLMAdapter (Local Ollama)"]
 ```
 
 ### Context Schema Contract (`contextSchemaVersion 2.0`)
@@ -304,7 +307,10 @@ flowchart TD
    - Use cases coordinate repository data loading with domain calculations and wrap results in typed `AnalyticsToolResponse` contracts.
 4. **Interfaces & AI Orchestration Layer (`app/interfaces/assistant/tools/` & `app/services/assistant/`):**
    - `create_residential_tools(authorized_meter_id)`: Registers the 4 analytics tools with the authorized meter ID hard-bound into the tool closure. The LLM cannot specify or tamper with meter access.
-   - `ResidentialAgentFactory`: Configures `ChatGroq` (`openai/gpt-oss-20b`) with normalized base URLs, registers household tools, sanitizes history (stripping unauthorized system/developer role injections), and compiles the LangChain tool-calling execution loop.
+   - `IntelligentRouter` selects a tool scope and recommended tools for each turn. Agents are cached by the current grounded prompt and selected tool set so customer/session context cannot go stale.
+   - `ResidentialAgentFactory` uses LangChain's existing `create_agent` loop with `ChatOllama` for tool-driven tasks. Native Ollama tool-call IDs and `ToolMessage` results preserve the standard model → tool → model sequence; `reasoning=False` disables Qwen3 thinking output so user-visible text is returned as message content.
+   - General electrical knowledge and standards questions are routed directly through the verified document retriever, with citations, rather than relying on Qwen to decide whether to call the RAG tool. Household telemetry, current billing, forecasts, and explicit planning/calculation requests continue to use their dedicated context or domain tools.
+   - Undated current-bill questions use the latest recorded billing context without exposing prediction tools. Explicit month/year bill queries execute a date-bounded historical telemetry lookup before the LLM writes its final answer. Historical usage synthesis uses the verified result and tariff in a compact prompt to keep answers concise and bill calculations grounded.
 
 ### LangChain Analytics Tools
 
@@ -323,4 +329,3 @@ flowchart TD
 2. **Multi-Year Telemetry Coverage:** The underlying `customer_silver.parquet` contains 1 complete calendar year (2018). Multi-year seasonality (`isEstablishedPattern`) and YoY comparisons are supported by the calculation engine and tested via synthetic fixtures, but will show `isEstablishedPattern: false` and `yearOverYearChangePct: null` until multi-year silver datasets are ingested.
 3. **Production Token Authentication:** Production deployments require binding `HouseholdAuthService.resolve_principal` to the enterprise identity provider's JWT public key.
 4. **Future Extension Points:** The Clean Architecture boundaries allow seamless introduction of LangGraph custom workflows, vector search/RAG, Docling/OCR parsing, and specialized commercial/government personas without modifying the domain energy engine.
-

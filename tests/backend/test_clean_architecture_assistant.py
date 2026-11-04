@@ -574,7 +574,7 @@ class TestCleanArchitectureOrchestrator(unittest.TestCase):
         )
 
         res = orchestrator.answer_query(
-            prompt="What is my usage in May 2018?",
+            prompt="Hello, can you help me?",
             entity_id="METER-1000",
         )
         self.assertEqual(res["status"], "success")
@@ -596,8 +596,8 @@ class TestCleanArchitectureOrchestrator(unittest.TestCase):
         self.assertEqual(res["status"], "unauthorized")
         self.assertIn("Access denied", res["answer"])
 
-    def test_orchestrator_deterministic_fallback_when_llm_unavailable(self):
-        # Pass failing agent factory and no LLM provider
+    def test_orchestrator_deterministic_fallback_for_context_answer_when_llm_unavailable(self):
+        # A current-cycle question is answered from verified context without a required tool.
         class FailingChatModel(BaseChatModel):
             @property
             def _llm_type(self) -> str:
@@ -618,12 +618,12 @@ class TestCleanArchitectureOrchestrator(unittest.TestCase):
         )
 
         res = orchestrator.answer_query(
-            prompt="What is my all-time summary?",
+            prompt="What is my current bill?",
             entity_id="METER-1000",
         )
         self.assertEqual(res["status"], "success")
         self.assertFalse(res["isLlmGenerated"])
-        self.assertIn("Verified Historical Overview", res["answer"])
+        self.assertIn("Verified Billing Summary", res["answer"])
         self.assertIn("METER-1000", res["answer"])
 
 

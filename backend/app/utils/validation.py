@@ -56,3 +56,5 @@ class AssistantChatRequestModel(BaseModel):
     persona: Literal["household", "commercial", "government"] = "household"
     entity_id: str | None = None
     history: list[ChatHistoryMessage] = Field(default_factory=list)
+    conversation_id: str | None = None
+    session_id: str | None = None

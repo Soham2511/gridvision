@@ -253,7 +253,8 @@ class AnalyticsService {
     prompt: string,
     persona: string = 'household',
     entityId?: string,
-    history?: { role: 'user' | 'assistant' | 'system'; content: string }[]
+    history?: { role: 'user' | 'assistant' | 'system'; content: string }[],
+    conversationId?: string
   ): Promise<AssistantResponsePayload> {
     return apiClient.post<AssistantResponsePayload>(
       '/assistant/chat',
@@ -262,7 +263,53 @@ class AnalyticsService {
         persona,
         entity_id: entityId,
         history: history || [],
+        conversation_id: conversationId,
       }
+    );
+  }
+
+  // --- Persistent Conversation Sessions ---
+  async listConversations(params?: {
+    include_archived?: boolean;
+    limit?: number;
+    offset?: number;
+  }): Promise<any[]> {
+    return apiClient.get<any[]>('/assistant/conversations', params);
+  }
+
+  async createConversation(payload?: {
+    title?: string;
+    meter_id?: string;
+  }): Promise<any> {
+    return apiClient.post<any>('/assistant/conversations', payload || {});
+  }
+
+  async getConversation(conversationId: string): Promise<{
+    session: any;
+    messages: Array<{
+      id: string;
+      role: 'user' | 'assistant' | 'system';
+      content: string;
+      mode?: string;
+      created_at?: string;
+    }>;
+  }> {
+    return apiClient.get<any>(`/assistant/conversations/${encodeURIComponent(conversationId)}`);
+  }
+
+  async updateConversation(
+    conversationId: string,
+    payload: { title?: string; is_archived?: boolean }
+  ): Promise<any> {
+    return apiClient.patch<any>(
+      `/assistant/conversations/${encodeURIComponent(conversationId)}`,
+      payload
+    );
+  }
+
+  async deleteConversation(conversationId: string): Promise<{ deleted: boolean; conversation_id: string }> {
+    return apiClient.delete<{ deleted: boolean; conversation_id: string }>(
+      `/assistant/conversations/${encodeURIComponent(conversationId)}`
     );
   }
 

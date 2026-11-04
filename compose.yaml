@@ -149,6 +149,11 @@ services:
       GRIDVISION_LOG_DIR: /logs
       MODEL_PROVIDER: ${MODEL_PROVIDER:-mlflow}
       MLFLOW_TRACKING_URI: http://mlflow:5001
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3:8b}
+      ASSISTANT_TIMEOUT_SECONDS: ${ASSISTANT_TIMEOUT_SECONDS:-60}
+      ASSISTANT_COMPLEX_TIMEOUT_SECONDS: ${ASSISTANT_COMPLEX_TIMEOUT_SECONDS:-75}
+      DATABASE_URL: ${DATABASE_URL:-sqlite:////data/reference.db}
       MLFLOW_MODEL_NAME: ${MLFLOW_MODEL_NAME:-customer-bill-prediction}
       MLFLOW_MODEL_ALIAS: ${MLFLOW_MODEL_ALIAS:-champion}
       COMMERCIAL_MLFLOW_MODEL_NAME: ${COMMERCIAL_MLFLOW_MODEL_NAME:-gridvision-commercial-building-forecast}
@@ -171,6 +176,7 @@ services:
       ANOMALY_RUNS_PATH: /reports/anomaly_prediction/application_runs
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8082,http://127.0.0.1:8082,http://localhost:5173,http://127.0.0.1:5173}
     volumes:
+      - ${GRIDVISION_DATA_DIR:?Set GRIDVISION_DATA_DIR}/backend:/data
       - ${GRIDVISION_DATA_DIR:?Set GRIDVISION_DATA_DIR}/mlflow:/mlflow:ro
       - ${GRIDVISION_DATA_DIR:?Set GRIDVISION_DATA_DIR}/gold:/data/gold:ro
       - ${GRIDVISION_DATA_DIR:?Set GRIDVISION_DATA_DIR}/anomaly_prediction:/data/anomaly_prediction:ro
@@ -183,6 +189,8 @@ services:
       - ./models/commercial:/models/commercial:ro
       - ./models/customer_bill_prediction.metadata.json:/models/customer_bill_prediction.metadata.json:ro
       - ${GRIDVISION_LOG_DIR:-./logs}:/logs
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "127.0.0.1:${GRIDVISION_BACKEND_HOST_PORT:-5000}:5000"
     depends_on:

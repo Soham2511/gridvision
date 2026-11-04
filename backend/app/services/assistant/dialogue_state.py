@@ -94,6 +94,11 @@ class ResolvedDialogueState:
     parameters: Dict[str, Any] = field(default_factory=dict)
     long_term_memory: Optional[CustomerLongTermMemory] = None
     short_term_memory: Optional[ConversationShortTermMemory] = None
+    active_state: Optional[Any] = None
+    is_topic_change: bool = False
+    follow_up_type: Optional[str] = None
+    answered_field: Optional[str] = None
+    answered_value: Optional[Any] = None
 
 
 CORRECTION_PATTERNS = [
@@ -116,15 +121,54 @@ def is_affirmative_or_continuation(prompt: str) -> bool:
     return False
 
 
+def extract_pending_question_from_context(
+    active_state: Optional[Any],
+    last_assistant_turn: str,
+) -> Optional[Dict[str, str]]:
+    """Determine outstanding question and expected field from active state or prior turn."""
+    if active_state and getattr(active_state, "awaiting_user_response", False):
+        pq = getattr(active_state, "pending_question", None)
+        if pq:
+            return {
+                "field": getattr(pq, "field", ""),
+                "expected_type": getattr(pq, "expected_response_type", "string"),
+                "workflow": getattr(pq, "workflow", "") or getattr(active_state, "active_workflow", "house_planning"),
+            }
+
+    if not last_assistant_turn:
+        return None
+
+    last_low = last_assistant_turn.lower()
+    if any(q in last_low for q in ["which city", "property located", "what city", "location of your property"]):
+        return {"field": "location_city", "expected_type": "string", "workflow": "house_planning"}
+    if any(q in last_low for q in ["how many bedrooms", "how many rooms", "how many bhk"]):
+        if "which rooms do you need ac" in last_low or "which rooms will have them" in last_low:
+            return {"field": "bedrooms_and_ac_rooms", "expected_type": "multi", "workflow": "house_planning"}
+        return {"field": "bedrooms_count", "expected_type": "integer", "workflow": "house_planning"}
+    if any(q in last_low for q in ["how many acs do you need", "how many ac do you need", "how many acs"]):
+        return {"field": "ac_count_and_rooms", "expected_type": "multi", "workflow": "appliance_lifecycle"}
+    if any(q in last_low for q in ["how many hours per day", "hours per day do you use"]):
+        return {"field": "ac_usage_hours", "expected_type": "float", "workflow": "appliance_lifecycle"}
+    if any(q in last_low for q in ["which electricity bill period", "which bill period", "period should i compare"]):
+        return {"field": "bill_period", "expected_type": "string", "workflow": "general_chat"}
+    if any(q in last_low for q in ["which ac model are you considering", "which model are you considering"]):
+        return {"field": "ac_model", "expected_type": "string", "workflow": "appliance_lifecycle"}
+    return None
+
+
 def resolve_dialogue_context(
     prompt: str,
     history: Optional[List[Dict[str, Any]]] = None,
     explicit_mode: Optional[str] = None,
+    active_state: Optional[Any] = None,
 ) -> ResolvedDialogueState:
-    """Resolve user intent and slot values by inspecting current prompt AND prior dialogue turns.
+    """Resolve user intent, pending questions, slot values, and topic changes across turns.
 
-    Guarantees that short elliptical follow-ups ('yes generate', 'sure', 'option 1') inherit
-    the active feature domain, tool scope, and parameters from the previous assistant proposal.
+    Guarantees:
+    1. Answers to pending questions ('Bengaluru', 'two', 'about 6 hours') are bound to active workflows.
+    2. Partial answers preserve outstanding fields without resetting the workflow.
+    3. User topic switches ('Actually, why is my bill high?') immediately re-route without being hijacked by prior flow.
+    4. Current user prompt remains the primary driver of routing.
     """
     clean_p = (prompt or "").strip()
     p_lower = clean_p.lower()
@@ -138,11 +182,10 @@ def resolve_dialogue_context(
             resolved_mode=explicit_mode,
             tool_scope=tool_scope,
             effective_prompt=clean_p,
+            active_state=active_state,
         )
 
-    is_continuation = is_affirmative_or_continuation(clean_p)
-
-    # Inspect previous assistant turn if history is available
+    # Inspect previous assistant and user turns if history is available
     last_assistant_turn = ""
     last_user_turn = ""
     if history:
@@ -155,6 +198,202 @@ def resolve_dialogue_context(
                 last_user_turn = content
             if last_assistant_turn and last_user_turn:
                 break
+
+    # -------------------------------------------------------------------------
+    # 0. Check for Explicit Topic Interruption / Topic Change
+    # -------------------------------------------------------------------------
+    is_telemetry_or_billing_query = any(w in p_lower for w in [
+        "why is my", "why was my", "bill increased", "bill increase", "bill higher",
+        "electricity bill", "what caused my", "explain my last", "usage higher",
+        "actual consumption", "actually consume", "how much electricity", "how much power",
+        "consume last month", "consumption last month", "consumed last month",
+        "usage on", "what was my usage", "find from the database",
+        "last month's usage", "last month consumption", "past usage", "what was my electricity",
+        "outage", "sparking", "power cut"
+    ])
+    is_explicit_topic_shift = (
+        p_lower.startswith(("actually", "by the way", "first explain", "before that", "wait", "first tell me", "first answer"))
+        or is_telemetry_or_billing_query
+    )
+
+    if is_explicit_topic_shift and is_telemetry_or_billing_query:
+        # Route directly to historical analytics, releasing any active questionnaire lock
+        return ResolvedDialogueState(
+            raw_prompt=clean_p,
+            is_continuation=False,
+            is_topic_change=True,
+            follow_up_type="topic_change",
+            resolved_mode="general_chat",
+            tool_scope="telemetry_and_billing",
+            effective_prompt=clean_p,
+            active_state=active_state,
+        )
+
+    # -------------------------------------------------------------------------
+    # 1. Check for Pending Question Answers (Follow-Up Resolution)
+    # -------------------------------------------------------------------------
+    pending = extract_pending_question_from_context(active_state, last_assistant_turn)
+    if pending and not is_explicit_topic_shift:
+        field_id = pending["field"]
+        workflow = pending["workflow"]
+
+        # 1a. Location City (e.g. "Bengaluru", "Bangalore", "Mumbai")
+        if field_id == "location_city":
+            known_cities = {"bengaluru", "bangalore", "mumbai", "delhi", "chennai", "hyderabad", "pune", "kolkata", "ahmedabad", "jaipur", "kochi"}
+            city_val = clean_p.strip()
+            if len(city_val.split()) <= 4 and (city_val.lower() in known_cities or not any(k in p_lower for k in ["predict", "bill", "tariff", "ac", "fan"])):
+                normalized_city = "Bengaluru" if city_val.lower() in ("bangalore", "bengaluru") else city_val.title()
+                return ResolvedDialogueState(
+                    raw_prompt=clean_p,
+                    is_continuation=True,
+                    follow_up_type="answer_to_pending",
+                    answered_field="location_city",
+                    answered_value=normalized_city,
+                    resolved_mode="house_planning",
+                    tool_scope="planning_and_upgrades",
+                    effective_prompt=f"Property location confirmed as {normalized_city}. Continue new house energy planning questionnaire.",
+                    active_state=active_state,
+                )
+
+        # 1b. Bedrooms & AC Rooms (Multi-Question Follow-up)
+        if field_id in ("bedrooms_and_ac_rooms", "bedrooms_count"):
+            word_map = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5}
+            num_match = re.search(r"\b(one|two|three|four|five|\d+)\b", p_lower)
+            if num_match:
+                raw_num = num_match.group(1)
+                beds = word_map.get(raw_num) or int(raw_num)
+                has_room_info = any(w in p_lower for w in ["master", "living", "bedroom", "room", "guest"])
+                is_partial = (field_id == "bedrooms_and_ac_rooms") and not has_room_info
+                return ResolvedDialogueState(
+                    raw_prompt=clean_p,
+                    is_continuation=True,
+                    follow_up_type="partial_answer" if is_partial else "answer_to_pending",
+                    answered_field="bedrooms_count",
+                    answered_value=beds,
+                    resolved_mode="house_planning",
+                    tool_scope="planning_and_upgrades",
+                    effective_prompt=f"Confirmed bedrooms: {beds}." + (" Room allocations for AC still missing." if is_partial else f" Specified rooms: '{clean_p}'."),
+                    active_state=active_state,
+                )
+
+        # 1c. AC Count & Rooms
+        if field_id == "ac_count_and_rooms":
+            word_map = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5}
+            num_match = re.search(r"\b(one|two|three|four|five|\d+)\b", p_lower)
+            if num_match:
+                raw_num = num_match.group(1)
+                ac_count = word_map.get(raw_num) or int(raw_num)
+                has_rooms = any(w in p_lower for w in ["master", "living", "bedroom", "room"])
+                is_partial = not has_rooms
+                return ResolvedDialogueState(
+                    raw_prompt=clean_p,
+                    is_continuation=True,
+                    follow_up_type="partial_answer" if is_partial else "answer_to_pending",
+                    answered_field="ac_count",
+                    answered_value=ac_count,
+                    resolved_mode="appliance_lifecycle",
+                    tool_scope="planning_and_upgrades",
+                    effective_prompt=f"Confirmed AC count: {ac_count}." + (" Room allocation details still needed." if is_partial else f" Room details: {clean_p}."),
+                    active_state=active_state,
+                )
+
+        # 1d. Daily Usage Hours (e.g. "About six hours", "6 hours")
+        if field_id == "ac_usage_hours":
+            word_map = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10}
+            match = re.search(r"\b(one|two|three|four|five|six|seven|eight|nine|ten|\d+(?:\.\d+)?)\s*(?:hours?|hrs?)\b", p_lower)
+            val = None
+            if match:
+                raw = match.group(1)
+                val = float(word_map.get(raw) or raw)
+            elif clean_p.isdigit():
+                val = float(clean_p)
+            if val is not None:
+                return ResolvedDialogueState(
+                    raw_prompt=clean_p,
+                    is_continuation=True,
+                    follow_up_type="answer_to_pending",
+                    answered_field="ac_usage_hours",
+                    answered_value=val,
+                    resolved_mode="appliance_lifecycle",
+                    tool_scope="planning_and_upgrades",
+                    effective_prompt=f"AC daily operation confirmed at {val} hours/day. Continue appliance scenario evaluation.",
+                    active_state=active_state,
+                )
+
+        # 1e. Bill Comparison Period (e.g. "October", "March")
+        if field_id == "bill_period":
+            months = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"]
+            for m in months:
+                if m in p_lower:
+                    return ResolvedDialogueState(
+                        raw_prompt=clean_p,
+                        is_continuation=True,
+                        follow_up_type="answer_to_pending",
+                        answered_field="bill_period",
+                        answered_value=m.capitalize(),
+                        resolved_mode="general_chat",
+                        tool_scope="telemetry_and_billing",
+                        effective_prompt=f"Compare electricity consumption and bill for {m.capitalize()} against baseline.",
+                        active_state=active_state,
+                    )
+
+    # -------------------------------------------------------------------------
+    # 2. Check for Explicit User Corrections
+    # -------------------------------------------------------------------------
+    # Example: "I said two ACs, not three"
+    correction_match = re.search(r"\b(?:said|meant|correction:?)\s+(\w+|\d+)\s*(?:acs?|air\s*conditioners?)(?:,\s*not\s+(\w+|\d+))?", p_lower)
+    if correction_match:
+        word_to_num = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5}
+        val_str = correction_match.group(1)
+        num_acs = word_to_num.get(val_str) or (int(val_str) if val_str.isdigit() else None)
+        if num_acs is not None:
+            return ResolvedDialogueState(
+                raw_prompt=clean_p,
+                is_continuation=True,
+                follow_up_type="correction",
+                answered_field="ac_count",
+                answered_value=num_acs,
+                resolved_mode="appliance_lifecycle",
+                tool_scope="planning_and_upgrades",
+                effective_prompt=f"User correction: Customer confirmed {num_acs} ACs (not {correction_match.group(2) or 'prior'}). Recalculate appliance scenario with {num_acs} ACs.",
+                active_state=active_state,
+            )
+
+    # -------------------------------------------------------------------------
+    # 3. Check for Reference to Previous Result
+    # -------------------------------------------------------------------------
+    # Examples: "Can you reduce that?", "explain that number", "can you lower that"
+    is_referring_to_result = any(phrase in p_lower for phrase in [
+        "reduce that", "lower that", "reduce it", "cut that", "cut it",
+        "explain that number", "explain that", "where did that number",
+    ])
+    if is_referring_to_result and (last_assistant_turn or last_user_turn):
+        prior_context = f"{last_user_turn} {last_assistant_turn}".lower()
+        if any(w in prior_context for w in ["energy plan", "connected load", "peak demand", "balanced tier", "built-up", "high-efficiency"]):
+            return ResolvedDialogueState(
+                raw_prompt=clean_p,
+                is_continuation=True,
+                follow_up_type="reference_to_result",
+                resolved_mode="house_planning",
+                tool_scope="planning_and_upgrades",
+                effective_prompt=f"User requested to reduce the previously calculated energy consumption and monthly bill ('{clean_p}'). Identify efficiency optimization steps and solar provisions.",
+                active_state=active_state,
+            )
+        elif any(w in prior_context for w in ["appliance", "ac", "refrigerator", "payback"]):
+            return ResolvedDialogueState(
+                raw_prompt=clean_p,
+                is_continuation=True,
+                follow_up_type="reference_to_result",
+                resolved_mode="appliance_lifecycle",
+                tool_scope="planning_and_upgrades",
+                effective_prompt=f"User requested adjustments or explanation for previous appliance calculation: '{clean_p}'.",
+                active_state=active_state,
+            )
+
+    # -------------------------------------------------------------------------
+    # 4. Standard Affirmative and Continuation Detection
+    # -------------------------------------------------------------------------
+    is_continuation = is_affirmative_or_continuation(clean_p)
 
     # If this is an affirmative follow-up, inherit domain context from last assistant message
     if is_continuation and (last_assistant_turn or last_user_turn):

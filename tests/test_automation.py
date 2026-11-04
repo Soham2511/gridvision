@@ -580,13 +580,17 @@ def test_segmentation_dag_adopts_complete_current_outputs_without_running(
         json.dumps({"trained_models": [{"model_category": "Residential"}]}),
         encoding="utf-8",
     )
+    env = {
+        "GRIDVISION_DATA_DIR": str(data_root),
+        "SEGMENTATION_SOURCE_PATH": str(source),
+        "SEGMENTATION_OUTPUT_DIR": str(output_dir),
+        "SEGMENTATION_FEATURE_PATH": str(output_dir / "building_features.parquet"),
+        "SEGMENTATION_MODEL_DIR": str(output_dir / "models"),
+        "SEGMENTATION_REPORTS_DIR": str(output_dir / "reports"),
+    }
     _, outputs = automation._dag_dataset_paths(
         automation.SEGMENTATION_DAG_ID,
-        {
-            "GRIDVISION_DATA_DIR": str(data_root),
-            "SEGMENTATION_SOURCE_PATH": str(source),
-            "SEGMENTATION_OUTPUT_DIR": str(output_dir),
-        },
+        env,
     )
     for output in outputs:
         output.parent.mkdir(parents=True, exist_ok=True)
@@ -607,15 +611,6 @@ def test_segmentation_dag_adopts_complete_current_outputs_without_running(
             AssertionError("Complete current outputs should be reused")
         ),
     )
-    env = {
-        "GRIDVISION_DATA_DIR": str(data_root),
-        "SEGMENTATION_SOURCE_PATH": str(source),
-        "SEGMENTATION_OUTPUT_DIR": str(output_dir),
-        "SEGMENTATION_FEATURE_PATH": str(output_dir / "building_features.parquet"),
-        "SEGMENTATION_MODEL_DIR": str(output_dir / "models"),
-        "SEGMENTATION_REPORTS_DIR": str(output_dir / "reports"),
-    }
-
     result = automation._run_airflow_dag_if_dataset_changed(
         ["airflow"], automation.SEGMENTATION_DAG_ID, env
     )

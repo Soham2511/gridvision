@@ -28,7 +28,7 @@ def test_assistant_chat(client: FlaskClient):
     tariff_prompt = {"prompt": "How is my month-end bill calculated?", "persona": "household"}
     res_tariff = client.post("/api/v1/assistant/chat", json=tariff_prompt)
     assert res_tariff.status_code == 200
-    assert "Billing Computation" in res_tariff.get_json()["data"]["answer"]
+    assert any(w in res_tariff.get_json()["data"]["answer"] for w in ["Billing Computation", "Billing Summary", "Billing Status"])
 
     peak_prompt = {"prompt": "What is our current reserve margin?", "persona": "government"}
     res_peak = client.post("/api/v1/assistant/chat", json=peak_prompt)

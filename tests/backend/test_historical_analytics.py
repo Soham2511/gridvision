@@ -359,8 +359,8 @@ class TestHistoricalSnapshotPersistenceAndIntegration(unittest.TestCase):
         self.assertFalse(c1001["contextCapabilities"]["historicalProfileAvailable"])
         self.assertIsNone(c1001["historicalProfile"])
 
-    def test_orchestrator_historical_query_fallback(self) -> None:
-        """Verify deterministic fallback delivers verified historical overview for historical queries."""
+    def test_orchestrator_required_historical_query_fails_closed_when_llm_fails(self) -> None:
+        """A historical tool-required query does not return a fallback as if lookup succeeded."""
         daily = [
             DailyConsumptionRecord("2018-01-01", 2018, 1, 1, 15.0, 24, 24, 100.0, True),
             DailyConsumptionRecord("2018-07-01", 2018, 7, 1, 45.0, 24, 24, 100.0, True),
@@ -395,12 +395,9 @@ class TestHistoricalSnapshotPersistenceAndIntegration(unittest.TestCase):
             entity_id="METER-1000",
         )
 
-        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["status"], "error")
         self.assertFalse(result["isLlmGenerated"])
-        self.assertIn("Verified Historical Overview", result["answer"])
-        self.assertIn("60.0 kWh", result["answer"])
-        self.assertIn("Peak Consumption Day", result["answer"])
-        self.assertIn("METER-1000", result["answer"])
+        self.assertIn("No unverified answer was generated", result["answer"])
 
 
 if __name__ == "__main__":

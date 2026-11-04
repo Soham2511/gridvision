@@ -18,6 +18,7 @@ class BaseConfig:
     PROJECT_ROOT = Path(__file__).resolve().parents[2]
     SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-key-gridvision-2026")
     API_PREFIX = "/api/v1"
+    TESTING: bool = False
 
     # Centralized Initial Residential OBJECTID Mapping (Single Source of Truth)
     INITIAL_RESIDENTIAL_OBJECTID = os.getenv("INITIAL_RESIDENTIAL_OBJECTID", "2254213")
@@ -39,14 +40,22 @@ class BaseConfig:
     DATA_PROVIDER = os.getenv("DATA_PROVIDER", "parquet")
     MODEL_PROVIDER = os.getenv("MODEL_PROVIDER", "development")
 
-    # LLM Assistant Settings (Groq / OpenAI-compatible)
+    # LLM Assistant Settings (Ollama Active Runtime)
+    OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL") or (
+        "http://ollama:11434"
+        if os.getenv("CONTAINERIZED", "false").lower() == "true" or os.path.exists("/.dockerenv")
+        else "http://localhost:11434"
+    )
+    OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3:8b")
+
+    # Inactive Groq Settings (Retained for manual switch-back)
     GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
     GROQ_BASE_URL = os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1")
     GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
     ASSISTANT_TEMPERATURE = float(os.getenv("ASSISTANT_TEMPERATURE", "0.2"))
     ASSISTANT_MAX_TOKENS = int(os.getenv("ASSISTANT_MAX_TOKENS", "800"))
-    ASSISTANT_TIMEOUT_SECONDS = float(os.getenv("ASSISTANT_TIMEOUT_SECONDS", "12.0"))
-    ASSISTANT_COMPLEX_TIMEOUT_SECONDS = float(os.getenv("ASSISTANT_COMPLEX_TIMEOUT_SECONDS", "16.0"))
+    ASSISTANT_TIMEOUT_SECONDS = float(os.getenv("ASSISTANT_TIMEOUT_SECONDS", "60.0"))
+    ASSISTANT_COMPLEX_TIMEOUT_SECONDS = float(os.getenv("ASSISTANT_COMPLEX_TIMEOUT_SECONDS", "75.0"))
     ASSISTANT_MAX_RETRIES = int(os.getenv("ASSISTANT_MAX_RETRIES", "0"))
 
     # Server-side authorized residential meters based on real OBJECTIDs

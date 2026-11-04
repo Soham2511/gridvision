@@ -16,8 +16,8 @@ class PredictUsageAndBillInput(BaseModel):
 
     target_month: str = Field(
         ...,
-        description="Target calendar month to predict in YYYY-MM format (e.g. '2019-02', '2019-03', or '2018-12')",
-        examples=["2019-02", "2018-12"],
+        description="Future target calendar month to forecast in YYYY-MM format (e.g. '2027-02')",
+        examples=["2027-02"],
     )
     cutoff_day: int = Field(
         default=14,
@@ -30,14 +30,14 @@ class PredictUsageAndBillTool(BaseTool):
 
     name: str = "predict_usage_and_bill"
     description: str = (
-        "Predict full-month electricity consumption demand (in kWh) and estimated bill cost (in ₹ INR) "
-        "for a specific future or past calendar month using GridVision's trained Machine Learning model "
+        "Forecast full-month electricity consumption demand (in kWh) and estimated bill cost (in ₹ INR) "
+        "for an upcoming calendar month using GridVision's trained Machine Learning model "
         "(customer-bill-prediction champion pipeline). "
         "Returns the ML-predicted monthly kWh, expected invoice in INR, daily average, confidence intervals (±10%), "
         "and model validation metrics. "
-        "Use this tool whenever the customer asks to predict future usage, forecast an upcoming month "
-        "(e.g. 'predict Feb 2019', 'next month usage', 'bill for February 2019'), "
-        "or estimate upcoming bills using machine learning."
+        "Use this tool only when the customer explicitly asks to predict future usage or forecast an upcoming month "
+        "(e.g. 'predict next month usage' or 'forecast my upcoming bill'). "
+        "For completed months or actual historical bills, use query_consumption_history instead."
     )
     args_schema: Type[BaseModel] = PredictUsageAndBillInput
 
@@ -57,4 +57,3 @@ class PredictUsageAndBillTool(BaseTool):
 
     async def _arun(self, *args: Any, **kwargs: Any) -> str:
         return self._run(*args, **kwargs)
-

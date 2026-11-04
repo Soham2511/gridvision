@@ -11,6 +11,7 @@ Validates:
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 from app import create_app
 from app.config import TestingConfig
 from app.providers.sample_data_provider import SampleDataProvider
@@ -222,25 +223,82 @@ class TestDialogueStateAndContinuation(unittest.TestCase):
         self.assertNotIn("only have meter data", answer.lower())
         self.assertNotIn("cannot provide general home safety", answer.lower())
 
+    def test_safety_measures_use_direct_rag_without_ollama_tool_selection(self):
+        """Safety requests use the cited RAG workflow, not model-selected tool calls."""
+        prompt = "tell me 5 electricity safety measures in house"
+        with (
+            patch.object(
+                self.orchestrator.agent_factory,
+                "is_available",
+                return_value=True,
+            ),
+            patch.object(
+                self.orchestrator.agent_factory,
+                "create_agent_for_household",
+                side_effect=AssertionError("Safety RAG should bypass Ollama tool selection"),
+            ) as create_agent,
+        ):
+            response = self.orchestrator.answer_query(
+                prompt=prompt,
+                entity_id="METER-1000",
+            )
+
+        self.assertEqual(response.get("status"), "success")
+        self.assertIn("IS 732", response.get("answer", ""))
+        self.assertIn("Earthing", response.get("answer", ""))
+        self.assertIn("RCCB", response.get("answer", ""))
+        self.assertTrue(response.get("citations"))
+        self.assertIn(
+            "document_rag",
+            response.get("provenance", {}).get("knowledge_sources_used", []),
+        )
+        create_agent.assert_not_called()
+
+    def test_general_electricity_question_uses_direct_rag(self):
+        """A non-safety technical question is also grounded in retrieved documents."""
+        prompt = "What does a household circuit breaker do?"
+        plan = self.orchestrator.router.route(current_message=prompt)
+        self.assertEqual(plan.primary_intent, "electricity_knowledge_rag")
+        self.assertEqual(plan.candidate_tools, ["search_regulatory_documents"])
+        self.assertTrue(plan.requires_tool_execution)
+
+        with (
+            patch.object(
+                self.orchestrator.agent_factory,
+                "is_available",
+                return_value=True,
+            ),
+            patch.object(
+                self.orchestrator.agent_factory,
+                "create_agent_for_household",
+                side_effect=AssertionError("RAG questions should bypass Ollama tool selection"),
+            ) as create_agent,
+        ):
+            response = self.orchestrator.answer_query(
+                prompt=prompt,
+                entity_id="METER-1000",
+            )
+
+        self.assertEqual(response.get("status"), "success")
+        self.assertIn("Verified Electricity Information", response.get("answer", ""))
+        self.assertTrue(response.get("citations"))
+        self.assertIn(
+            "document_rag",
+            response.get("provenance", {}).get("knowledge_sources_used", []),
+        )
+        create_agent.assert_not_called()
+
     # 8. Query historical past month from database without predicting
-    def test_query_past_month_does_not_predict(self):
-        """Historical database queries for past months must query telemetry and not return ML predictions."""
+    def test_query_past_month_fails_closed_when_no_tool_calling_model_is_configured(self):
+        """A tool-required historical request must not be answered from fallback guesses."""
         prompt = "find from the database, what was my usage on march 2018"
         resp = self.orchestrator.answer_query(
             prompt=prompt,
             entity_id="METER-1000",
             history=[],
         )
-        self.assertEqual(resp.get("status"), "success")
-        answer = resp.get("answer", "")
-        # Must indicate telemetry / historical records and not be framed as forward prediction
-        self.assertNotIn("forward-ML", answer)
-        self.assertNotIn("predicted energy usage", answer.lower())
-        # Should contain telemetry details or recorded data
-        self.assertTrue(
-            "telemetry" in answer.lower() or "recorded" in answer.lower() or "database" in answer.lower() or "kwh" in answer.lower(),
-            f"Expected database telemetry in answer, got: {answer}",
-        )
+        self.assertEqual(resp.get("status"), "error")
+        self.assertIn("No unverified answer was generated", resp.get("answer", ""))
 
     # 9. Corrective follow-up "dont predic it, query it" resolves to historical query
     def test_corrective_continuation_dont_predict_query_it(self):

@@ -154,7 +154,14 @@ in Docker; Linux/WSL2 uses its Linux Airflow environment. By default,
 `GRIDVISION_DATA_DIR` points to the checkout's `data/` directory, and the source
 dataset is expected at `data/sample/training_sample_50000.parquet`.
 
-If starting Compose directly instead of using the automation script, create a root `.env` file (it is git-ignored) with `GRIDVISION_DATA_DIR` set to the absolute `data/` directory in your checkout and a private `SECRET_KEY`. Generate a strong key with:
+If starting Compose directly instead of using the automation script, create a root `.env` file (it is
+git-ignored) with `GRIDVISION_DATA_DIR` set to the absolute `data/` directory in your checkout and a
+private `SECRET_KEY`. The backend connects to host-installed Ollama at
+`http://host.docker.internal:11434` by default, uses `qwen3:8b`, and persists its RAG/reference
+database under `data/backend/`. Override `OLLAMA_BASE_URL` and `OLLAMA_MODEL` in `.env` if your
+runtime uses different values, and ensure the Ollama service is running with that model available.
+On Linux, Compose adds the `host.docker.internal` host-gateway mapping; Ollama must accept
+connections from Docker's host-gateway address. Generate a strong key with:
 
 ```powershell
 python -c "import secrets; print(secrets.token_urlsafe(48))"

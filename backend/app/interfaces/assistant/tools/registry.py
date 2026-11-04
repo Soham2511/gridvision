@@ -92,6 +92,9 @@ def create_residential_tools(
     tool_scope allows dynamic pruning ('all', 'telemetry_and_billing', 'regulatory_and_standards',
     'planning_and_upgrades', 'balanced_core') to reduce prompt tokens and latency while preserving full AI capabilities.
     """
+    if tool_scope == "context_only":
+        return []
+
     repo = repository or HouseholdEnergyRepository()
     engine = analytics_engine or EnergyAnalyticsEngine()
 
@@ -191,6 +194,7 @@ def create_residential_tools(
                 "predict_usage_and_bill",
                 "generate_energy_cost_recommendations",
                 "get_customer_premises_profile",
+                "resolve_reference_parameter",
             },
             "regulatory_and_standards": {
                 "search_regulatory_documents",
@@ -210,6 +214,7 @@ def create_residential_tools(
                 "search_regulatory_documents",
                 "predict_usage_and_bill",
                 "get_customer_appliance_inventory",
+                "query_consumption_history",
             },
             "balanced_core": {
                 "predict_usage_and_bill",

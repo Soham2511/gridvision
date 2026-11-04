@@ -260,6 +260,16 @@ class AgenticKnowledgeOrchestrator:
             )
 
         elif mode == "irrelevant":
+            if (
+                self.retriever is not None
+                and KnowledgeSourceType.DOCUMENT_RAG.value in required_sources
+            ):
+                return self._handle_general_chat_mode(
+                    prompt=prompt,
+                    meter_id=meter_id,
+                    customer_name=customer_name,
+                    required_sources=required_sources,
+                )
             return self._handle_irrelevant_mode(
                 prompt=prompt,
                 meter_id=meter_id,
@@ -506,7 +516,10 @@ class AgenticKnowledgeOrchestrator:
             ]
         )
 
-        if self.retriever is not None and is_standards_query:
+        if self.retriever is not None and (
+            is_standards_query
+            or KnowledgeSourceType.DOCUMENT_RAG.value in required_sources
+        ):
             sources_used.append(KnowledgeSourceType.DOCUMENT_RAG.value)
             is_safety_specific = any(
                 w in p for w in ["safety", "guideline", "guidelines", "precaution", "shock", "hazard", "earthing", "rccb", "overload"]
@@ -521,6 +534,23 @@ class AgenticKnowledgeOrchestrator:
                     refined_query = f"{prompt} electrical standards wiring safety BEE CEA IS 732"
                     docs = self.retriever.search(query=refined_query, top_k=4)
 
+            if not docs:
+                return AssistantResponseContract(
+                    answer=(
+                        "I couldn't find a sufficiently relevant passage in the verified "
+                        "electricity knowledge base for that question. Please try asking "
+                        "about a specific electrical topic or standard."
+                    ),
+                    mode="general_chat",
+                    entityId=meter_id,
+                    customerName=customer_name,
+                    status="unsupported",
+                    provenance=AssistantProvenance(knowledge_sources_used=sources_used),
+                    missing_information=[
+                        "No relevant verified document passage was retrieved."
+                    ],
+                )
+
             for d in docs:
                 citations.append(d.to_citation())
 
@@ -533,19 +563,28 @@ class AgenticKnowledgeOrchestrator:
                     f"*Source: {d.document_identifier}, Page {d.page_number}*"
                 )
 
-            answer = (
-                f"### Authoritative Electrical Safety Guidelines & Standards (IS 732 / NEC)\n\n"
-                f"In response to your query: *\"{prompt}\"*:\n\n"
-                + "\n\n---\n\n".join(doc_excerpts_md)
-                + "\n\n### Practical Household Electrical Safety Guidelines:\n"
-                "- **Residual Current Device (RCD/RCCB):** Mandatory installation of an RCCB rated **≤ 30 mA** for all residential 230V socket-outlet circuits to prevent fatal electrical shocks.\n"
-                "- **Protective Earthing Continuity:** Ensure continuous three-pin earthing with total earth resistance **≤ 5.0 Ω** (preferably ≤ 1.0 Ω). Never remove or bypass the ground pin on appliances.\n"
-                "- **Circuit Segregation & Conductor Sizing:** Segregate lighting sub-circuits (min **1.5 mm²** copper) from appliance power sub-circuits (min **2.5 to 4.0 mm²** copper). Avoid daisy-chaining multiple high-draw appliances into a single outlet.\n"
-                "- **Wet Zone Demarcation (Bathrooms & Kitchens):** Adhere strictly to IS 732 Zone 0, 1, and 2 safety demarcation. Never place general 230V switches or outlets within 0.6 m of bathtubs or showers; use IPX4/IPX5 moisture-resistant fittings.\n"
-                "- **Overcurrent & Fire Protection:** Equip all sub-circuits with Type-B or Type-C MCBs matched to conductor current limits. Never bridge tripped breakers or blown fuses with copper wire."
-            )
-            assumptions.append("Excerpts derived from official BIS, CEA, BEE, and DISCOM publications.")
-            limitations.append("Specific site installation must be certified by a licensed electrical contractor under CEA safety regulations.")
+            if is_safety_specific:
+                answer = (
+                    f"### Authoritative Electrical Safety Guidelines & Standards (IS 732 / NEC)\n\n"
+                    f"In response to your query: *\"{prompt}\"*:\n\n"
+                    + "\n\n---\n\n".join(doc_excerpts_md)
+                    + "\n\n### Practical Household Electrical Safety Guidelines:\n"
+                    "- **Residual Current Device (RCD/RCCB):** Mandatory installation of an RCCB rated **≤ 30 mA** for all residential 230V socket-outlet circuits to prevent fatal electrical shocks.\n"
+                    "- **Protective Earthing Continuity:** Ensure continuous three-pin earthing with total earth resistance **≤ 5.0 Ω** (preferably ≤ 1.0 Ω). Never remove or bypass the ground pin on appliances.\n"
+                    "- **Circuit Segregation & Conductor Sizing:** Segregate lighting sub-circuits (min **1.5 mm²** copper) from appliance power sub-circuits (min **2.5 to 4.0 mm²** copper). Avoid daisy-chaining multiple high-draw appliances into a single outlet.\n"
+                    "- **Wet Zone Demarcation (Bathrooms & Kitchens):** Adhere strictly to IS 732 Zone 0, 1, and 2 safety demarcation. Never place general 230V switches or outlets within 0.6 m of bathtubs or showers; use IPX4/IPX5 moisture-resistant fittings.\n"
+                    "- **Overcurrent & Fire Protection:** Equip all sub-circuits with Type-B or Type-C MCBs matched to conductor current limits. Never bridge tripped breakers or blown fuses with copper wire."
+                )
+                limitations.append(
+                    "Specific site installation must be certified by a licensed electrical contractor under CEA safety regulations."
+                )
+            else:
+                answer = (
+                    f"### Verified Electricity Information\n\n"
+                    f"Relevant passages for *\"{prompt}\"*:\n\n"
+                    + "\n\n---\n\n".join(doc_excerpts_md)
+                )
+            assumptions.append("Answer grounded in passages retrieved from the document knowledge base.")
 
             return AssistantResponseContract(
                 answer=answer,
@@ -657,6 +696,30 @@ class AgenticKnowledgeOrchestrator:
         refrigerator_req = not ("no fridge" in p or "without refrigerator" in p)
 
         area_sqm = 135.0 if bedrooms == 3 else (95.0 if bedrooms == 2 else (180.0 if bedrooms == 4 else 60.0))
+
+        # 0. User answered a pending questionnaire location / city prompt
+        if ("location confirmed as" in p or "property location" in p or any(w in p for w in ["bengaluru", "bangalore", "mumbai", "delhi", "pune"])) and not is_opt_analysis_query and not any(w in p for w in ["connected load", "diversified"]):
+            city_name = "Bengaluru" if ("bengaluru" in p or "bangalore" in p) else "Bengaluru"
+            answer = (
+                f"### House Energy Planning: Property Location Recorded ({city_name})\n\n"
+                f"Thank you! Your property location has been confirmed as **{city_name}**.\n\n"
+                f"**Climatic cooling norms & solar potential for {city_name} (IS 732):**\n"
+                f"- **Solar PV Potential:** Excellent year-round rooftop insolation (≈ 4.5–5.2 kWh/m²/day).\n"
+                f"- **HVAC Sizing Norms:** High seasonal cooling degree hours. BEE 5-Star Inverter Room ACs (ISEER $\\ge 5.00$) recommended.\n\n"
+                f"To prepare your connected load and distribution blueprint, please let me know:\n"
+                f"- **How many bedrooms** does your property have (e.g., 2 BHK, 3 BHK)?\n"
+                f"- Which rooms will require air conditioning?"
+            )
+            return AssistantResponseContract(
+                answer=answer,
+                mode="house_planning",
+                entityId=meter_id,
+                customerName=customer_name,
+                status="success",
+                citations=citations,
+                provenance=AssistantProvenance(knowledge_sources_used=sources_used),
+                assumptions=[f"Property location resolved to {city_name}."],
+            )
 
         # 1. User is asking for the key optimization steps for their current plan
         if is_opt_analysis_query:

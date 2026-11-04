@@ -222,6 +222,13 @@ class ApiClient {
       params
     );
   }
+
+  public async delete<T>(
+    path: string,
+    params?: Record<string, string | number | boolean | undefined | null>
+  ): Promise<T> {
+    return this.request<T>(path, { method: 'DELETE' }, params);
+  }
 }
 
 export const apiClient = new ApiClient();
