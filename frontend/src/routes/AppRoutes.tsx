@@ -16,6 +16,7 @@ import { ProfilePage } from '../pages/ProfilePage';
 import { CustomerBillModelPage } from '../pages/CustomerBillModelPage';
 import { ModelWorkbenchPage } from '../pages/ModelWorkbenchPage';
 import { GovernmentSegmentationPage } from '../pages/GovernmentSegmentationPage';
+import { ComplaintCentrePage } from '../pages/ComplaintCentrePage';
 import { usePersona } from '../context';
 
 const PersonaCustomerSegmentationPage: React.FC = () => {
@@ -41,6 +42,8 @@ export const AppRoutes: React.FC = () => {
         {/* Persona Navigation Tabs */}
         <Route path="/app" element={<PersonaDashboardPage />} />
         <Route path="/app/historical" element={<HistoricalAnalysisPage />} />
+        <Route path="/app/complaints" element={<ComplaintCentrePage />} />
+        <Route path="/complaints" element={<Navigate to="/app/complaints" replace />} />
         <Route path="/app/customers" element={<PersonaCustomerSegmentationPage />} />
         <Route path="/app/government/segmentation" element={<Navigate to="/app/customers" replace />} />
         <Route path="/app/health" element={<Navigate to="/health" replace />} />

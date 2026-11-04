@@ -18,6 +18,7 @@ import {
   PieChart,
   ShieldAlert,
   Cpu,
+  LifeBuoy,
 } from 'lucide-react';
 
 export const Sidebar: React.FC = () => {
@@ -73,6 +74,15 @@ export const Sidebar: React.FC = () => {
             path: '/app/customers',
             label: 'Customer Segmentation',
             icon: <PieChart size={18} />,
+          },
+        ]
+      : []),
+    ...(currentPersona === 'household' || !currentPersona
+      ? [
+          {
+            path: '/app/complaints',
+            label: 'Complaint Centre',
+            icon: <LifeBuoy size={18} />,
           },
         ]
       : []),

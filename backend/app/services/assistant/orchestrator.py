@@ -402,6 +402,85 @@ class ResidentialAssistantOrchestrator:
             return min(complex_timeout, 14.0)
         return min(base, 10.0)
 
+    def _check_complaint_intent(
+        self,
+        prompt: str,
+        meter_id: str,
+        customer_name: str,
+    ) -> dict[str, Any] | None:
+        """Route complaints and service disputes to Complaint Centre without in-chat registration."""
+        p = prompt.lower()
+        complaint_triggers = [
+            "complaint", "complain", "grievance", "dispute", "file a report", "lodge a complaint",
+            "raise a complaint", "register a complaint", "report an outage", "report a power cut",
+            "report a fault", "report sparking", "report shock", "burning smell",
+            "report voltage", "faulty meter", "bill dispute", "report to",
+        ]
+        is_complaint = any(t in p for t in complaint_triggers)
+        if not is_complaint:
+            if ("fluctuat" in p or "outage" in p or "power cut" in p or "sparking" in p) and any(w in p for w in ["report", "raise", "file", "register", "action"]):
+                is_complaint = True
+
+        if not is_complaint:
+            return None
+
+        # Determine best matching category
+        if any(w in p for w in ["spark", "smoke", "shock", "burning", "fire", "leakage", "hazard"]):
+            cat_label = "Electrical Safety Concerns"
+            guidance = "describe the exact hazard location, whether active sparking or burning smell is present, and if anyone was affected."
+            safety_banner = (
+                "\n\n> ⚠️ **Urgent Safety Precaution:** If you observe active sparking, burning smells, or electric shock, "
+                "stay clear of the hazard immediately and contact emergency services or a licensed electrical professional."
+            )
+        elif any(w in p for w in ["outage", "blackout", "no power", "power cut", "cut", "interrupted", "tripping"]):
+            cat_label = "Power Supply Interruption"
+            guidance = "specify when the interruption started, whether power is still unavailable, and if the entire household is affected."
+            safety_banner = ""
+        elif any(w in p for w in ["voltage", "fluctuat", "flicker", "surge", "dim lights"]):
+            cat_label = "Voltage Fluctuation & Power Quality"
+            guidance = "mention when the fluctuations started, whether it is continuous or intermittent, and which rooms or appliances are affected."
+            safety_banner = ""
+        elif any(w in p for w in ["meter", "reading", "display", "tamper", "meter faulty"]):
+            cat_label = "Meter & Meter Reading Issues"
+            guidance = "describe the observed discrepancy, when it started, and whether the digital display is readable."
+            safety_banner = ""
+        elif any(w in p for w in ["bill", "tariff", "overcharge", "dispute", "charged twice"]):
+            cat_label = "Billing & Consumption Issues"
+            guidance = "specify the disputed billing cycle month, the billed amount, and why you believe there is a discrepancy."
+            safety_banner = ""
+        elif any(w in p for w in ["solar", "inverter", "pv", "generation drop"]):
+            cat_label = "Solar & Distributed Energy Issues"
+            guidance = "note any inverter fault codes displayed and when the drop in generation was first observed."
+            safety_banner = ""
+        elif any(w in p for w in ["ev", "charger", "charging", "vehicle"]):
+            cat_label = "EV Charging Infrastructure Issues"
+            guidance = "describe your charger rating and whether the breaker trips immediately upon plugging in."
+            safety_banner = ""
+        else:
+            cat_label = "Other Electrical & Utility Issues"
+            guidance = "provide a summary title and detailed description of the service issue."
+            safety_banner = ""
+
+        answer_text = (
+            f"You can register this official issue through the **Complaint Centre** under **{cat_label}**.{safety_banner}\n\n"
+            "**How to register and track:**\n"
+            "1. Open the [Complaint Centre](/app/complaints) tab from the navigation sidebar.\n"
+            f"2. Click **Register a New Complaint** and select **{cat_label}**.\n"
+            f"3. Fill in the required details ({guidance}).\n"
+            "4. Submit for automated AI validation against your meter telemetry.\n\n"
+            "Once submitted, our **Complaint Validator Agent** evaluates the issue against your smart meter records, "
+            "and valid or inconclusive issues proceed to **Severity Scoring** with full tracking in your history."
+        )
+
+        return {
+            "answer": answer_text,
+            "persona": "household",
+            "entityId": meter_id,
+            "customerName": customer_name,
+            "status": "success",
+            "isLlmGenerated": False,
+        }
+
     def answer_query(
         self,
         prompt: str,
@@ -485,6 +564,11 @@ class ResidentialAssistantOrchestrator:
         clean_user_prompt = prompt.strip()
         if len(clean_user_prompt) > 2000:
             clean_user_prompt = clean_user_prompt[:2000]
+
+        # Early check for Complaint Registration / Grievance Filing intent
+        complaint_routing = self._check_complaint_intent(clean_user_prompt, meter_id, customer_name)
+        if complaint_routing:
+            return complaint_routing
 
         # Resolve dialogue state, tracking conversational continuity, affirmative answers, and anaphora
         resolved_state = resolve_dialogue_context(

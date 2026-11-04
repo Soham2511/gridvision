@@ -18,6 +18,7 @@ from app.api.v1.assistant import bp as assistant_bp
 from app.api.v1.models import bp as models_bp
 from app.api.v1.segmentation import bp as segmentation_bp
 from app.api.v1.residential_features import bp as residential_features_bp
+from app.api.v1.complaints import bp as complaints_bp
 
 api_v1_bp = Blueprint("api_v1", __name__)
 
@@ -35,3 +36,4 @@ api_v1_bp.register_blueprint(assistant_bp)
 api_v1_bp.register_blueprint(models_bp)
 api_v1_bp.register_blueprint(segmentation_bp)
 api_v1_bp.register_blueprint(residential_features_bp)
+api_v1_bp.register_blueprint(complaints_bp)

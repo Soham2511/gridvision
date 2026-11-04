@@ -17,6 +17,7 @@ from app.infrastructure.database.models.rag import (
     DocumentChunkModel,
     RAGQueryAuditModel,
 )
+from app.infrastructure.database.models.complaint import ComplaintModel
 
 __all__ = [
     "Base",
@@ -32,4 +33,5 @@ __all__ = [
     "ReferenceAuditLogModel",
     "DocumentChunkModel",
     "RAGQueryAuditModel",
+    "ComplaintModel",
 ]

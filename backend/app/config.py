@@ -93,6 +93,7 @@ class BaseConfig:
     CUSTOMER_TARIFF_INR_PER_KWH = float(
         os.getenv("CUSTOMER_TARIFF_INR_PER_KWH", "10.0")
     )
+    CUSTOMER_CARE_PHONE = os.getenv("CUSTOMER_CARE_PHONE", None)
     CUSTOMER_GOLD_DATASET_PATH = Path(
         os.getenv(
             "CUSTOMER_GOLD_DATASET_PATH",

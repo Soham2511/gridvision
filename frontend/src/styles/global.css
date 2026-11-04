@@ -1,4 +1,5 @@
 @import './variables.css';
+@import './complaints.css';
 
 /* CSS Reset & Base */
 *, *::before, *::after {

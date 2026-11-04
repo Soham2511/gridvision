@@ -116,3 +116,83 @@ class DuckDBAnalyticalAdapter:
             return None, None, 0
         finally:
             conn.close()
+
+    def query_gold_monthly_billing(
+        self,
+        parquet_path: Path | str,
+        entity_id: int,
+        month_start: str,
+    ) -> dict[str, Any] | None:
+        """Query gold dataset for an entity's monthly billing and consumption record."""
+        path_str = str(parquet_path).replace("\\", "/")
+        sql = f"""
+            SELECT DISTINCT
+                entity_id,
+                month_start::VARCHAR AS month_start,
+                target_month_kwh,
+                target_bill_inr,
+                prior_month_kwh,
+                coverage_ratio,
+                observed_hours,
+                expected_hours,
+                id_grid_coarse
+            FROM '{path_str}'
+            WHERE entity_id = ? AND month_start = ?::DATE
+            LIMIT 1
+        """
+        conn = self._get_connection()
+        try:
+            res = conn.execute(sql, [entity_id, month_start]).df()
+            if res.empty:
+                return None
+            row = res.iloc[0]
+            return {
+                "entity_id": int(row["entity_id"]),
+                "month_start": str(row["month_start"]),
+                "target_month_kwh": float(row["target_month_kwh"]),
+                "target_bill_inr": float(row["target_bill_inr"]),
+                "prior_month_kwh": float(row["prior_month_kwh"]) if pd.notna(row["prior_month_kwh"]) else None,
+                "coverage_ratio": float(row["coverage_ratio"]),
+                "observed_hours": int(row["observed_hours"]),
+                "expected_hours": int(row["expected_hours"]),
+                "id_grid_coarse": int(row["id_grid_coarse"]),
+            }
+        except Exception as exc:
+            logger.error("DuckDB gold billing query failed for entity %s, month %s: %s", entity_id, month_start, exc)
+            return None
+        finally:
+            conn.close()
+
+    def query_grid_feeder_status(
+        self,
+        parquet_path: Path | str,
+        id_grid_coarse: int,
+        start_time: str,
+        end_time: str,
+    ) -> dict[str, Any] | None:
+        """Query feeder level hourly energy to check for regional outages."""
+        path_str = str(parquet_path).replace("\\", "/")
+        sql = f"""
+            SELECT 
+                COUNT(*) AS interval_count,
+                AVG(total_normalized_building_energy_kwh) AS avg_feeder_kwh,
+                MIN(total_normalized_building_energy_kwh) AS min_feeder_kwh
+            FROM '{path_str}'
+            WHERE "id.grid.coarse" = ? AND "timestamp" >= ?::TIMESTAMP AND "timestamp" <= ?::TIMESTAMP
+        """
+        conn = self._get_connection()
+        try:
+            res = conn.execute(sql, [id_grid_coarse, start_time, end_time]).fetchone()
+            if not res or res[0] is None or res[0] == 0:
+                return None
+            return {
+                "id_grid_coarse": id_grid_coarse,
+                "interval_count": int(res[0]),
+                "avg_feeder_kwh": float(res[1]) if res[1] is not None else 0.0,
+                "min_feeder_kwh": float(res[2]) if res[2] is not None else 0.0,
+            }
+        except Exception as exc:
+            logger.error("DuckDB grid feeder status query failed for grid %s: %s", id_grid_coarse, exc)
+            return None
+        finally:
+            conn.close()
