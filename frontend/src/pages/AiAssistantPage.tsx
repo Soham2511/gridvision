@@ -47,7 +47,7 @@ export const AiAssistantPage: React.FC = () => {
     {
       id: 'init-1',
       sender: 'assistant',
-      text: `Hello! I am GridVision Assistant, operating in **${persona.toUpperCase()}** scope for **${activeEntity}**. How can I help you analyze telemetry, forecast trends, or explain tariff calculations today?`,
+      text: `I can answer deterministically when an approved source is available for the selected ${persona} demo context. No approved telemetry source is currently configured, so I will not infer consumption, tariffs, forecasts, or anomaly causes.`,
       timestamp: 'Just now',
     },
   ]);
@@ -124,7 +124,7 @@ export const AiAssistantPage: React.FC = () => {
               AI Energy Assistant
             </h2>
             <p style={{ fontSize: '0.82rem', color: 'var(--gv-text-secondary)', margin: '0.2rem 0 0 0' }}>
-              Conversational intelligence grounded in verified historical data and machine learning telemetry ({persona.toUpperCase()} scope).
+              Deterministic assistant for the selected {persona.toUpperCase()} demo context. Persona selection is not identity, and answers are unavailable when approved evidence is not configured.
             </p>
           </div>
         </div>

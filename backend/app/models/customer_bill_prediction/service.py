@@ -184,6 +184,24 @@ class CustomerBillPredictionService:
             summary["error"] = model_error
         return summary
 
+    def get_source_metadata(self, record_type: str) -> dict[str, Any]:
+        """Describe the approved historical source behind a customer result."""
+        frame = self._load_frame()
+        metadata = self._load_metadata()
+        dataset = metadata.get("dataset", {})
+        return {
+            "sourceId": "customer_gold",
+            "dataset": dataset.get("dataset_name", "customer_gold"),
+            "datasetVersion": dataset.get("dataset_version", "untracked"),
+            "recordType": record_type,
+            "period": {
+                "startMonth": pd.Timestamp(frame["month_start"].min()).strftime("%Y-%m"),
+                "endMonth": pd.Timestamp(frame["month_start"].max()).strftime("%Y-%m"),
+            },
+            "units": "kWh",
+            "isLiveTelemetry": False,
+        }
+
     def get_model_catalog(
         self, forecast_status: dict[str, dict[str, Any]] | None = None
     ) -> list[dict[str, Any]]:

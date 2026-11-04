@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import deque
+import json
 from pathlib import Path
 from typing import Any
 
@@ -37,9 +38,13 @@ class TrainedForecastProvider(BaseModelProvider):
         model_alias: str = "champion",
         commercial_model_alias: str | None = None,
         government_model_alias: str | None = None,
+        commercial_metadata: Path | None = None,
     ) -> None:
         self.customer_provider = customer_provider
         self.commercial_data = Path(commercial_data)
+        self.commercial_metadata = (
+            Path(commercial_metadata) if commercial_metadata is not None else None
+        )
         self.commercial_model_path = Path(commercial_model)
         self.government_data = Path(government_data)
         self.government_model_path = Path(government_model)
@@ -76,6 +81,40 @@ class TrainedForecastProvider(BaseModelProvider):
             return connection.execute(query.format(path=self._sql_path(path))).fetchdf()
         finally:
             connection.close()
+
+    def get_commercial_source_metadata(self) -> dict[str, Any]:
+        """Read the registered version for the existing Commercial Gold table."""
+        if self.commercial_metadata is None or not self.commercial_metadata.is_file():
+            raise FileNotFoundError("Commercial Gold dataset metadata is unavailable.")
+        try:
+            metadata = json.loads(self.commercial_metadata.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ValueError("Commercial Gold dataset metadata is invalid.") from exc
+        if metadata.get("dataset_name") != "commercial_gold":
+            raise ValueError("Commercial Gold metadata identifies a different dataset.")
+        return {
+            "sourceId": "commercial_gold",
+            "dataset": "commercial_gold",
+            "datasetVersion": metadata.get("dataset_version", "untracked"),
+            "units": "kWh",
+            "isLiveTelemetry": False,
+        }
+
+    def get_government_source_metadata(self) -> dict[str, Any]:
+        """Describe the configured 2018 prepared grid history source."""
+        actuals, _ = self._get_government_observations()
+        return {
+            "sourceId": "government_2018",
+            "dataset": self.government_data.stem,
+            # This prepared table has no source-version manifest in the repo.
+            "datasetVersion": "untracked",
+            "period": {
+                "start": pd.Timestamp(actuals["target_timestamp"].min()).isoformat(),
+                "end": pd.Timestamp(actuals["target_timestamp"].max()).isoformat(),
+            },
+            "sourceUnits": "kWh",
+            "isLiveTelemetry": False,
+        }
 
     def get_commercial_buildings(self) -> list[dict[str, Any]]:
         if self._commercial_entities is None:
@@ -118,8 +157,10 @@ class TrainedForecastProvider(BaseModelProvider):
                     "longitude": (
                         float(row.longitude) if pd.notna(row.longitude) else None
                     ),
-                    "recentDemandKwh": 0.0,
-                    "predictedDemandKwh": 0.0,
+                    # Gold provides historical target rows, not a current meter
+                    # reading or a prediction generated at catalog time.
+                    "recentDemandKwh": None,
+                    "predictedDemandKwh": None,
                     "lastTimestamp": row.last_timestamp.isoformat(),
                 }
                 for row in rows.itertuples(index=False)
@@ -144,69 +185,113 @@ class TrainedForecastProvider(BaseModelProvider):
             raise InvalidInputError(
                 f"Unsupported commercial historical time range: {time_range}"
             )
-        if entity_id is None:
-            raise InvalidInputError("A commercial building ID is required.")
-        try:
-            numeric_id = int(entity_id)
-        except (TypeError, ValueError) as exc:
-            raise InvalidInputError(
-                f"Invalid commercial building ID: {entity_id}"
-            ) from exc
+        numeric_id = None
+        if entity_id is not None:
+            try:
+                numeric_id = int(entity_id)
+            except (TypeError, ValueError) as exc:
+                raise InvalidInputError(
+                    f"Invalid commercial building ID: {entity_id}"
+                ) from exc
 
-        rows = self._query(
-            self.commercial_data,
-            f"""SELECT target_timestamp, target_energy
-                FROM read_parquet({{path}})
-                WHERE OBJECTID = {numeric_id}
-                  AND forecast_horizon_hours = 1
-                ORDER BY target_timestamp""",
-        )
-        if rows.empty:
-            raise ResourceNotFoundError(
-                f"No Commercial Gold history is available for building {numeric_id}."
+        if numeric_id is None:
+            period_filter = ""
+            if selected_range != "ALL":
+                latest = self._query(
+                    self.commercial_data,
+                    """SELECT max(target_timestamp) AS latest
+                       FROM read_parquet({path})
+                       WHERE forecast_horizon_hours = 1""",
+                ).iloc[0]["latest"]
+                if pd.isna(latest):
+                    raise ResourceNotFoundError("No Commercial Gold history is available.")
+                first_day = (
+                    pd.Timestamp(latest).normalize()
+                    - pd.Timedelta(days=range_days[selected_range] - 1)
+                )
+                period_filter = (
+                    f"AND target_timestamp >= TIMESTAMP '{first_day:%Y-%m-%d %H:%M:%S}'"
+                )
+            daily = self._query(
+                self.commercial_data,
+                f"""WITH hourly AS (
+                       SELECT target_timestamp, sum(target_energy) AS energy
+                       FROM read_parquet({{path}})
+                       WHERE forecast_horizon_hours = 1
+                         AND target_energy IS NOT NULL {period_filter}
+                       GROUP BY target_timestamp
+                   )
+                   SELECT CAST(target_timestamp AS DATE) AS day,
+                          avg(energy) AS avgDemand,
+                          sum(energy) AS totalConsumption,
+                          max(energy) AS peakDemand,
+                          arg_max(target_timestamp, energy) AS peakTimestamp
+                   FROM hourly
+                   GROUP BY CAST(target_timestamp AS DATE)
+                   ORDER BY day""",
             )
-        rows["target_timestamp"] = pd.to_datetime(rows["target_timestamp"])
-        rows["target_energy"] = pd.to_numeric(
-            rows["target_energy"], errors="coerce"
-        )
-        rows = rows.dropna(subset=["target_timestamp", "target_energy"])
-        rows = rows.loc[np.isfinite(rows["target_energy"])]
-        rows = rows.drop_duplicates("target_timestamp", keep="last")
-        if rows.empty:
-            raise ResourceNotFoundError(
-                f"No valid Commercial Gold history is available for building {numeric_id}."
+            entity_count_query = self._query(
+                self.commercial_data,
+                f"""SELECT count(DISTINCT OBJECTID) AS entity_count
+                    FROM read_parquet({{path}})
+                    WHERE forecast_horizon_hours = 1
+                      AND target_energy IS NOT NULL {period_filter}""",
             )
-
-        latest_timestamp = pd.Timestamp(rows["target_timestamp"].max())
-        if selected_range != "ALL":
-            first_day = latest_timestamp.normalize() - pd.Timedelta(
-                days=range_days[selected_range] - 1
+            entity_count = int(entity_count_query.iloc[0]["entity_count"])
+        else:
+            rows = self._query(
+                self.commercial_data,
+                f"""SELECT target_timestamp, target_energy
+                    FROM read_parquet({{path}})
+                    WHERE OBJECTID = {numeric_id}
+                      AND forecast_horizon_hours = 1
+                    ORDER BY target_timestamp""",
             )
-            rows = rows.loc[rows["target_timestamp"] >= first_day]
-        if rows.empty:
-            raise ResourceNotFoundError(
-                f"No observations fall in the selected {time_range} range for building {numeric_id}."
+            if rows.empty:
+                raise ResourceNotFoundError(
+                    f"No Commercial Gold history is available for building {numeric_id}."
+                )
+            rows["target_timestamp"] = pd.to_datetime(rows["target_timestamp"])
+            rows["target_energy"] = pd.to_numeric(rows["target_energy"], errors="coerce")
+            rows = rows.dropna(subset=["target_timestamp", "target_energy"])
+            rows = rows.loc[np.isfinite(rows["target_energy"])]
+            rows = rows.drop_duplicates("target_timestamp", keep="last")
+            if rows.empty:
+                raise ResourceNotFoundError(
+                    f"No valid Commercial Gold history is available for building {numeric_id}."
+                )
+            latest_timestamp = pd.Timestamp(rows["target_timestamp"].max())
+            if selected_range != "ALL":
+                first_day = latest_timestamp.normalize() - pd.Timedelta(
+                    days=range_days[selected_range] - 1
+                )
+                rows = rows.loc[rows["target_timestamp"] >= first_day]
+            if rows.empty:
+                raise ResourceNotFoundError(
+                    f"No observations fall in the selected {time_range} range for building {numeric_id}."
+                )
+            rows["day"] = rows["target_timestamp"].dt.normalize()
+            daily = (
+                rows.groupby("day", as_index=False)
+                .agg(
+                    avgDemand=("target_energy", "mean"),
+                    totalConsumption=("target_energy", "sum"),
+                )
+                .sort_values("day")
             )
-
-        rows["day"] = rows["target_timestamp"].dt.normalize()
-        daily = (
-            rows.groupby("day", as_index=False)
-            .agg(
-                avgDemand=("target_energy", "mean"),
-                totalConsumption=("target_energy", "sum"),
+            daily_peaks = rows.loc[
+                rows.groupby("day")["target_energy"].idxmax(),
+                ["day", "target_energy", "target_timestamp"],
+            ].rename(
+                columns={
+                    "target_energy": "peakDemand",
+                    "target_timestamp": "peakTimestamp",
+                }
             )
-            .sort_values("day")
-        )
-        daily_peaks = rows.loc[
-            rows.groupby("day")["target_energy"].idxmax(),
-            ["day", "target_energy", "target_timestamp"],
-        ].rename(
-            columns={
-                "target_energy": "peakDemand",
-                "target_timestamp": "peakTimestamp",
-            }
-        )
-        daily = daily.merge(daily_peaks, on="day", validate="one_to_one")
+            daily = daily.merge(daily_peaks, on="day", validate="one_to_one")
+            entity_count = None
+        if daily.empty:
+            raise ResourceNotFoundError("No Commercial Gold observations are available for the selected period.")
         history_curve = [
             {
                 "date": pd.Timestamp(row.day).strftime("%d %b"),
@@ -223,7 +308,8 @@ class TrainedForecastProvider(BaseModelProvider):
         peak_row = daily.loc[daily["peakDemand"].idxmax()]
         return {
             "persona": "commercial",
-            "entityId": str(numeric_id),
+            "entityId": str(numeric_id) if numeric_id is not None else None,
+            **({"scope": "commercial_cohort", "entityCount": entity_count} if numeric_id is None else {}),
             "timeRange": selected_range,
             "daysReturned": len(history_curve),
             "startDate": pd.Timestamp(daily["day"].min()).strftime("%d %b %Y"),
@@ -241,7 +327,7 @@ class TrainedForecastProvider(BaseModelProvider):
     def get_government_historical_insights(
         self, time_range: str = "30D", entity_id: str | None = None
     ) -> dict[str, Any]:
-        """Return historical daily rollups from all available Government grids."""
+        """Return historical daily rollups for a selected grid or all grids."""
         selected_range = time_range.upper()
         range_days = {"30D": 30, "90D": 90, "1Y": 365}
         if selected_range not in {*range_days, "ALL"}:
@@ -249,6 +335,19 @@ class TrainedForecastProvider(BaseModelProvider):
                 f"Unsupported Government historical time range: {time_range}"
             )
         actuals, _ = self._get_government_observations()
+        selected_grid = None
+        if entity_id is not None:
+            try:
+                selected_grid = int(entity_id)
+            except (TypeError, ValueError) as exc:
+                raise InvalidInputError(
+                    f"Invalid Government grid ID: {entity_id}"
+                ) from exc
+            actuals = actuals.loc[actuals["grid_id"] == selected_grid]
+            if actuals.empty:
+                raise ResourceNotFoundError(
+                    f"Government grid {selected_grid} has no historical observations."
+                )
         latest_timestamp = pd.Timestamp(actuals["target_timestamp"].max())
         first_timestamp = (
             latest_timestamp.normalize()
@@ -303,7 +402,8 @@ class TrainedForecastProvider(BaseModelProvider):
         average_daily_demand = float(daily["avgDemand"].mean()) / 1000
         return {
             "persona": "government",
-            "entityId": "system-wide",
+            "entityId": str(selected_grid) if selected_grid is not None else "system-wide",
+            "scope": "grid" if selected_grid is not None else "system-wide",
             "timeRange": selected_range,
             "daysReturned": len(history_curve),
             "startDate": pd.Timestamp(daily["day"].min()).strftime("%d %b %Y"),
@@ -1109,7 +1209,7 @@ class TrainedForecastProvider(BaseModelProvider):
                     "siteId": str(int(row.grid_id)),
                     "buildingCount": int(row.building_count or 0),
                     "totalDemandKwh": float(row.total_kwh or 0),
-                    "predictedDemandKwh": float(row.total_kwh or 0),
+                    "predictedDemandKwh": None,
                     "peakHourKwh": float(row.peak_kwh or 0),
                     "shareOfTotalPct": round(float(row.share_pct or 0), 3),
                     "season": "Historical 2018",

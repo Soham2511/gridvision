@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { usePersona } from '../context';
+import { aiLayerService, NotificationRecord } from '../services/aiLayerService';
 import {
   Bell,
   Calendar,
@@ -19,8 +20,54 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   isAdmin: propIsAdmin,
 }) => {
   const [showNotifications, setShowNotifications] = useState(false);
+  const [notifications, setNotifications] = useState<NotificationRecord[]>([]);
   const location = useLocation();
-  const { currentPersona } = usePersona();
+  const { currentPersona, activeEntity } = usePersona();
+  const persona = currentPersona ?? 'household';
+  const entityId = persona === 'household' || persona === 'commercial' ? activeEntity : undefined;
+
+  const refreshNotifications = useCallback(async () => {
+    try {
+      const stored = await aiLayerService.listNotifications(persona, entityId);
+      setNotifications([...stored.items].sort(
+        (a, b) => Date.parse(b.created_at) - Date.parse(a.created_at),
+      ));
+    } catch {
+      setNotifications([]);
+    }
+  }, [persona, entityId]);
+
+  useEffect(() => {
+    let inFlight = false;
+    const refreshWhenVisible = async () => {
+      if (inFlight || document.visibilityState === 'hidden') return;
+      inFlight = true;
+      try {
+        await refreshNotifications();
+      } finally {
+        inFlight = false;
+      }
+    };
+
+    void refreshWhenVisible();
+    const intervalId = window.setInterval(() => void refreshWhenVisible(), 5_000);
+    window.addEventListener('focus', refreshWhenVisible);
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', refreshWhenVisible);
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
+    };
+  }, [refreshNotifications]);
+
+  const markNotificationRead = async (notificationId: string) => {
+    try {
+      await aiLayerService.markRead(notificationId, persona, entityId);
+    } catch {
+      return;
+    }
+    await refreshNotifications();
+  };
 
   const isPlatformScope =
     location.pathname === '/' ||
@@ -56,29 +103,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
     pageLabel = 'Actionable Insights';
   }
 
-  const notifications = [
-    {
-      id: 'notif-1',
-      title: 'Peak Alert Notice',
-      message: 'Thursday 18:30 projected demand exceeds 88% capacity limit.',
-      time: '12m ago',
-      type: 'warning',
-    },
-    {
-      id: 'notif-2',
-      title: 'North Substation Anomaly',
-      message: 'Sudden +42.5% spike detected at SUB-NORTH-104.',
-      time: '34m ago',
-      type: 'danger',
-    },
-    {
-      id: 'notif-3',
-      title: 'Airflow Batch Sync Simulated',
-      message: 'Telemetry feature cache refreshed with mock baseline.',
-      time: '1h ago',
-      type: 'success',
-    },
-  ];
+  const unreadCount = notifications.filter((notification) => !notification.read_at).length;
 
   return (
     <header
@@ -175,7 +200,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
             title="System Notifications"
           >
             <Bell size={17} />
-            <span
+            {unreadCount > 0 && <span
               style={{
                 position: 'absolute',
                 top: '-3px',
@@ -193,8 +218,8 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
                 border: '2px solid #FFFFFF',
               }}
             >
-              3
-            </span>
+              {unreadCount > 9 ? '9+' : unreadCount}
+            </span>}
           </button>
 
           {/* Notifications Dropdown Drawer */}
@@ -227,17 +252,17 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem' }}>
-                {notifications.map((n) => (
+                {notifications.filter((notification) => !notification.read_at).slice(0, 5).map((n) => (
                   <div
-                    key={n.id}
+                    key={n.notification_id}
                     style={{
                       padding: '0.6rem 0.75rem',
                       borderRadius: 'var(--gv-radius-md)',
                       background: 'var(--gv-bg-surface-subtle)',
                       borderLeft: `3px solid ${
-                        n.type === 'danger'
+                        n.notification_type === 'anomaly' || n.notification_type === 'danger'
                           ? 'var(--gv-status-danger)'
-                          : n.type === 'warning'
+                          : n.notification_type === 'warning'
                           ? 'var(--gv-color-energy-amber)'
                           : 'var(--gv-color-smart-teal)'
                       }`,
@@ -248,20 +273,25 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
                         {n.title}
                       </span>
                       <span style={{ fontSize: '0.65rem', color: 'var(--gv-text-muted)' }}>
-                        {n.time}
+                        {new Date(n.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </span>
                     </div>
                     <p style={{ fontSize: '0.72rem', color: 'var(--gv-text-secondary)', lineHeight: 1.35 }}>
-                      {n.message}
+                      {n.body}
                     </p>
+                    <button type="button" onClick={() => void markNotificationRead(n.notification_id)} style={{ fontSize: '0.68rem', color: 'var(--gv-color-grid-blue)', marginTop: '0.35rem' }}>Dismiss</button>
                   </div>
                 ))}
+                {unreadCount === 0 && <p className="gv-text-subtle">No new alerts or activity.</p>}
               </div>
 
               <div style={{ marginTop: '0.75rem', textAlign: 'center', borderTop: '1px solid var(--gv-border-subtle)', paddingTop: '0.5rem' }}>
                 <span style={{ fontSize: '0.7rem', color: 'var(--gv-text-muted)' }}>
-                  Simulated telemetry notifications
+                  Alerts and activity are shared with Notifications.
                 </span>
+              </div>
+              <div style={{ marginTop: '0.6rem', textAlign: 'center' }}>
+                <Link to="/app/notifications" onClick={() => setShowNotifications(false)} style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--gv-color-grid-blue)' }}>View all notifications</Link>
               </div>
             </div>
           )}

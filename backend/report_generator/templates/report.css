@@ -1,0 +1,28 @@
+:root { color-scheme: light; --ink: #172033; --muted: #667085; --line: #dce2ea; --accent: #175cd3; --wash: #f4f7fb; }
+* { box-sizing: border-box; }
+body { margin: 0; padding: 32px 18px; background: #eef2f7; color: var(--ink); font: 15px/1.6 Inter, ui-sans-serif, system-ui, -apple-system, sans-serif; }
+.report { max-width: 980px; margin: auto; padding: 56px 64px; background: white; box-shadow: 0 12px 40px #17203312; }
+.cover { padding: 12px 0 32px; border-bottom: 2px solid var(--ink); }
+.eyebrow { color: var(--accent); font-size: 11px; font-weight: 750; letter-spacing: .15em; }
+h1 { max-width: 760px; margin: 18px 0 8px; font-size: clamp(32px, 5vw, 48px); line-height: 1.12; letter-spacing: -.035em; }
+h2 { margin: 0 0 14px; font-size: 21px; letter-spacing: -.015em; }
+h3 { font-size: 15px; }
+.subtitle { color: #344054; font-size: 19px; }
+.generated, .method, .source, footer { color: var(--muted); font-size: 12px; }
+section { margin: 32px 0; break-inside: avoid; }
+.summary { padding: 22px 24px; border-left: 4px solid var(--accent); background: var(--wash); }
+.metric-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; }
+.metric { min-width: 0; padding: 16px; border: 1px solid var(--line); border-radius: 8px; break-inside: avoid; }
+.metric h3 { margin: 0 0 8px; }
+.value { margin: 0; font-size: 22px; font-weight: 700; overflow-wrap: anywhere; }
+.value span { color: var(--muted); font-size: 13px; font-weight: 500; }
+.method, .source { margin: 8px 0 0; overflow-wrap: anywhere; }
+.table-wrap { max-width: 100%; overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { padding: 9px 10px; border: 1px solid var(--line); text-align: left; overflow-wrap: anywhere; }
+th { background: var(--wash); }
+li { margin: 6px 0; }
+.limitations { color: #475467; }
+footer { margin-top: 48px; padding-top: 14px; border-top: 1px solid var(--line); }
+@media print { body { padding: 0; background: white; } .report { max-width: none; padding: 12mm; box-shadow: none; } h2, h3 { break-after: avoid; } tr { break-inside: avoid; } }
+@media (max-width: 640px) { body { padding: 0; } .report { padding: 28px 20px; } }

@@ -1,6 +1,6 @@
 {
   "source_profile": {
-    "path": "/mnt/d/GridVision/data/silver/synthetic_2019_silver.parquet",
+    "path": "/opt/gridvision/data/silver/synthetic_2019_silver.parquet",
     "rows": 87600000,
     "row_groups": 351,
     "columns": [

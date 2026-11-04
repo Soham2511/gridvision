@@ -1,0 +1,91 @@
+GRIDVISION INDEPENDENT DATA RETRIEVAL AGENT
+Repository audit and staged implementation record
+Revision: 2026-11-04
+Status: Steps 1-7 implemented and isolated tests pass. External identity integration and model credentials are deployment prerequisites; no company/equipment/operating-hours source exists.
+
+INDEPENDENCE
+
+The module lives in data_retrieval_agent/ and does not import backend.app.ai. It calls existing non-AI services through injected adapters. The existing root plan.txt belongs to a different AI Layer project and is preserved. Existing routes/services were not rewritten; the two integration edits add the package blueprint and service construction to existing Flask wiring. No original datasets, trained models, or ETL were changed by this module.
+
+1. AUDIT FINDINGS
+
+- Flask app factory: backend/app/__init__.py. API v1 aggregate: backend/app/api/v1/__init__.py. Existing API uses Pydantic v2, JSON success/error envelopes, centralized logging, domain services and provider objects.
+- Data provider abstraction exists, but its runtime choices are unavailable or test-only deterministic sample data. SampleDataProvider is synthetic illustrative data and is never used by the new tools.
+- Existing service interfaces reused: CustomerBillPredictionService; TrainedForecastProvider; SegmentationService; AnomalyPredictionService. Model paths/provider approval gates are in backend/app/config.py and app factory. There is no new query engine or inference pipeline.
+- Data is local Parquet/Gold/prepared output; bounded commercial/government reads use existing DuckDB interface; segmentation and anomaly use existing Pandas/PyArrow service interfaces. No live database schema/connection or live telemetry interface was found.
+- No authenticated principal, identity provider, or server-side persona/entity authorization was found. The new Flask API therefore requires a host-installed `data_retrieval_identity_resolver(request)` returning AuthenticatedRequestContext; absent resolver yields 401. It never trusts request persona/entity as authorization.
+- No authoritative company profile, equipment inventory, or operating-hours source/schema exists. Company tools are not registered and responses state that source is unavailable.
+- LangGraph was already pinned in requirements-ai.txt; the runtime image now selects the new `agent` requirements group. Pydantic is provided by base requirements. Hosted and Hugging Face model clients are optional module dependencies.
+
+2. DATA-SOURCE INVENTORY AND AUTHORITATIVE RETRIEVAL
+
+| Source | Keys/schema/time | Retrieval authority and use | Limits |
+|---|---|---|---|
+| data/sample/training_sample_50000.parquet; data/bronze/training_sample_50000.parquet | 419,750,000 rows, 17 fields; OBJECTID, id.grid.coarse, optional finer grid, tract, hourly timestamp, normalized_building_energy_kwh; 2018 | Existing ETL lineage; no request-time scan | Read-only historical source; not live. |
+| data/gold/customer_gold.parquet | 3,600 rows/34 fields; entity_id/month_start/cutoff_day; monthly 2018, actual aggregates, coverage and prediction fields | CustomerBillPredictionService for profile, history and bill projection | Actual target/history distinct from projection. Requires entity grant. |
+| data/gold/commercial_gold.parquet and metadata latest.json | 19,280,900 rows/41 fields, 100 OBJECTID buildings; grid mapping, forecast origin/target/horizon 1–24; 2018 | TrainedForecastProvider for building list and bounded historical reads; model provider for forecasts | target_energy is historical label; not a company equipment/hours database. |
+| data/airflow/government/training_ready_2018.parquet and related grid_level_energy/grid_history_features | Grid aggregate keyed by coarse grid and target/origin time; 2018 | TrainedForecastProvider for region catalog/history and configured forecasts | Grid-level, never household readings. Prepared table/model copies must not be substituted. |
+| data/gold/customer_segmentation_features.parquet; data/segmentation/*.parquet | Consumer assignments/profiles, regional summaries and time profiles over 2018 observation window | SegmentationService published products | No retraining or re-clustering; row-level access requires a consumer grant. |
+| data/anomaly_prediction/synthetic_2019_normal.parquet, saved detector and run artifacts | Synthetic normal-only source and model outputs; 2019 | AnomalyPredictionService runtime | Synthetic results only; not verified fault evidence or live telemetry. Date window limited to 2019. |
+| customer bill, commercial, government model artifacts/metadata | Trained artifacts and ordered feature contracts | Existing CustomerBillPredictionService and TrainedForecastProvider only | No arbitrary artifact reads or retraining. Inference unavailable unless configured and ready. |
+
+Raw source scans are not performed per request. Missing files/entities/time coverage are unavailable/partial, never zero or demo substitutes. Parquet timestamps are timezone-naive unless otherwise specified. Full schemas and manifests remain documented in AI_LAYER_DATA_SOURCE_INVENTORY.md, which was used only as audit evidence and is not imported by runtime code.
+
+3. APPROVED TOOL INVENTORY
+
+- get_consumer_profile: Customer Gold profile for authorized residential consumer.
+- get_historical_consumption: unified entity/cohort/region history tool; persona-specific window contract.
+- get_building_details: commercial building profile from Commercial Gold.
+- get_regional_information: authorized government grid catalog, filtered to scopes.
+- get_energy_forecast: existing residential/commercial/government prediction service when model ready.
+- get_anomaly_predictions: explicit consumer IDs and bounded date window; synthetic label carried in output.
+- get_segmentation_results: existing consumer assignment, authorized regional aggregate, or government distribution.
+- get_model_metadata: allow-listed model IDs via existing metadata services.
+
+Company profile/equipment/operating hours are not registered because no authoritative source exists. Regional history/forecast/anomaly map to the unified history/forecast/anomaly tools to avoid duplicate responsibilities.
+
+4. PERSONA AND AUTHORIZATION POLICY
+
+No persona is trusted from request content. The host resolver must map verified principal to persona, permissions and entity scopes. Deny by default; tool visibility and execution both check permissions/source; handlers check persona/entity scope before service calls.
+
+- Residential: own consumer profile/history/forecast/segmentation only; anomaly only for explicitly granted IDs and labeled synthetic.
+- Commercial: assigned buildings/history/forecast; cohort history only with explicit wildcard cohort permission; company information unavailable.
+- Government: authorized region/system history, catalog and segmentation; row-level consumer data only with separate explicit consumer scope. Synthetic anomaly access requires explicit consumer grants.
+- Model metadata: allow-listed only, source availability checked.
+
+A session binds principal/persona but does not retain or restore permissions. Every request resolves a fresh context and each tool checks again.
+
+5. MODULE AND WORKFLOW
+
+Package modules: config.py, context.py, schemas.py, tools/base.py, tools/schemas.py, tools/registered.py, services/adapters.py, providers/llm_provider.py, graph.py, agent.py, memory/session_manager.py and memory/checkpointer.py, api.py, docs, evaluation dataset/harness, and tests/data_retrieval_agent. The Flask blueprint is registered under `/api/v1/data-retrieval-agent`; the package API boundary uses local error/response contracts and does not import AI Layer code.
+
+LangGraph steps: validate trusted request/session; source/permission-filter tools; coarse intent gate; LLM tool planning over only those schemas; Pydantic argument validation and handler authorization; bounded parallel independent execution; one conditional sequential follow-up round; output validation/provenance; answer generation with numeric fidelity guard; session checkpoint under opaque thread ID. Graph recursion, tool count, request timeout, date and input limits are configured. Provider retries are disabled. No SQL/Python execution is exposed.
+
+LLM options: `hosted` (OpenAI-compatible) and `huggingface`, selected through GRIDVISION_RETRIEVAL_* settings; default is disabled/no provider. LangSmith tracing is optional/off by default. Credentials are environment-provided, not committed. No RAG/vector store is introduced.
+
+6. API AND MEMORY
+
+- POST `/sessions`: start opaque owner-bound session.
+- POST `/sessions/{id}/messages`: send/continue validated message.
+- GET `/sessions/{id}`: owner-only metadata.
+- DELETE `/sessions/{id}`: clear session and graph thread.
+
+In-memory manager and LangGraph InMemorySaver enforce idle/absolute expiry and process-local session isolation; conversation history is capped. Session context includes no grants. Worker restart loses sessions; multi-worker persistence needs a separate approved backend decision.
+
+7. IMPLEMENTATION STEPS AND OUTCOME
+
+1. Audit and isolated foundation — implemented. Added config/context/schemas/docs and baseline tests. Root AI Layer plan/file preserved.
+2. Typed tool base and dynamic registry — implemented. Extensible registry, per-tool strict input and output models, source and permission filtering, in-tool auth, structured logs.
+3. Existing-service adapters/tools — implemented. Eight tools call injected services; source failures fail closed; no company placeholder, sample data, parallel ETL or model pipeline.
+4. LangGraph workflow — implemented. Intent/tool-schema filtering, multi-tool selection, bounded parallel calls, sequential follow-up, validation, response source labeling and numeric guard.
+5. Session memory — implemented. Opaque owner-bound sessions, TTL/absolute expiry, bounded history, LangGraph in-memory checkpointer and deletion on end/expiry.
+6. Flask API — implemented and blueprint registered. Existing route contracts unchanged. Identity hook deliberately fails closed because no repository identity adapter exists.
+7. Security/evaluation/docs — implemented. Tests and representative residential/commercial/government/unavailable-source cases, metric harness, source/tool/API/security docs.
+
+8. TESTING AND ACCEPTANCE
+
+Targeted command: `./.venv/bin/python -m pytest tests/data_retrieval_agent -q` — 21 passed. Python 3.10 dependency-free syntax compilation passed for the module and test Python files. LangGraph conditional follow-up and parallel tool calls were executed with InMemorySaver in a unit test; it also verifies authorization data is absent from saved checkpoint state. The missing-source path and immutable authorization scopes are covered. 13 third-party deprecation warnings came from LangSmith internals under Python 3.15. Tests focus on the isolated module; the full pre-existing backend suite and production image were not run because the active venv is Python 3.15 and lacks the project's full backend/model-serving dependency set. No hosted model credentials or actual authenticated principal adapter are available for end-to-end live retrieval validation.
+
+Evaluation dataset includes representative residential, commercial, government, company-source-unavailable, and synthetic anomaly prompts. `evaluation.py` reports tool selection accuracy, retrieval accuracy, tool execution success rate, response correctness, and unnecessary tool rate from annotated observed runs.
+
+Remaining operational prerequisites: install/test on project Python 3.10 with full backend dependencies; configure a trusted identity resolver/entity grants; configure one LLM provider/model/credentials if the feature is to be enabled; verify actual source/model health. Company tools require a new approved authoritative source before implementation. Therefore this is an implemented isolated module, but cannot be described as production-ready or authenticated end-to-end in the current repository state.

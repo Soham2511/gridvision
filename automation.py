@@ -49,6 +49,13 @@ SEGMENTATION_DAG_ID = "government_customer_segmentation"
 ANOMALY_DAG_ID = "gridvision_anomaly_training"
 DEFAULT_MODEL_NAME = "customer-bill-prediction"
 DEFAULT_ALIAS = "champion"
+AUTOMATION_APPROVED_DATA_SOURCES = (
+    "customer_gold",
+    "commercial_gold",
+    "government_2018",
+    "segmentation_2018",
+    "anomaly_synthetic_2019",
+)
 MLFLOW_HOST_PORT = os.getenv("GRIDVISION_MLFLOW_HOST_PORT", "15001")
 MLFLOW_HOST_URI = os.getenv("MLFLOW_TRACKING_URI", f"http://127.0.0.1:{MLFLOW_HOST_PORT}")
 MLFLOW_CONTAINER_URI = "http://mlflow:5001"
@@ -604,7 +611,9 @@ def _existing_dag_outputs_are_reusable(
             source_stat = source_path.stat()
             from training.customer_segmentation.config import SegmentationSettings
 
-            data_root = Path(env.get("GRIDVISION_DATA_DIR", DATA_ROOT)).expanduser()
+            data_root = Path(
+                env.get("GRIDVISION_DATA_DIR", DATA_ROOT)
+            ).expanduser().resolve()
             settings = replace(
                 SegmentationSettings.from_environment(),
                 output_dir=Path(
@@ -628,8 +637,17 @@ def _existing_dag_outputs_are_reusable(
             )
             source_profile = settings.reports_dir / "source_profile.json"
             profile = json.loads(source_profile.read_text(encoding="utf-8"))
+            expected_source_paths = {str(source_path)}
+            try:
+                source_relative_to_data = source_path.relative_to(data_root)
+            except ValueError:
+                pass
+            else:
+                expected_source_paths.add(
+                    str(Path("/opt/gridvision/data") / source_relative_to_data)
+                )
             if (
-                profile.get("source_path") != str(source_path)
+                profile.get("source_path") not in expected_source_paths
                 or profile.get("source_bytes") != source_stat.st_size
                 or profile.get("source_mtime_ns") != source_stat.st_mtime_ns
                 or profile.get("building_sample_fraction")
@@ -1159,6 +1177,18 @@ def _verify_model_catalog(
     }
 
 
+def _backend_stack_environment(env: dict[str, str]) -> dict[str, str]:
+    """Configure the backend for model and data outputs prepared by automation."""
+    stack_env = env.copy()
+    stack_env["MODEL_PROVIDER"] = "mlflow"
+    stack_env["MLFLOW_TRACKING_URI"] = MLFLOW_CONTAINER_URI
+    stack_env.setdefault(
+        "APPROVED_DATA_SOURCES",
+        ",".join(AUTOMATION_APPROVED_DATA_SOURCES),
+    )
+    return stack_env
+
+
 def _start_airflow_ui(
     airflow_command: list[str],
     env: dict[str, str],
@@ -1341,7 +1371,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     env["AIRFLOW__WEBSERVER__WEB_SERVER_HOST"] = "127.0.0.1"
     env["AIRFLOW__WEBSERVER__WEB_SERVER_PORT"] = "8081"
-    env["MLFLOW_TRACKING_URI"] = MLFLOW_HOST_URI
+    env.setdefault("GIT_PYTHON_REFRESH", "quiet")
+    env.setdefault("MLFLOW_TRACKING_URI", MLFLOW_HOST_URI)
     env.setdefault("COMMERCIAL_SILVER_DATASET", str(DATA_ROOT / "silver" / "commercial_silver.parquet"))
     env.setdefault("COMMERCIAL_GOLD_DATASET", str(DATA_ROOT / "gold" / "commercial_gold.parquet"))
     env.setdefault("COMMERCIAL_GOLD_MANIFEST", str(DATA_ROOT / "metadata" / "commercial" / "dataset_versions" / "gold" / "latest.json"))
@@ -1542,9 +1573,7 @@ def main(argv: list[str] | None = None) -> int:
             "Start Airflow scheduler and web UI",
             lambda: _start_airflow_ui(airflow_command, env, compose),
         )
-        stack_env = env.copy()
-        stack_env["MODEL_PROVIDER"] = "mlflow"
-        stack_env["MLFLOW_TRACKING_URI"] = MLFLOW_CONTAINER_URI
+        stack_env = _backend_stack_environment(env)
         run_step(
             "Build and start Flask backend and React frontend containers",
             lambda: _compose(

@@ -1,1 +1,0 @@
-{"input_rows_scored": 360000, "selected_customer_count": 10000, "anomaly_window_count": 3, "localized_event_count": 3, "affected_customer_count": 3, "anomaly_type_counts": {"spike": 3}, "event_scope_counts": {"SINGLE_CUSTOMER": 3}, "event_size_distribution": {"1 customer": 3, "2-5 customers": 0, "6-20 customers": 0, "21+ customers": 0}}

@@ -288,11 +288,17 @@ class GridVisionApplicationTests(unittest.TestCase):
             result = response.get_json()["data"]
             self.assertEqual(result["status"], "completed")
             self.assertEqual(result["events"][0]["event_scope"], "SINGLE_CUSTOMER")
+            self.assertEqual(result["sourceProvenance"], "unverified")
+            self.assertFalse(result["sourceMetadata"]["verifiedFaultEvidence"])
 
             run_id = result["run_id"]
             runs = client.get("/api/v1/models/anomaly-prediction/runs")
             self.assertEqual(runs.status_code, 200)
             self.assertEqual(runs.get_json()["data"]["items"][0]["analysis_id"], run_id)
+            self.assertEqual(
+                runs.get_json()["data"]["sourceMetadata"]["verifiedFaultEvidence"],
+                False,
+            )
             for filename, content_type in (
                 ("events.csv", "text/csv"),
                 ("anomaly_records.csv", "text/csv"),
@@ -308,6 +314,12 @@ class GridVisionApplicationTests(unittest.TestCase):
                 )
                 self.assertEqual(artifact.status_code, 200)
                 self.assertTrue(artifact.content_type.startswith(content_type))
+                self.assertEqual(
+                    artifact.headers["X-GridVision-Source-Provenance"], "unverified"
+                )
+                self.assertEqual(
+                    artifact.headers["X-GridVision-Verified-Fault-Evidence"], "false"
+                )
                 if filename == "events.geojson":
                     feature_collection = artifact.get_json()
                     self.assertEqual(

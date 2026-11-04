@@ -30,16 +30,30 @@ class HealthService:
         }
 
     def get_readiness(self) -> dict[str, Any]:
-        """Report dependency and provider readiness."""
+        """Report process readiness separately from optional source availability."""
         model_status = self.model_provider.get_model_status()
-        is_ready = model_status.get("status") == "ready"
+        data_status = (
+            self.data_provider.availability()
+            if hasattr(self.data_provider, "availability")
+            else {"status": "configured"}
+        )
+        model_ready = model_status.get("status") == "ready"
+        data_ready = data_status.get("status") in {"ready", "configured"}
 
         return {
-            "status": "ready" if is_ready else "not_ready",
+            # The Flask process can serve health and structured unavailable
+            # responses even when optional data/model sources are absent.
+            "status": "ready",
+            "optional_dependencies_ready": data_ready and model_ready,
+            "data_availability": (
+                "ready" if data_ready and model_ready else "degraded"
+            ),
             "timestamp": datetime.now().isoformat() + "Z",
             "providers": {
                 "data_provider": type(self.data_provider).__name__,
+                "data_status": data_status,
                 "model_provider": model_status.get("provider"),
+                "model_status": model_status.get("status", "unknown"),
                 "is_demo_mode": model_status.get("is_demo", False),
             },
             "models_ready": model_status.get("models_loaded", []),
@@ -47,4 +61,10 @@ class HealthService:
 
     def get_platform_health(self) -> dict[str, Any]:
         """Return platform telemetry and registry health summary."""
+        if hasattr(self.data_provider, "availability"):
+            return {
+                "availability": self.data_provider.availability(),
+                "models": self.model_provider.get_model_status(),
+                "status": "degraded",
+            }
         return self.data_provider.get_platform_health_summary()

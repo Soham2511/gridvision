@@ -17,6 +17,7 @@ import {
   Activity,
   Layers,
   RefreshCw,
+  FileJson,
 } from 'lucide-react';
 
 const mapRegistryModel = (model: RegisteredModel): ModelRegistryItem => {
@@ -200,6 +201,11 @@ export const DataModelHealthPage: React.FC = () => {
           gap: '1.75rem',
         }}
       >
+        {customerModel?.provenanceStatus === 'unverified' && (
+          <div role="status" className="gv-card" style={{ borderColor: 'var(--gv-status-warning)' }}>
+            Customer Gold metadata is diagnostic only. Its data provenance is unverified; customer records and predictions are unavailable.
+          </div>
+        )}
         {/* Page Title & Subtitle */}
         <div
           style={{
@@ -234,6 +240,26 @@ export const DataModelHealthPage: React.FC = () => {
               Monitor data availability, pipeline health and model performance across the GridVision platform.
             </p>
           </div>
+          <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            onClick={() => navigate('/developer/json-report-generator')}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              border: '1px solid #CBD5E1',
+              borderRadius: '8px',
+              background: '#FFFFFF',
+              color: '#334155',
+              padding: '0.65rem 0.9rem',
+              fontSize: '0.84rem',
+              fontWeight: 600,
+              cursor: 'pointer',
+            }}
+          >
+            <FileJson size={15} /> JSON Report Generator
+          </button>
           <button
             type="button"
             onClick={() => setRefreshKey((current) => current + 1)}
@@ -256,6 +282,7 @@ export const DataModelHealthPage: React.FC = () => {
             <RefreshCw size={15} />
             {loading ? 'Refreshing…' : 'Refresh status'}
           </button>
+          </div>
         </div>
 
         {/* Action feedback toast */}

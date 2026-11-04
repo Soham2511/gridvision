@@ -13,8 +13,8 @@ from app.config import BaseConfig, get_config
 from app.utils.logging import setup_logging
 from app.api.error_handlers import register_error_handlers
 from app.api.v1 import api_v1_bp
-from app.providers.sample_data_provider import SampleDataProvider
-from app.providers.mock_model_provider import DevelopmentModelProvider
+from app.providers.unavailable_data_provider import UnavailableDataProvider
+from app.providers.unavailable_model_provider import UnavailableModelProvider
 from app.providers.mlflow_adapter import MLflowModelAdapter
 from app.providers.trained_forecast_provider import TrainedForecastProvider
 from app.services.health_service import HealthService
@@ -23,11 +23,23 @@ from app.services.dashboard_service import DashboardService
 from app.services.peak_service import PeakDemandService
 from app.services.anomaly_service import AnomalyService
 from app.services.customer_service import CustomerService
+from app.services.customer_silver_history_service import CustomerSilverHistoryService
+from app.services.commercial_silver_history_service import CommercialSilverHistoryService
 from app.services.insight_service import InsightService
 from app.services.assistant_service import AssistantService
 from app.models.customer_bill_prediction import CustomerBillPredictionService
 from app.services.segmentation_service import SegmentationService
 from app.models.anomaly_prediction import AnomalyPredictionService
+from app.ai.application_store import AIApplicationStore
+from app.ai.persistence import SQLiteAuditRepository
+from app.ai.rag import ApprovedCorpus
+from app.ai.service import AIService
+from app.ai.storage import PrivateFileStore
+from data_retrieval_agent.agent import DataRetrievalAgent
+from data_retrieval_agent.config import AgentSettings
+from report_generator.services.llm_provider import provider_from_environment
+from report_generator.services.report_generator import JSONReportGenerator
+from report_generator.storage.report_storage import ReportRepository
 
 
 def create_app(config_class: type[BaseConfig] | None = None) -> Flask:
@@ -37,6 +49,31 @@ def create_app(config_class: type[BaseConfig] | None = None) -> Flask:
     # Load configuration
     cfg = config_class or get_config()
     app.config.from_object(cfg)
+    # These are lazy path-based objects; no files or providers are touched at startup.
+    audit_repository = SQLiteAuditRepository(app.config["AI_DATABASE_PATH"])
+    app.extensions["ai_service"] = AIService.from_config(
+        app.config, audit_repository=audit_repository
+    )
+    app.extensions["ai_application_store"] = AIApplicationStore(
+        app.config["AI_DATABASE_PATH"]
+    )
+    app.extensions["ai_private_storage"] = PrivateFileStore(
+        app.config["AI_PRIVATE_STORAGE_ROOT"],
+        forbidden_roots=(app.config["PROJECT_ROOT"] / "data", app.config["PROJECT_ROOT"] / "frontend" / "public"),
+    )
+    report_settings = app.config["REPORT_GENERATOR_SETTINGS"]
+    app.extensions["report_generator"] = JSONReportGenerator(
+        settings=report_settings,
+        provider=provider_from_environment(report_settings.provider),
+        repository=ReportRepository(app.config["AI_DATABASE_PATH"]),
+        artifact_store=app.extensions["ai_private_storage"],
+    )
+    report_identity_resolver = app.config.get("REPORT_GENERATOR_IDENTITY_RESOLVER")
+    if callable(report_identity_resolver):
+        app.extensions["report_generator_identity_resolver"] = report_identity_resolver
+    app.extensions["ai_rag_corpus"] = ApprovedCorpus(
+        [], allowed_domains=set(app.config.get("AI_ALLOWED_SOURCE_DOMAINS", ()))
+    )
 
     # Initialize logging
     setup_logging()
@@ -72,11 +109,25 @@ def create_app(config_class: type[BaseConfig] | None = None) -> Flask:
         supports_credentials=True,
     )
 
-    # Instantiate providers based on configuration
-    data_provider = SampleDataProvider()
+    # Select providers explicitly. Test fixtures are never runtime fallbacks.
+    data_provider_type = str(app.config.get("DATA_PROVIDER", "unavailable")).lower()
+    if data_provider_type == "sample" and app.testing:
+        from app.providers.sample_data_provider import SampleDataProvider
 
-    model_provider_type = app.config.get("MODEL_PROVIDER", "development").lower()
-    if model_provider_type == "mlflow":
+        data_provider = SampleDataProvider()
+    elif data_provider_type == "unavailable":
+        data_provider = UnavailableDataProvider()
+    else:
+        data_provider = UnavailableDataProvider(
+            "The configured data provider is unsupported or is restricted to isolated tests."
+        )
+
+    model_provider_type = str(app.config.get("MODEL_PROVIDER", "unavailable")).lower()
+    forecast_sources_approved = app.testing or set(
+        app.config.get("APPROVED_DATA_SOURCES", ())
+    ).issuperset({"commercial_gold", "government_2018", "customer_gold"})
+
+    if model_provider_type == "mlflow" and forecast_sources_approved:
         customer_model_provider = MLflowModelAdapter(
             tracking_uri=app.config.get("MLFLOW_TRACKING_URI"),
             model_alias=app.config.get("MLFLOW_MODEL_ALIAS", "champion"),
@@ -99,10 +150,51 @@ def create_app(config_class: type[BaseConfig] | None = None) -> Flask:
             model_alias=app.config["MLFLOW_MODEL_ALIAS"],
             commercial_model_alias=app.config["COMMERCIAL_MLFLOW_MODEL_ALIAS"],
             government_model_alias=app.config["GOVERNMENT_MLFLOW_MODEL_ALIAS"],
+            commercial_metadata=app.config["COMMERCIAL_GOLD_METADATA_PATH"],
         )
-    else:
+    elif model_provider_type == "development" and app.testing:
+        from app.providers.mock_model_provider import DevelopmentModelProvider
+
         model_provider = DevelopmentModelProvider()
         customer_model_provider = model_provider
+    else:
+        reason = (
+            "The configured forecast models are unavailable or their source provenance is not approved."
+            if model_provider_type == "mlflow"
+            else "No approved forecast model provider is configured."
+        )
+        model_provider = UnavailableModelProvider(reason)
+        customer_model_provider = model_provider
+
+    # Historical Commercial Gold access reuses the existing forecast provider's
+    # bounded SQL aggregation without enabling model inference or MLflow.
+    if isinstance(model_provider, TrainedForecastProvider):
+        commercial_history_provider = model_provider
+    else:
+        history_customer_provider = MLflowModelAdapter(
+            tracking_uri=app.config.get("MLFLOW_TRACKING_URI"),
+            model_alias=app.config.get("MLFLOW_MODEL_ALIAS", "champion"),
+            model_name=app.config.get(
+                "MLFLOW_MODEL_NAME", "customer-bill-prediction"
+            ),
+            tariff_inr_per_kwh=app.config.get(
+                "CUSTOMER_TARIFF_INR_PER_KWH", 10.0
+            ),
+        )
+        commercial_history_provider = TrainedForecastProvider(
+            customer_provider=history_customer_provider,
+            commercial_data=app.config["COMMERCIAL_FORECAST_DATA_PATH"],
+            commercial_model=app.config["COMMERCIAL_FORECAST_MODEL_PATH"],
+            government_data=app.config["GOVERNMENT_FORECAST_DATA_PATH"],
+            government_model=app.config["GOVERNMENT_FORECAST_MODEL_PATH"],
+            tracking_uri=app.config.get("MLFLOW_TRACKING_URI", ""),
+            commercial_model_name=app.config["COMMERCIAL_MLFLOW_MODEL_NAME"],
+            government_model_name=app.config["GOVERNMENT_MLFLOW_MODEL_NAME"],
+            model_alias=app.config["MLFLOW_MODEL_ALIAS"],
+            commercial_model_alias=app.config["COMMERCIAL_MLFLOW_MODEL_ALIAS"],
+            government_model_alias=app.config["GOVERNMENT_MLFLOW_MODEL_ALIAS"],
+            commercial_metadata=app.config["COMMERCIAL_GOLD_METADATA_PATH"],
+        )
 
     # Instantiate business services
     health_svc = HealthService(data_provider, model_provider)
@@ -135,7 +227,13 @@ def create_app(config_class: type[BaseConfig] | None = None) -> Flask:
 
     # Attach to app extensions
     app.extensions["data_provider"] = data_provider
+    app.extensions["data_provider_status"] = (
+        data_provider.availability()
+        if isinstance(data_provider, UnavailableDataProvider)
+        else {"status": "ready", "provider": data_provider_type}
+    )
     app.extensions["model_provider"] = model_provider
+    app.extensions["commercial_history_provider"] = commercial_history_provider
     app.extensions["health_service"] = health_svc
     app.extensions["forecast_service"] = forecast_svc
     app.extensions["dashboard_service"] = dashboard_svc
@@ -147,8 +245,48 @@ def create_app(config_class: type[BaseConfig] | None = None) -> Flask:
     app.extensions["customer_bill_prediction_service"] = (
         customer_bill_prediction_svc
     )
+    customer_silver_history_svc = CustomerSilverHistoryService(
+        app.config["CUSTOMER_SILVER_DATASET_PATH"],
+        app.config["CUSTOMER_SILVER_METADATA_PATH"],
+    )
+    app.extensions["customer_silver_history_service"] = customer_silver_history_svc
+    commercial_silver_history_svc = CommercialSilverHistoryService(
+        app.config["COMMERCIAL_SILVER_DATASET_PATH"],
+        app.config["COMMERCIAL_SILVER_METADATA_PATH"],
+    )
+    app.extensions["commercial_silver_history_service"] = commercial_silver_history_svc
     app.extensions["government_segmentation_service"] = government_segmentation_svc
     app.extensions["anomaly_prediction_service"] = anomaly_prediction_svc
+
+    retrieval_settings = AgentSettings.from_env()
+    app.extensions["data_retrieval_agent"] = DataRetrievalAgent(
+        settings=retrieval_settings,
+        services={
+            "customer_bill_prediction_service": customer_bill_prediction_svc,
+            "customer_silver_history_service": customer_silver_history_svc,
+            "commercial_silver_history_service": commercial_silver_history_svc,
+            "commercial_history_provider": commercial_history_provider,
+            "model_provider": model_provider,
+            "government_segmentation_service": government_segmentation_svc,
+            "anomaly_prediction_service": anomaly_prediction_svc,
+            "customer_gold_path": app.config["CUSTOMER_GOLD_DATASET_PATH"],
+            "customer_silver_path": app.config["CUSTOMER_SILVER_DATASET_PATH"],
+            "customer_silver_metadata_path": app.config["CUSTOMER_SILVER_METADATA_PATH"],
+            "commercial_silver_path": app.config["COMMERCIAL_SILVER_DATASET_PATH"],
+            "commercial_silver_metadata_path": app.config["COMMERCIAL_SILVER_METADATA_PATH"],
+            "customer_metadata_path": app.config["CUSTOMER_MODEL_METADATA_PATH"],
+            "commercial_gold_path": app.config["COMMERCIAL_FORECAST_DATA_PATH"],
+            "commercial_metadata_path": app.config["COMMERCIAL_GOLD_METADATA_PATH"],
+            "government_data_path": app.config["GOVERNMENT_FORECAST_DATA_PATH"],
+            "segmentation_output_dir": app.config["SEGMENTATION_OUTPUT_DIR"],
+            "anomaly_dataset_path": app.config["ANOMALY_DATASET_PATH"],
+            "anomaly_model_path": app.config["ANOMALY_MODEL_PATH"],
+        },
+        approved_sources=set(app.config.get("APPROVED_DATA_SOURCES", ())),
+    )
+    retrieval_identity_resolver = app.config.get("DATA_RETRIEVAL_IDENTITY_RESOLVER")
+    if callable(retrieval_identity_resolver):
+        app.extensions["data_retrieval_identity_resolver"] = retrieval_identity_resolver
 
     # Register error handlers
     register_error_handlers(app)

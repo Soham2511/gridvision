@@ -238,8 +238,8 @@ class AnalyticsService {
     prompt: string,
     persona: string = 'household',
     entityId?: string
-  ): Promise<{ answer: string; persona: string; entityId: string }> {
-    return apiClient.post<{ answer: string; persona: string; entityId: string }>(
+  ): Promise<{ answer: string; persona: string; entityId: string | null; status: string; availability: string }> {
+    return apiClient.post<{ answer: string; persona: string; entityId: string | null; status: string; availability: string }>(
       '/assistant/chat',
       {
         prompt,

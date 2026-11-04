@@ -1,0 +1,1 @@
+"""Report metadata persistence adapter."""

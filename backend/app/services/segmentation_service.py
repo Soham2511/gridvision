@@ -526,3 +526,18 @@ class SegmentationService:
         for model in metadata.get("trained_models", []):
             model.pop("model_path", None)
         return metadata
+
+    def get_source_metadata(self) -> dict[str, Any]:
+        """Identify the published segmentation outputs and their observation window."""
+        model = self.get_model_metadata()
+        feature_generation = self._json("reports/feature_generation.json")
+        return {
+            "sourceId": "segmentation_2018",
+            "dataset": "published_segmentation_outputs",
+            "datasetVersion": model.get("model_version", "untracked"),
+            "period": {
+                "start": feature_generation.get("observation_start"),
+                "endExclusive": feature_generation.get("observation_end_exclusive"),
+            },
+            "isLiveTelemetry": False,
+        }

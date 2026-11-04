@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   BarChart3,
   Database,
@@ -63,19 +63,32 @@ export const ResidentialGoldInsightsPage: React.FC<{ view?: PageView }> = ({
   const [residentialObjectIds, setResidentialObjectIds] = useState<string[]>([]);
   const [residentialObjectIdsLoaded, setResidentialObjectIdsLoaded] = useState(false);
   const [selectedObjectId, setSelectedObjectId] = useState('');
+  const [buildingIdInput, setBuildingIdInput] = useState('');
+  const [buildingIdVerification, setBuildingIdVerification] = useState<{
+    message: string;
+    valid: boolean;
+  } | null>(null);
+  const [verifyingBuildingId, setVerifyingBuildingId] = useState(false);
   const [objectRecords, setObjectRecords] = useState<CustomerBillRecord[]>([]);
   const [objectPrediction, setObjectPrediction] = useState<CustomerBillPrediction | null>(null);
   const [objectLoading, setObjectLoading] = useState(false);
   const [objectError, setObjectError] = useState<string | null>(null);
+  const verifiedObjectIds = useRef(new Set<string>());
 
   useEffect(() => {
     let cancelled = false;
     modelService.getCustomerRecords(200, 0).then((page) => {
       if (cancelled) return;
-      const ids = Array.from(new Set(page.items.map((record) => record.entityId)));
+      const ids = Array.from(
+        new Set([
+          ...page.items.map((record) => record.entityId),
+          ...verifiedObjectIds.current,
+        ])
+      );
       setResidentialObjectIds(ids);
       const initialId = ids.includes(activeEntity) ? activeEntity : (ids[0] ?? '');
       setSelectedObjectId(initialId);
+      setBuildingIdInput(initialId);
       if (initialId && initialId !== activeEntity) setActiveEntity(initialId);
     }).catch((loadError) => {
       if (!cancelled) {
@@ -151,11 +164,56 @@ export const ResidentialGoldInsightsPage: React.FC<{ view?: PageView }> = ({
     }
   }, [activeEntity, timeRange]);
 
+  const verifyBuildingId = async () => {
+    const buildingId = buildingIdInput.trim();
+    setBuildingIdVerification(null);
+    if (!/^\d+$/.test(buildingId)) {
+      setBuildingIdVerification({
+        message: 'Enter a numeric building ID to verify it.',
+        valid: false,
+      });
+      return;
+    }
+
+    setVerifyingBuildingId(true);
+    try {
+      const records = await modelService.getEntityMonths(buildingId);
+      if (records.length === 0) {
+        setBuildingIdVerification({
+          message: `Building ${buildingId} has no Customer Gold records.`,
+          valid: false,
+        });
+        return;
+      }
+
+      verifiedObjectIds.current.add(buildingId);
+      setResidentialObjectIds((current) =>
+        current.includes(buildingId) ? current : [...current, buildingId]
+      );
+      setSelectedObjectId(buildingId);
+      setActiveEntity(buildingId);
+      setBuildingIdVerification({
+        message: `Building ${buildingId} verified in Customer Gold.`,
+        valid: true,
+      });
+    } catch (verificationError) {
+      setBuildingIdVerification({
+        message:
+          verificationError instanceof Error
+            ? `Building ${buildingId} could not be verified: ${verificationError.message}`
+            : `Building ${buildingId} could not be verified.`,
+        valid: false,
+      });
+    } finally {
+      setVerifyingBuildingId(false);
+    }
+  };
+
   useEffect(() => {
     if (
       view === 'history' &&
       residentialObjectIdsLoaded &&
-      residentialObjectIds.includes(activeEntity)
+      activeEntity
     ) {
       void loadHistory();
     }
@@ -321,22 +379,66 @@ export const ResidentialGoldInsightsPage: React.FC<{ view?: PageView }> = ({
         aria-label="Residential building selection"
         style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem', background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: '14px', padding: '1rem 1.2rem' }}
       >
-        <label style={{ display: 'flex', alignItems: 'center', gap: '0.65rem', color: '#334155', fontSize: '0.88rem', fontWeight: 700 }}>
-          Building ID
-          <select
-            aria-label="Residential building ID"
-            value={activeEntity}
-            onChange={(event) => {
-              setSelectedObjectId(event.target.value);
-              setActiveEntity(event.target.value);
-            }}
-            disabled={!residentialObjectIds.length}
-            style={{ border: '1px solid #CBD5E1', borderRadius: '8px', background: '#FFFFFF', color: '#0B1F33', padding: '0.55rem 0.7rem', minWidth: '150px' }}
+        <div style={{ display: 'flex', alignItems: 'end', flexWrap: 'wrap', gap: '0.75rem' }}>
+          <label style={{ display: 'grid', gap: '0.4rem', color: '#334155', fontSize: '0.88rem', fontWeight: 700 }}>
+            Building ID
+            <select
+              aria-label="Residential building ID"
+              value={activeEntity}
+              onChange={(event) => {
+                setSelectedObjectId(event.target.value);
+                setBuildingIdInput(event.target.value);
+                setBuildingIdVerification(null);
+                setActiveEntity(event.target.value);
+              }}
+              disabled={!residentialObjectIds.length}
+              style={{ border: '1px solid #CBD5E1', borderRadius: '8px', background: '#FFFFFF', color: '#0B1F33', padding: '0.55rem 0.7rem', minWidth: '150px' }}
+            >
+              {!residentialObjectIds.length && <option value="">Loading building IDs…</option>}
+              {residentialObjectIds.map((objectId) => <option key={objectId} value={objectId}>{objectId}</option>)}
+            </select>
+          </label>
+          <label style={{ display: 'grid', gap: '0.4rem', color: '#334155', fontSize: '0.88rem', fontWeight: 700 }}>
+            Type an ID
+            <input
+              aria-label="Type residential building ID"
+              inputMode="numeric"
+              value={buildingIdInput}
+              onChange={(event) => {
+                setBuildingIdInput(event.target.value);
+                setBuildingIdVerification(null);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                  void verifyBuildingId();
+                }
+              }}
+              placeholder="e.g. 546503"
+              style={{ border: '1px solid #CBD5E1', borderRadius: '8px', background: '#FFFFFF', color: '#0B1F33', padding: '0.55rem 0.7rem', minWidth: '150px' }}
+            />
+          </label>
+          <button
+            type="button"
+            className="gv-button gv-button-secondary"
+            onClick={() => void verifyBuildingId()}
+            disabled={verifyingBuildingId || !buildingIdInput.trim()}
           >
-            {!residentialObjectIds.length && <option value="">Loading building IDs…</option>}
-            {residentialObjectIds.map((objectId) => <option key={objectId} value={objectId}>{objectId}</option>)}
-          </select>
-        </label>
+            {verifyingBuildingId ? 'Verifying…' : 'Verify ID'}
+          </button>
+        </div>
+        {buildingIdVerification && (
+          <p
+            role={buildingIdVerification.valid ? 'status' : 'alert'}
+            style={{
+              margin: 0,
+              color: buildingIdVerification.valid ? '#047857' : '#991B1B',
+              fontSize: '0.84rem',
+            }}
+          >
+            {buildingIdVerification.message}
+          </p>
+        )}
       </section>
 
       {view === 'history' && history && (

@@ -17,6 +17,19 @@ import { CustomerBillModelPage } from '../pages/CustomerBillModelPage';
 import { ModelWorkbenchPage } from '../pages/ModelWorkbenchPage';
 import { GovernmentSegmentationPage } from '../pages/GovernmentSegmentationPage';
 import { usePersona } from '../context';
+import { ReportsPage } from '../pages/ReportsPage';
+import { NotificationsPage } from '../pages/NotificationsPage';
+import { JSONReportGeneratorPage } from '../pages/JSONReportGeneratorPage';
+import { TopHeader } from '../layouts/TopHeader';
+
+const DeveloperJSONReportGeneratorPage: React.FC = () => (
+  <div style={{ minHeight: '100vh', background: '#F8FAFC' }}>
+    <TopHeader showLogo isAdmin />
+    <div style={{ maxWidth: 1240, margin: '0 auto', padding: '2rem' }}>
+      <JSONReportGeneratorPage />
+    </div>
+  </div>
+);
 
 const PersonaCustomerSegmentationPage: React.FC = () => {
   const { currentPersona } = usePersona();
@@ -35,6 +48,8 @@ export const AppRoutes: React.FC = () => {
       {/* Dedicated Platform Data & Model Health Page (No Sidebar, Admin Header) */}
       <Route path="/health" element={<DataModelHealthPage />} />
       <Route path="/data-model-health" element={<Navigate to="/health" replace />} />
+      <Route path="/developer/json-report-generator" element={<DeveloperJSONReportGeneratorPage />} />
+      <Route path="/app/json-report-generator" element={<Navigate to="/developer/json-report-generator" replace />} />
 
       {/* 2. Authenticated / Selected Persona Workspace Shell */}
       <Route element={<MainLayout />}>
@@ -45,6 +60,8 @@ export const AppRoutes: React.FC = () => {
         <Route path="/app/government/segmentation" element={<Navigate to="/app/customers" replace />} />
         <Route path="/app/health" element={<Navigate to="/health" replace />} />
         <Route path="/app/assistant" element={<AiAssistantPage />} />
+        <Route path="/app/reports" element={<ReportsPage />} />
+        <Route path="/app/notifications" element={<NotificationsPage />} />
         <Route path="/models" element={<ModelWorkbenchPage />} />
         <Route path="/models/customer" element={<CustomerBillModelPage />} />
 

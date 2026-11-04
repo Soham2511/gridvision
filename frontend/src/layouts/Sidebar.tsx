@@ -16,6 +16,8 @@ import {
   Map,
   PieChart,
   ShieldAlert,
+  FileText,
+  Bell,
 } from 'lucide-react';
 
 export const Sidebar: React.FC = () => {
@@ -75,6 +77,8 @@ export const Sidebar: React.FC = () => {
       label: 'AI Assistant',
       icon: <MessageSquare size={18} />,
     },
+    { path: '/app/reports', label: 'Reports', icon: <FileText size={18} /> },
+    { path: '/app/notifications', label: 'Notifications', icon: <Bell size={18} /> },
     {
       path: '/profile',
       label: currentPersona === 'government' ? 'Profile' : 'Building Profile',

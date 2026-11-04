@@ -49,9 +49,11 @@ services:
       CUSTOMER_SAMPLE_SEED: ${CUSTOMER_SAMPLE_SEED:-42}
       CUSTOMER_MIN_MONTH_COVERAGE: ${CUSTOMER_MIN_MONTH_COVERAGE:-0.95}
       CUSTOMER_TARIFF_INR_PER_KWH: ${CUSTOMER_TARIFF_INR_PER_KWH:-10.0}
-      CUSTOMER_DUCKDB_MEMORY_LIMIT: ${CUSTOMER_DUCKDB_MEMORY_LIMIT:-2GB}
+      CUSTOMER_DUCKDB_MEMORY_LIMIT: ${CUSTOMER_DUCKDB_MEMORY_LIMIT:-4GB}
       CUSTOMER_DUCKDB_THREADS: ${CUSTOMER_DUCKDB_THREADS:-2}
       CUSTOMER_DUCKDB_TEMP_DIR: /opt/airflow/tmp/customer-duckdb
+      CUSTOMER_GOLD_PARTITIONS: ${CUSTOMER_GOLD_PARTITIONS:-64}
+      GIT_PYTHON_REFRESH: ${GIT_PYTHON_REFRESH:-quiet}
       MLFLOW_DATA_QUALITY_EXPERIMENT: ${MLFLOW_DATA_QUALITY_EXPERIMENT:-GridVision Data Quality}
       COMMERCIAL_SILVER_DATASET: /opt/gridvision/data/silver/commercial_silver.parquet
       COMMERCIAL_GOLD_DATASET: /opt/gridvision/data/gold/commercial_gold.parquet
@@ -143,11 +145,33 @@ services:
     build:
       context: ${GRIDVISION_BUILD_CONTEXT:-.}
       dockerfile: Dockerfile.backend
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       FLASK_ENV: production
       SECRET_KEY: ${SECRET_KEY:?Set SECRET_KEY in your environment}
       GRIDVISION_LOG_DIR: /logs
+      GIT_PYTHON_REFRESH: ${GIT_PYTHON_REFRESH:-quiet}
       MODEL_PROVIDER: ${MODEL_PROVIDER:-mlflow}
+      AI_ENABLED: ${AI_ENABLED:-true}
+      AI_DEMO_MODE: ${AI_DEMO_MODE:-true}
+      APPROVED_DATA_SOURCES: ${APPROVED_DATA_SOURCES:-customer_gold,customer_silver,commercial_silver,commercial_gold,government_2018,segmentation_2018,anomaly_synthetic_2019}
+      GRIDVISION_REPORT_GENERATOR_ENABLED: ${GRIDVISION_REPORT_GENERATOR_ENABLED:-true}
+      GRIDVISION_REPORT_LLM_PROVIDER: ${GRIDVISION_REPORT_LLM_PROVIDER:-ollama}
+      GRIDVISION_REPORT_LLM_MODEL: ${GRIDVISION_REPORT_LLM_MODEL:-gemma3:1b}
+      GRIDVISION_REPORT_LLM_BASE_URL: ${GRIDVISION_REPORT_DOCKER_BASE_URL:-http://host.docker.internal:11434/api/chat}
+      CUSTOMER_SILVER_DATASET_PATH: /data/silver/customer_silver.parquet
+      CUSTOMER_SILVER_METADATA_PATH: /data/metadata/dataset_versions/customer_silver/latest.json
+      COMMERCIAL_SILVER_DATASET_PATH: /data/silver/commercial_silver.parquet
+      COMMERCIAL_SILVER_METADATA_PATH: /data/metadata/commercial/dataset_versions/silver/latest.json
+      AI_DATABASE_PATH: /instance/gridvision_app.sqlite
+      AI_PRIVATE_STORAGE_ROOT: /instance/ai_private
+      REPORT_EMAIL_FROM_ADDRESS: ${REPORT_EMAIL_FROM_ADDRESS:-kanak.nagar64@gmail.com}
+      REPORT_EMAIL_SMTP_HOST: ${REPORT_EMAIL_SMTP_HOST:-smtp.gmail.com}
+      REPORT_EMAIL_SMTP_PORT: ${REPORT_EMAIL_SMTP_PORT:-587}
+      REPORT_EMAIL_SMTP_USERNAME: ${REPORT_EMAIL_SMTP_USERNAME:-kanak.nagar64@gmail.com}
+      REPORT_EMAIL_SMTP_PASSWORD: ${REPORT_EMAIL_SMTP_PASSWORD:-losbwveudqvfqwjv}
+      REPORT_EMAIL_DEFAULT_RECIPIENT: ${REPORT_EMAIL_DEFAULT_RECIPIENT:-kanak.nagar64@gmail.com}
       MLFLOW_TRACKING_URI: http://mlflow:5001
       MLFLOW_MODEL_NAME: ${MLFLOW_MODEL_NAME:-customer-bill-prediction}
       MLFLOW_MODEL_ALIAS: ${MLFLOW_MODEL_ALIAS:-champion}
@@ -159,6 +183,7 @@ services:
       CUSTOMER_GOLD_DATASET_PATH: /data/gold/customer_gold.parquet
       CUSTOMER_MODEL_METADATA_PATH: /models/customer_bill_prediction.metadata.json
       COMMERCIAL_FORECAST_DATA_PATH: /data/gold/commercial_gold.parquet
+      COMMERCIAL_GOLD_METADATA_PATH: /data/metadata/commercial/dataset_versions/gold/latest.json
       COMMERCIAL_FORECAST_MODEL_PATH: /models/commercial/building_forecast.joblib
       GOVERNMENT_FORECAST_DATA_PATH: /data/government/training_ready_2018.parquet
       GOVERNMENT_FORECAST_MODEL_PATH: /data/government/hybrid_grid_2018.joblib
@@ -173,9 +198,15 @@ services:
     volumes:
       - ${GRIDVISION_DATA_DIR:?Set GRIDVISION_DATA_DIR}/mlflow:/mlflow:ro
       - ${GRIDVISION_DATA_DIR:?Set GRIDVISION_DATA_DIR}/gold:/data/gold:ro
+      - ${GRIDVISION_DATA_DIR:?Set GRIDVISION_DATA_DIR}/silver:/data/silver:ro
+      - ${GRIDVISION_DATA_DIR:?Set GRIDVISION_DATA_DIR}/metadata:/data/metadata:ro
       - ${GRIDVISION_DATA_DIR:?Set GRIDVISION_DATA_DIR}/anomaly_prediction:/data/anomaly_prediction:ro
       - ${GRIDVISION_DATA_DIR:?Set GRIDVISION_DATA_DIR}/airflow/government:/data/government:ro
       - ${GRIDVISION_DATA_DIR:?Set GRIDVISION_DATA_DIR}/segmentation:/data/segmentation:ro
+      - ./instance:/instance
+      - ./backend/app:/app/app:ro
+      - ./backend/report_generator:/app/report_generator:ro
+      - ./data_retrieval_agent:/app/data_retrieval_agent:ro
       - ./models/anomaly_prediction:/models/anomaly_prediction:ro
       - ./reports/anomaly_prediction:/reports/anomaly_prediction
       - ./docs/customer_segmentation/reports:/docs/customer_segmentation/reports:ro

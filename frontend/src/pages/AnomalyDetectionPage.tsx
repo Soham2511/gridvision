@@ -369,7 +369,7 @@ export const AnomalyDetectionPage: React.FC = () => {
         minimum_temporal_overlap: 0.25,
         maximum_interval_gap_minutes: 60,
       };
-      const result = await anomalyService.runAnalysis(request);
+      const result = await anomalyService.runAnalysis(request, persona, activeEntity);
       setRun(result);
       setSelectedRunId(result.run_id);
       setSelectedEventId(result.events[0]?.event_id ?? '');
@@ -432,6 +432,12 @@ export const AnomalyDetectionPage: React.FC = () => {
           </button>
         </div>
       </header>
+
+      {model?.sourceNotice && (
+        <div role="status" style={{ ...panelStyle, borderColor: 'var(--gv-status-warning)', color: 'var(--gv-text-secondary)' }}>
+          <strong>Source limitation:</strong> {model.sourceNotice} Detector outputs are not confirmed outages or live meter readings.
+        </div>
+      )}
 
       {model?.status !== 'configured' && (
         <div role="alert" style={{ ...panelStyle, color: 'var(--gv-status-danger)' }}>

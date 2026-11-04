@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import numpy as np
@@ -10,6 +11,8 @@ import pandas as pd
 from app.providers.mlflow_adapter import MLflowModelAdapter
 from app.providers.trained_forecast_provider import TrainedForecastProvider
 from app.providers.sample_data_provider import SampleDataProvider
+from app import create_app
+from app.config import DevelopmentConfig
 from app.services.dashboard_service import DashboardService
 from training.commercial_forecast.features import FEATURE_COLUMNS
 
@@ -110,6 +113,8 @@ def test_commercial_building_catalog_includes_identity_metadata(
     assert building["latitude"] == 40.0
     assert building["longitude"] == -70.0
     assert building["specificSpaceUsage"] == "Office"
+    assert building["recentDemandKwh"] is None
+    assert building["predictedDemandKwh"] is None
 
 
 def test_commercial_dashboard_uses_range_specific_forecast_horizons(
@@ -276,3 +281,61 @@ def test_commercial_historical_insights_use_gold_daily_rollups(
             "peakTime": "12:00 AM",
         },
     ]
+
+
+def test_commercial_historical_insights_support_gold_cohort_without_entity(
+    tmp_path: Path,
+) -> None:
+    gold_path = tmp_path / "commercial_gold.parquet"
+    _write_gold_fixture(gold_path, include_second_building=True)
+    provider = TrainedForecastProvider(
+        customer_provider=MLflowModelAdapter(tracking_uri=""),
+        commercial_data=gold_path,
+        commercial_model=tmp_path / "unused-commercial-model.joblib",
+        government_data=tmp_path / "unused-government.parquet",
+        government_model=tmp_path / "unused-government-model.joblib",
+    )
+
+    history = provider.get_commercial_historical_insights("ALL")
+
+    assert history["entityId"] is None
+    assert history["scope"] == "commercial_cohort"
+    assert history["entityCount"] == 2
+    assert history["avgDailyConsumption"] == 720.0
+    assert history["peakConsumption"] == 30.0
+    assert len(history["historyCurve"]) == 2
+
+
+def test_runtime_commercial_gold_history_and_catalog_include_provenance(
+    tmp_path: Path,
+) -> None:
+    gold_path = tmp_path / "commercial_gold.parquet"
+    metadata_path = tmp_path / "commercial_gold.json"
+    _write_gold_fixture(gold_path, include_second_building=True)
+    metadata_path.write_text(
+        json.dumps(
+            {"dataset_name": "commercial_gold", "dataset_version": "fixture-v1"}
+        ),
+        encoding="utf-8",
+    )
+
+    class CommercialGoldConfig(DevelopmentConfig):
+        COMMERCIAL_FORECAST_DATA_PATH = gold_path
+        COMMERCIAL_GOLD_METADATA_PATH = metadata_path
+        APPROVED_DATA_SOURCES = ("commercial_gold",)
+
+    client = create_app(CommercialGoldConfig).test_client()
+    catalog = client.get("/api/v1/entities/commercial")
+    history = client.get("/api/v1/historical?persona=commercial&time_range=ALL")
+
+    assert catalog.status_code == 200
+    assert catalog.get_json()["data"][0]["buildingId"] == "765794"
+    assert catalog.get_json()["meta"]["sourceProvenance"]["datasetVersion"] == "fixture-v1"
+    assert history.status_code == 200
+    body = history.get_json()
+    assert body["data"]["scope"] == "commercial_cohort"
+    assert body["data"]["entityCount"] == 2
+    provenance = body["meta"]["sourceProvenance"]
+    assert provenance["sourceId"] == "commercial_gold"
+    assert provenance["recordType"] == "historical_consumption_aggregate"
+    assert provenance["isLiveTelemetry"] is False

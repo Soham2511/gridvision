@@ -5,6 +5,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from report_generator.config import ReportGeneratorSettings
+
 
 class BaseConfig:
     """Base application configuration."""
@@ -19,8 +21,55 @@ class BaseConfig:
         ).split(",")
         if origin.strip()
     ]
-    DATA_PROVIDER = os.getenv("DATA_PROVIDER", "sample")
-    MODEL_PROVIDER = os.getenv("MODEL_PROVIDER", "development")
+    # Runtime must fail closed. Sample/development providers are enabled only by
+    # TestingConfig, never by an unset environment variable.
+    DATA_PROVIDER = os.getenv("DATA_PROVIDER", "unavailable").strip().lower()
+    MODEL_PROVIDER = os.getenv("MODEL_PROVIDER", "unavailable").strip().lower()
+    APPROVED_DATA_SOURCES = tuple(
+        value.strip()
+        for value in os.getenv("APPROVED_DATA_SOURCES", "").split(",")
+        if value.strip()
+    )
+
+    # AI infrastructure is inert by default. Paths remain unset until explicitly
+    # configured; app startup never initializes local persistence or calls providers.
+    AI_ENABLED = os.getenv("AI_ENABLED", "false").strip().lower() in {"1", "true", "yes"}
+    AI_DEMO_MODE = os.getenv("AI_DEMO_MODE", "false").strip().lower() in {"1", "true", "yes"}
+    AI_GENERATION_PROVIDER = os.getenv("AI_GENERATION_PROVIDER", "none").strip().lower()
+    AI_EMBEDDING_PROVIDER = os.getenv("AI_EMBEDDING_PROVIDER", "none").strip().lower()
+    AI_TIMEOUT_SECONDS = float(os.getenv("AI_TIMEOUT_SECONDS", "20"))
+    AI_MAX_RETRIES = int(os.getenv("AI_MAX_RETRIES", "1"))
+    AI_MAX_OUTPUT_CHARS = int(os.getenv("AI_MAX_OUTPUT_CHARS", "5000"))
+    AI_DATABASE_PATH = os.getenv(
+        "AI_DATABASE_PATH", str(PROJECT_ROOT / "instance" / "gridvision_app.sqlite")
+    )
+    AI_PRIVATE_STORAGE_ROOT = os.getenv(
+        "AI_PRIVATE_STORAGE_ROOT", str(PROJECT_ROOT / "instance" / "ai_private")
+    )
+    REPORT_EMAIL_DEFAULT_RECIPIENT = os.getenv(
+        "REPORT_EMAIL_DEFAULT_RECIPIENT", "kanak.nagar64@gmail.com"
+    )
+    REPORT_EMAIL_SMTP_HOST = os.getenv("REPORT_EMAIL_SMTP_HOST", "")
+    REPORT_EMAIL_SMTP_PORT = int(os.getenv("REPORT_EMAIL_SMTP_PORT", "587"))
+    REPORT_EMAIL_SMTP_USERNAME = os.getenv("REPORT_EMAIL_SMTP_USERNAME", "")
+    REPORT_EMAIL_SMTP_PASSWORD = os.getenv("REPORT_EMAIL_SMTP_PASSWORD", "")
+    REPORT_EMAIL_FROM_ADDRESS = os.getenv("REPORT_EMAIL_FROM_ADDRESS", "")
+    AI_ALLOWED_SOURCE_DOMAINS = tuple(
+        value.strip().lower()
+        for value in os.getenv("AI_ALLOWED_SOURCE_DOMAINS", "").split(",")
+        if value.strip()
+    )
+
+    @staticmethod
+    def _default_report_identity(req) -> str:
+        return req.headers.get("X-User-Identity") or getattr(req, "remote_addr", None) or "gridvision-demo-user"
+
+    # Generic JSON report generation remains disabled and provider-free unless
+    # explicitly configured. Resolver must be supplied by the trusted host app.
+    REPORT_GENERATOR_SETTINGS = ReportGeneratorSettings.from_env()
+    REPORT_GENERATOR_IDENTITY_RESOLVER = (
+        staticmethod(_default_report_identity) if AI_DEMO_MODE else None
+    )
 
     # Optional customer bill prediction registry settings
     MLFLOW_TRACKING_URI = os.getenv("MLFLOW_TRACKING_URI", "")
@@ -48,6 +97,30 @@ class BaseConfig:
         os.getenv(
             "CUSTOMER_GOLD_DATASET_PATH",
             PROJECT_ROOT / "data" / "gold" / "customer_gold.parquet",
+        )
+    )
+    CUSTOMER_SILVER_DATASET_PATH = Path(
+        os.getenv(
+            "CUSTOMER_SILVER_DATASET_PATH",
+            PROJECT_ROOT / "data" / "silver" / "customer_silver.parquet",
+        )
+    )
+    CUSTOMER_SILVER_METADATA_PATH = Path(
+        os.getenv(
+            "CUSTOMER_SILVER_METADATA_PATH",
+            PROJECT_ROOT / "data" / "metadata" / "dataset_versions" / "customer_silver" / "latest.json",
+        )
+    )
+    COMMERCIAL_SILVER_DATASET_PATH = Path(
+        os.getenv(
+            "COMMERCIAL_SILVER_DATASET_PATH",
+            PROJECT_ROOT / "data" / "silver" / "commercial_silver.parquet",
+        )
+    )
+    COMMERCIAL_SILVER_METADATA_PATH = Path(
+        os.getenv(
+            "COMMERCIAL_SILVER_METADATA_PATH",
+            PROJECT_ROOT / "data" / "metadata" / "commercial" / "dataset_versions" / "silver" / "latest.json",
         )
     )
     CUSTOMER_MODEL_METADATA_PATH = Path(
@@ -82,6 +155,12 @@ class BaseConfig:
     )
     COMMERCIAL_FORECAST_DATA_PATH = Path(
         os.getenv("COMMERCIAL_FORECAST_DATA_PATH", PROJECT_ROOT / "data" / "gold" / "commercial_gold.parquet")
+    )
+    COMMERCIAL_GOLD_METADATA_PATH = Path(
+        os.getenv(
+            "COMMERCIAL_GOLD_METADATA_PATH",
+            PROJECT_ROOT / "data" / "metadata" / "commercial" / "dataset_versions" / "gold" / "latest.json",
+        )
     )
     COMMERCIAL_FORECAST_MODEL_PATH = Path(
         os.getenv("COMMERCIAL_FORECAST_MODEL_PATH", PROJECT_ROOT / "models" / "commercial" / "building_forecast.joblib")
@@ -123,6 +202,23 @@ class DevelopmentConfig(BaseConfig):
 
     DEBUG = True
     TESTING = False
+    AI_DEMO_MODE = os.getenv("AI_DEMO_MODE", "true").strip().lower() in {"1", "true", "yes"}
+    REPORT_GENERATOR_SETTINGS = ReportGeneratorSettings.from_env(
+        default_provider="ollama", default_enabled=True
+    )
+    REPORT_GENERATOR_IDENTITY_RESOLVER = staticmethod(
+        BaseConfig._default_report_identity
+    )
+    # Enable only owner-approved sources with a verified existing serving path.
+    # Forecast model inference remains separately controlled by MODEL_PROVIDER.
+    APPROVED_DATA_SOURCES = tuple(
+        value.strip()
+        for value in os.getenv(
+            "APPROVED_DATA_SOURCES",
+            "customer_gold,customer_silver,commercial_silver,commercial_gold,government_2018,segmentation_2018,anomaly_synthetic_2019",
+        ).split(",")
+        if value.strip()
+    )
 
 
 class TestingConfig(BaseConfig):
@@ -130,9 +226,19 @@ class TestingConfig(BaseConfig):
 
     DEBUG = False
     TESTING = True
+    AI_DEMO_MODE = True
     SECRET_KEY = "test-secret-key-deterministic"
     DATA_PROVIDER = "sample"
     MODEL_PROVIDER = "development"
+    APPROVED_DATA_SOURCES = (
+        "customer_gold",
+        "customer_silver",
+        "commercial_silver",
+        "commercial_gold",
+        "government_2018",
+        "segmentation_2018",
+        "anomaly_synthetic_2019",
+    )
 
 
 class ProductionConfig(BaseConfig):

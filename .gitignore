@@ -14,10 +14,12 @@ __pycache__/
 htmlcov/
 
 # Local datasets, generated manifests, and runtime stores
+/instance/ai_private/
 /data/
 /mlruns/
 /notebooks/.tmp/
 /notebooks/artifacts/
+/models/**/*.joblib
 /models/*.pkl
 /models/*.metadata.json
 /models/commercial/**
@@ -58,6 +60,9 @@ htmlcov/
 !/logs/training/.gitkeep
 !/logs/training/commercial/
 !/logs/training/commercial/.gitkeep
+/reports/**
+/reports/anomaly_prediction/training/**
+/docs/customer_segmentation/reports/**
 
 # Node & Frontend Build
 node_modules/
@@ -71,6 +76,7 @@ frontend/dist/
 .env.*
 !.env.example
 !**/.env.example
+key_vault/**/*.key
 frontend/.env
 *.local
 

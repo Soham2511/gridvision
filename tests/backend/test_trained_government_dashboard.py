@@ -8,6 +8,8 @@ from types import SimpleNamespace
 import numpy as np
 import pandas as pd
 
+from app import create_app
+from app.config import DevelopmentConfig
 from app.providers.mlflow_adapter import MLflowModelAdapter
 from app.providers.sample_data_provider import SampleDataProvider
 from app.providers.trained_forecast_provider import TrainedForecastProvider
@@ -181,16 +183,67 @@ def test_government_historical_insights_aggregate_actual_grid_observations(
     history = service.get_historical_insights("government", "30D", "9")
 
     assert history["persona"] == "government"
-    assert history["entityId"] == "system-wide"
+    assert history["entityId"] == "9"
+    assert history["scope"] == "grid"
     assert history["timeRange"] == "30D"
     assert history["daysReturned"] == 3
     assert history["startDate"] == "29 Dec 2018"
     assert history["endDate"] == "31 Dec 2018"
-    assert history["avgDailyConsumption"] == 4.0
-    assert history["avgMonthlyConsumption"] == 4.0
-    assert history["peakConsumption"] == 4.0
+    assert history["avgDailyConsumption"] == 1.0
+    assert history["avgMonthlyConsumption"] == 1.0
+    assert history["peakConsumption"] == 1.0
     assert history["unit"] == "MW"
-    assert history["historyCurve"][-1]["totalConsumption"] == 96.0
+    assert history["historyCurve"][-1]["totalConsumption"] == 24.0
+
+
+def test_government_historical_insights_aggregate_all_grids_when_entity_missing(
+    tmp_path: Path,
+) -> None:
+    provider, _ = _provider(tmp_path)
+    history = provider.get_government_historical_insights("30D")
+    assert history["entityId"] == "system-wide"
+    assert history["scope"] == "system-wide"
+    assert history["avgDailyConsumption"] == 4.0
+
+
+def test_runtime_government_history_and_grid_catalog_expose_historical_provenance(
+    tmp_path: Path,
+) -> None:
+    provider, _ = _provider(tmp_path)
+    government_path = tmp_path / "training_ready_2018.parquet"
+    actuals = provider._government_actuals
+    pd.DataFrame(
+        {
+            "id.grid.coarse": actuals["grid_id"],
+            "target_timestamp": actuals["target_timestamp"],
+            "target_energy": actuals["target_energy"],
+            "forecast_horizon_hours": 1,
+            "building_count": 25,
+        }
+    ).to_parquet(government_path, index=False)
+    provider.government_data = government_path
+
+    class GovernmentConfig(DevelopmentConfig):
+        APPROVED_DATA_SOURCES = ("government_2018",)
+
+    app = create_app(GovernmentConfig)
+    app.extensions["commercial_history_provider"] = provider
+    client = app.test_client()
+
+    sites = client.get("/api/v1/entities/government")
+    history = client.get(
+        "/api/v1/historical?persona=government&time_range=30D&entity_id=9"
+    )
+
+    assert sites.status_code == 200
+    assert sites.get_json()["data"][0]["predictedDemandKwh"] is None
+    assert sites.get_json()["meta"]["sourceProvenance"]["sourceId"] == "government_2018"
+    assert history.status_code == 200
+    result = history.get_json()
+    assert result["data"]["entityId"] == "9"
+    assert result["data"]["scope"] == "grid"
+    assert result["meta"]["sourceProvenance"]["datasetVersion"] == "untracked"
+    assert result["meta"]["sourceProvenance"]["isLiveTelemetry"] is False
 
 
 def test_government_registered_version_does_not_load_registry_pyfunc(

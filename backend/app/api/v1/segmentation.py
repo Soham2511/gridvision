@@ -6,12 +6,26 @@ from flask import Blueprint, current_app, request
 
 from app.api.error_handlers import AppError
 from app.utils.responses import success_response
+from app.providers.source_approval import require_approved_source
 
 bp = Blueprint("government_segmentation", __name__, url_prefix="/government/segmentation")
 
 
 def _service():
+    require_approved_source("segmentation_2018", "Government segmentation outputs")
     return current_app.extensions["government_segmentation_service"]
+
+
+def _success(service, data, record_type: str, units: str | None = None, extra_meta=None):
+    provenance = {
+        **service.get_source_metadata(),
+        "recordType": record_type,
+    }
+    if units:
+        provenance["units"] = units
+    response_meta = dict(extra_meta or {})
+    response_meta["sourceProvenance"] = provenance
+    return success_response(data, meta=response_meta)
 
 
 def _page_value(name: str, default: int) -> int:
@@ -32,41 +46,54 @@ def _pagination() -> tuple[int, int]:
 
 @bp.get("/overview")
 def get_overview():
-    return success_response(_service().get_overview())
+    service = _service()
+    return _success(service, service.get_overview(), "segmentation_overview", "kWh")
 
 
 @bp.get("/profiles")
 def get_profiles():
-    return success_response(
-        {"items": _service().get_profiles(request.args.get("category"))}
+    service = _service()
+    return _success(
+        service,
+        {"items": service.get_profiles(request.args.get("category"))},
+        "segment_profiles",
+        "kWh",
     )
 
 
 @bp.get("/profiles/<segment_id>/time-series")
 def get_profile_time_series(segment_id: str):
     period = request.args.get("period", "hourly")
-    return success_response(
+    service = _service()
+    return _success(
+        service,
         {
             "segment_id": segment_id,
             "period": period,
-            "items": _service().get_time_series(
+            "items": service.get_time_series(
                 segment_id, period, request.args.get("category")
             ),
-        }
+        },
+        "segment_time_series",
+        "kWh",
     )
 
 
 @bp.get("/distribution")
 def get_distribution():
-    return success_response(
-        {"items": _service().get_distribution(request.args.get("category"))}
+    service = _service()
+    return _success(
+        service,
+        {"items": service.get_distribution(request.args.get("category"))},
+        "segment_distribution",
     )
 
 
 @bp.get("/regions")
 def get_regions():
     page, page_size = _pagination()
-    items, meta = _service().get_regions(
+    service = _service()
+    items, meta = service.get_regions(
         level=request.args.get("level", "coarse"),
         category=request.args.get("category"),
         segment_id=request.args.get("segment_id"),
@@ -74,20 +101,27 @@ def get_regions():
         page=page,
         page_size=page_size,
     )
-    return success_response({"items": items, **meta}, meta=meta)
+    return _success(
+        service, {"items": items, **meta}, "regional_segment_summary", "kWh", meta
+    )
 
 
 @bp.get("/regions/<level>/<region_id>")
 def get_region_detail(level: str, region_id: str):
-    return success_response(
-        _service().get_region_detail(level, region_id, request.args.get("category"))
+    service = _service()
+    return _success(
+        service,
+        service.get_region_detail(level, region_id, request.args.get("category")),
+        "regional_segment_detail",
+        "kWh",
     )
 
 
 @bp.get("/assignments")
 def get_assignments():
     page, page_size = _pagination()
-    items, meta = _service().get_assignments(
+    service = _service()
+    items, meta = service.get_assignments(
         category=request.args.get("category"),
         segment_id=request.args.get("segment_id"),
         region_level=request.args.get("region_level", "coarse"),
@@ -95,18 +129,20 @@ def get_assignments():
         page=page,
         page_size=page_size,
     )
-    return success_response({"items": items, **meta}, meta=meta)
+    return _success(service, {"items": items, **meta}, "building_segment_assignments", extra_meta=meta)
 
 
 @bp.get("/priorities")
 def get_priorities():
     page, page_size = _pagination()
-    items, meta = _service().get_priorities(
+    service = _service()
+    items, meta = service.get_priorities(
         category=request.args.get("category"), page=page, page_size=page_size
     )
-    return success_response({"items": items, **meta}, meta=meta)
+    return _success(service, {"items": items, **meta}, "regional_survey_priorities", extra_meta=meta)
 
 
 @bp.get("/model")
 def get_model_metadata():
-    return success_response(_service().get_model_metadata())
+    service = _service()
+    return _success(service, service.get_model_metadata(), "segmentation_model_metadata")

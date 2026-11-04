@@ -1,0 +1,7 @@
+[
+  {"id":"residential_monthly_history","persona":"residential","query":"Show my household consumption history for the last year.","expected_tools":["get_historical_consumption"],"expected_sources":["customer_gold"],"expected_data_class":"historical"},
+  {"id":"commercial_building_forecast","persona":"commercial","query":"Give me the forecast for my assigned building.","expected_tools":["get_energy_forecast"],"expected_sources":["commercial_gold"],"expected_data_class":"predicted"},
+  {"id":"government_regional_history","persona":"government","query":"Summarize historical consumption for my region.","expected_tools":["get_historical_consumption"],"expected_sources":["government_2018"],"expected_data_class":"historical"},
+  {"id":"company_equipment_unavailable","persona":"commercial","query":"What equipment does this company have and when does it operate?","expected_tools":[],"expected_sources":[],"expected_data_class":"unavailable"},
+  {"id":"synthetic_anomaly_labeling","persona":"government","query":"Review synthetic anomaly results for my authorized consumers.","expected_tools":["get_anomaly_predictions"],"expected_sources":["anomaly_synthetic_2019"],"expected_data_class":"synthetic"}
+]

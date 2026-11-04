@@ -12,9 +12,11 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 COPY requirements.txt ./requirements.txt
 COPY scripts/filter_requirements.py ./scripts/filter_requirements.py
-RUN python scripts/filter_requirements.py requirements.txt /tmp/backend-requirements.txt --groups backend model-serving \
+RUN python scripts/filter_requirements.py requirements.txt /tmp/backend-requirements.txt --groups backend model-serving agent report-generator \
     && pip install --no-cache-dir -r /tmp/backend-requirements.txt
 COPY backend/app ./app
+COPY backend/report_generator ./report_generator
+COPY data_retrieval_agent ./data_retrieval_agent
 COPY training ./training
 COPY backend/run.py ./run.py
 

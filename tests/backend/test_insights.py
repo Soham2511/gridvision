@@ -24,13 +24,19 @@ def test_energy_insights(client: FlaskClient):
 
 
 def test_assistant_chat(client: FlaskClient):
-    """Test AI assistant prompt answering."""
+    """The deterministic assistant does not invent telemetry or tariffs."""
     tariff_prompt = {"prompt": "How is my month-end bill calculated?", "persona": "household"}
     res_tariff = client.post("/api/v1/assistant/chat", json=tariff_prompt)
     assert res_tariff.status_code == 200
-    assert "Billing Computation" in res_tariff.get_json()["data"]["answer"]
+    tariff_data = res_tariff.get_json()["data"]
+    assert tariff_data["status"] == "success"
+    assert tariff_data["availability"] == "unavailable"
+    assert "no approved data source" in tariff_data["answer"]
+    assert "₹10" not in tariff_data["answer"]
 
     peak_prompt = {"prompt": "What is our current reserve margin?", "persona": "government"}
     res_peak = client.post("/api/v1/assistant/chat", json=peak_prompt)
     assert res_peak.status_code == 200
-    assert "Reserve Status" in res_peak.get_json()["data"]["answer"]
+    peak_data = res_peak.get_json()["data"]
+    assert peak_data["availability"] == "unavailable"
+    assert "Current Active Load" not in peak_data["answer"]

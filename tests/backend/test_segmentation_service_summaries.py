@@ -3,6 +3,8 @@
 import pandas as pd
 
 from app.services.segmentation_service import SegmentationService
+from app import create_app
+from app.config import TestingConfig
 
 
 def test_building_type_counts_create_nested_residential_and_other_rings() -> None:
@@ -71,3 +73,16 @@ def test_regional_average_energy_is_weighted_by_building_count() -> None:
         {"region_id": 1, "average_energy_kwh": 2.75, "building_count": 4},
         {"region_id": 2, "average_energy_kwh": 4.0, "building_count": 2},
     ]
+
+
+def test_published_segmentation_api_includes_source_version_and_period() -> None:
+    client = create_app(TestingConfig).test_client()
+    response = client.get("/api/v1/government/segmentation/overview")
+
+    assert response.status_code == 200
+    provenance = response.get_json()["meta"]["sourceProvenance"]
+    assert provenance["sourceId"] == "segmentation_2018"
+    assert provenance["dataset"] == "published_segmentation_outputs"
+    assert provenance["datasetVersion"].startswith("segmentation-v1-")
+    assert provenance["period"]["start"].startswith("2018-01-01")
+    assert provenance["isLiveTelemetry"] is False

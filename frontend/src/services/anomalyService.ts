@@ -92,6 +92,9 @@ export interface AnomalyModel {
   };
   testMetrics: Record<string, unknown>;
   anomalyTypes: string[];
+  sourceProvenance?: 'synthetic' | 'unverified' | 'verified';
+  isLiveTelemetry?: boolean;
+  sourceNotice?: string;
   error?: string;
 }
 
@@ -125,9 +128,15 @@ class AnomalyService {
     }>('/models/anomaly-prediction/entities', { offset, limit });
   }
 
-  async runAnalysis(request: AnomalyAnalysisRequest): Promise<AnomalyRunResult> {
+  async runAnalysis(
+    request: AnomalyAnalysisRequest,
+    persona = 'household',
+    entityId?: string,
+  ): Promise<AnomalyRunResult> {
+    const params = new URLSearchParams({ persona });
+    if (entityId) params.set('building_id', entityId);
     return apiClient.postLong<AnomalyRunResult>(
-      '/models/anomaly-prediction/predict',
+      `/models/anomaly-prediction/predict?${params}`,
       request,
     );
   }

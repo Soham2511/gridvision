@@ -420,12 +420,12 @@
     "vintage": 0
   },
   "processed_source_path": "/opt/gridvision/data/segmentation/source_sample.parquet",
-  "profiled_at_utc": "2026-11-03 10:43:30.509000+00:00",
+  "profiled_at_utc": "2026-11-04 11:51:11.080000+00:00",
   "row_count": 42260430,
   "sampled_buildings": 5034,
   "sampled_rows": 42260430,
   "source_bytes": 3601102310,
-  "source_mtime_ns": 1793698094000000000,
+  "source_mtime_ns": 1793335452000000000,
   "source_path": "/opt/gridvision/data/bronze/training_sample_50000.parquet",
   "timestamp_max": "2018-12-31 23:00:00",
   "timestamp_min": "2018-01-01 01:00:00"

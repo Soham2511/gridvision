@@ -1,0 +1,3 @@
+# Optional typed workflow support. Core Flask/API startup does not require this.
+langgraph==1.2.19
+reportlab>=4.2,<5

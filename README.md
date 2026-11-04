@@ -136,6 +136,12 @@ gridvision-app/
 
 The script runs the customer, government, commercial, and customer-segmentation ETL/training workflows, then starts the MLflow, Airflow, backend, and frontend services. It verifies that the backend model catalog exposes all five models as configured before reporting success. The Data & Model Health page reads that live catalog and can refresh statuses after a new run. It prints a timed summary and leaves the services running. When the data outputs are already prepared, run `python automation.py --skip-all-data-pipelines` to validate and reuse them while still training/registering each model and starting the services. See [Customer Bill Prediction: Data, Training, and Automation](#customer-bill-prediction-data-training-and-automation) for environment setup, output paths, and EC2 deployment steps.
 
+Automation passes an explicit approval list for the prepared customer, commercial,
+government, segmentation, and synthetic anomaly datasets to the backend. Set
+`APPROVED_DATA_SOURCES` to override that list; direct `docker compose` deployments
+must configure this variable themselves because runtime source approval is
+fail-closed by default.
+
 Before each data-producing Airflow DAG, automation compares its source dataset
 path, size, and modification time with the last successful run, and verifies
 that the generated outputs have not changed. Unchanged inputs and outputs skip
@@ -345,7 +351,7 @@ The tracking server proxies artifacts from the persistent `/mlflow/artifacts` vo
 
 ## Customer Bill Prediction: Data, Training, and Automation
 
-The customer-bill workflow creates one raw bronze copy, a deterministic residential-only silver sample, and `data/gold/customer_gold.parquet`. Training compares a chronological-tuned HistGradientBoosting model with a cutoff-safe monthly projection baseline; only the validation winner is registered to the `champion` alias. The existing notebook remains experimental. Docker Compose runs MLflow, the Flask API, and the React UI; the Airflow DAG and model training execute in the active Python environment.
+The customer-bill workflow creates one raw Bronze copy, a Silver dataset filtered only to residential source rows, and `data/gold/customer_gold.parquet`, where observations are grouped and monthly prediction features are engineered. Training compares a chronological-tuned HistGradientBoosting model with a cutoff-safe monthly projection baseline; only the validation winner is registered to the `champion` alias. The existing notebook remains experimental. Docker Compose runs MLflow, the Flask API, and the React UI; the Airflow DAG and model training execute in the active Python environment.
 
 The customer-specific MLflow entrypoint and run instructions are in
 [`mlflow/customer`](mlflow/customer/README.md). It delegates to the existing
@@ -449,7 +455,7 @@ training. On Linux/WSL, Airflow runs in the configured Linux Python environment.
 The script generates a development secret if `SECRET_KEY` is not set. Services
 remain running after the script exits.
 
-For a functional, resource-conscious local run, the silver stage deterministically samples **100 residential entities** by default (down from 1,000). The sample size can be changed with `CUSTOMER_SAMPLE_BUILDINGS` before running automation. The silver transform discovers residential entity profiles with bounded Arrow batches, avoiding a full-file DuckDB profile aggregation. DuckDB is limited to 2 GB and two worker threads by default, and spills intermediate data when needed. In the macOS Airflow container, spill files use the persistent Airflow volume; on Linux/WSL, the default is `~/.cache/gridvision/duckdb_temp`. Ensure the filesystem containing the spill directory has free space. You can tune the DuckDB limits with `CUSTOMER_DUCKDB_MEMORY_LIMIT` and `CUSTOMER_DUCKDB_THREADS`. This smaller sample is intended for functional development; increase it as resources and scaling work allow.
+The customer Bronze stage is an exact copy/link of `data/sample/training_sample_50000.parquet`; it refreshes a stale Bronze file even when its size matches the source. Silver only filters that source to rows whose `GeneralUseType` is Residential; it preserves the source columns and rows without grouping or cleaning. Gold partitions rows by building ID, groups duplicate building/timestamp observations, and creates monthly targets and cutoff features. Gold partition staging files are temporary and stored beside the Gold output, so allow additional free disk space there during a run. The complete residential dataset can produce substantially larger Silver and Gold outputs and take longer to run than the former 100-building development sample. DuckDB is limited to 4 GB and two worker threads by default. Ensure Docker Desktop's memory allocation or the host's available memory exceeds 4 GB to leave room for Airflow, Python, and filesystem buffers. DuckDB spills intermediate data when needed. In the macOS Airflow container, spill files use the persistent Airflow volume; on Linux/WSL, the default is `~/.cache/gridvision/duckdb_temp`. Ensure both locations have free space. You can tune the DuckDB limits with `CUSTOMER_DUCKDB_MEMORY_LIMIT` and `CUSTOMER_DUCKDB_THREADS`.
 
 To retrain and rebuild the services using already-prepared outputs without rerunning the ETL, run `python automation.py --skip-all-data-pipelines`. This validates Customer Gold and its quality manifest, the Government training-ready parquet, Commercial Silver/Gold plus its quality manifest, and the complete customer-segmentation output set. It reuses unchanged Government and segmentation DAG outputs, while still running commercial and customer model training/registration. `--skip-data-pipeline` skips only customer ETL, while `--skip-commercial-data-pipeline` skips only commercial ETL. Customer segmentation uses the existing Bronze dataset and runs separately.
 
@@ -471,7 +477,7 @@ guide.
 |---|---|
 | Raw source input | `data/sample/training_sample_50000.parquet` |
 | Bronze (raw Parquet copy/link) | `data/bronze/training_sample_50000.parquet` |
-| Silver (residential sample) | `data/silver/customer_silver.parquet` |
+| Silver (all residential source rows) | `data/silver/customer_silver.parquet` |
 | Gold (engineered training data) | `data/gold/customer_gold.parquet` |
 | Commercial Silver (non-residential) | `data/silver/commercial_silver.parquet` |
 | Commercial Gold (building-level forecasting) | `data/gold/commercial_gold.parquet` |

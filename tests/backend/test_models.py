@@ -105,6 +105,11 @@ def test_model_catalog_includes_government_customer_segmentation(
         "government-customer-segmentation",
         "anomaly-prediction",
     ]
+    anomaly = next(model for model in models if model["modelId"] == "anomaly-prediction")
+    assert anomaly["sourceProvenance"] == "synthetic"
+    assert anomaly["sourceMetadata"]["sourceId"] == "anomaly_synthetic_2019"
+    assert anomaly["sourceMetadata"]["verifiedFaultEvidence"] is False
+    assert anomaly["isLiveTelemetry"] is False
     segmentation = next(
         model
         for model in models
@@ -186,6 +191,12 @@ def test_customer_bill_model_replays_gold_record(client: FlaskClient):
     assert prediction["predictedMonthEndKwh"] > 0
     assert prediction["actualMonthEndKwh"] == record["actualMonthKwh"]
     assert prediction["absoluteErrorKwh"] >= 0
+    provenance = prediction_response.get_json()["meta"]["sourceProvenance"]
+    assert provenance["sourceId"] == "customer_gold"
+    assert provenance["datasetVersion"]
+    assert provenance["period"] == {"startMonth": "2018-01", "endMonth": "2018-12"}
+    assert provenance["recordType"] == "model_prediction_with_historical_actual"
+    assert provenance["isLiveTelemetry"] is False
 
 
 def test_residential_building_profile_returns_dataset_identity_fields(
