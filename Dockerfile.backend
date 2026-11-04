@@ -13,7 +13,7 @@ RUN apt-get update \
 COPY requirements.txt ./requirements.txt
 COPY scripts/filter_requirements.py ./scripts/filter_requirements.py
 RUN python scripts/filter_requirements.py requirements.txt /tmp/backend-requirements.txt --groups backend model-serving anomaly-assistant government-assistant agent report-generator commercial-agent commercial-optimizer commercial-rag-ocr commercial-rag-docling commercial-rag-neo4j \
-    && pip install --no-cache-dir -r /tmp/backend-requirements.txt
+    && pip install --default-timeout=1000 --retries 10 --no-cache-dir -r /tmp/backend-requirements.txt
 COPY backend/app ./app
 COPY ai/residential/backend/app ./app
 COPY backend/report_generator ./report_generator
