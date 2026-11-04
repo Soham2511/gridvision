@@ -15,6 +15,7 @@ import json
 import shutil
 import tempfile
 import unittest
+from unittest.mock import patch
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -294,6 +295,54 @@ class TestHistoricalSnapshotPersistenceAndIntegration(unittest.TestCase):
         profile = retrieved["historicalProfile"]
         self.assertEqual(profile["meterId"], "METER-1000")
         self.assertEqual(profile["allTimeSummary"]["totalConsumptionKwh"], 31.0)
+
+    def test_generate_snapshot_if_missing_uses_meter_observations(self) -> None:
+        """Missing snapshots are built from the requested meter's historical records."""
+        observations = [
+            {
+                "timestamp": datetime(2018, 1, 1, hour),
+                "consumption_kwh": 1.0,
+                "is_predicted": False,
+            }
+            for hour in range(24)
+        ]
+        with patch(
+            "app.services.assistant.historical.observation_reader."
+            "HistoricalObservationReader.read_observations_for_meter",
+            return_value=observations,
+        ) as read_observations:
+            generated = self.repo.generate_snapshot_if_missing("METER-1000")
+
+        self.assertTrue(generated)
+        read_observations.assert_called_once_with("METER-1000")
+        snapshot = self.repo.get_snapshot("METER-1000")
+        self.assertIsNotNone(snapshot)
+        self.assertEqual(
+            snapshot["historicalProfile"]["allTimeSummary"]["totalConsumptionKwh"],
+            24.0,
+        )
+
+    def test_generate_snapshot_if_missing_skips_current_snapshot(self) -> None:
+        """A valid existing snapshot is retained rather than recalculated at each login."""
+        daily = [
+            DailyConsumptionRecord("2018-01-01", 2018, 1, 1, 15.0, 24, 24, 100.0, True)
+        ]
+        snapshot = self.builder.build_snapshot_from_records(
+            "METER-1000",
+            daily,
+            24,
+            source_data_version="v2026-test",
+        )
+        self.repo.save_snapshot("METER-1000", snapshot)
+
+        with patch(
+            "app.services.assistant.historical.observation_reader."
+            "HistoricalObservationReader.read_observations_for_meter"
+        ) as read_observations:
+            generated = self.repo.generate_snapshot_if_missing("METER-1000")
+
+        self.assertFalse(generated)
+        read_observations.assert_not_called()
 
     def test_cross_meter_isolation_denies_wrong_meter(self) -> None:
         """Verify that requesting METER-1001 never returns METER-1000 snapshot."""

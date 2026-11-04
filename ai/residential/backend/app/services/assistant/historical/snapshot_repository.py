@@ -85,6 +85,46 @@ class HistoricalSnapshotRepository:
         logger.info("Saved historical snapshot for meter %s to %s", meter_id, target_path)
         return target_path
 
+    def generate_snapshot_if_missing(self, meter_id: str) -> bool:
+        """Build and persist a current snapshot from verified observations when needed."""
+        if self.get_snapshot(meter_id) is not None:
+            return False
+
+        from app.services.assistant.historical.analytics_service import (
+            HistoricalAnalyticsService,
+        )
+        from app.services.assistant.historical.observation_reader import (
+            HistoricalObservationReader,
+        )
+
+        observations = HistoricalObservationReader().read_observations_for_meter(
+            meter_id
+        )
+        if not observations:
+            logger.info(
+                "No historical observations available to build a snapshot for meter %s",
+                meter_id,
+            )
+            return False
+
+        analytics = HistoricalAnalyticsService()
+        daily_records = analytics.aggregate_daily_consumption(observations)
+        if not daily_records:
+            logger.info(
+                "No valid daily observations available to build a snapshot for meter %s",
+                meter_id,
+            )
+            return False
+
+        snapshot = HistoricalSnapshotBuilder(analytics).build_snapshot_from_records(
+            meter_id=meter_id,
+            daily_records=daily_records,
+            total_observations_count=len(observations),
+            source_data_version=self.get_source_data_version(),
+        )
+        self.save_snapshot(meter_id, snapshot)
+        return True
+
     def get_snapshot(self, meter_id: str) -> dict[str, Any] | None:
         """Retrieve and validate the latest snapshot for an authorized meter.
 
