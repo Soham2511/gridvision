@@ -28,6 +28,13 @@ class AssistantService:
         renewable_tools: RenewableEnergyTools | None = None,
         *,
         route_government_queries: bool = True,
+        llm_provider: Any = None,
+        tariff_rate: float = 10.0,
+        authorized_meters: list[str] | None = None,
+        temperature: float = 0.2,
+        max_tokens: int = 800,
+        agent_factory: Any = None,
+        prediction_service: Any = None,
         **kwargs: Any,
     ) -> None:
         self.data_provider = data_provider
@@ -39,6 +46,23 @@ class AssistantService:
             timeout_seconds=settings.tavily_timeout_seconds,
         )
         self._anomaly_assistant: AnomalyAssistant | None = None
+        self.llm_provider = llm_provider
+        self.prediction_service = prediction_service
+        self.residential_orchestrator = None
+        try:
+            from app.services.assistant.orchestrator import ResidentialAssistantOrchestrator
+            self.residential_orchestrator = ResidentialAssistantOrchestrator(
+                data_provider=data_provider,
+                llm_provider=llm_provider,
+                tariff_rate=tariff_rate,
+                authorized_meters=authorized_meters,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                agent_factory=agent_factory,
+                prediction_service=prediction_service,
+            )
+        except Exception as exc:
+            logger.info("ResidentialAssistantOrchestrator not initialized: %s", exc)
 
     def _assistant(self) -> AnomalyAssistant:
         if self.anomaly_service is None:
@@ -61,6 +85,8 @@ class AssistantService:
         authenticated_persona: str | None = None,
         authorized_customer_ids: list[int] | None = None,
         stream_callback: Any | None = None,
+        history: list[dict[str, Any]] | None = None,
+        user_id: str | None = None,
         **kwargs: Any,
     ) -> dict[str, Any]:
         if self.route_government_queries and persona == "government":
@@ -74,6 +100,19 @@ class AssistantService:
                 authorized_customer_ids=authorized_customer_ids,
                 stream_callback=stream_callback,
             )
+        if persona in ("household", "residential") and self.residential_orchestrator is not None and not stream_callback:
+            try:
+                res = self.residential_orchestrator.answer_query(
+                    prompt=prompt,
+                    entity_id=entity_id,
+                    history=history,
+                    user_id=principal or user_id,
+                    conversation_id=conversation_id,
+                )
+                if res and res.get("status") not in ("error", None):
+                    return res
+            except Exception as exc:
+                logger.warning("Residential orchestrator encountered error, falling back: %s", exc)
         return self._answer_anomaly_query(
             prompt=prompt,
             persona=persona,

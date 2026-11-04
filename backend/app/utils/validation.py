@@ -39,6 +39,15 @@ class AnomalyStatusUpdateModel(BaseModel):
     status: Literal["investigating", "confirmed", "resolved", "dismissed"]
 
 
+class ChatHistoryMessage(BaseModel):
+    """Single message in conversational session history."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    role: Literal["user", "assistant", "system"]
+    content: str = Field(..., max_length=4000)
+
+
 class AssistantChatRequestModel(BaseModel):
     """Schema for AI assistant prompts."""
 
@@ -47,7 +56,9 @@ class AssistantChatRequestModel(BaseModel):
     prompt: str = Field(..., min_length=1, max_length=2000)
     persona: Literal["household", "commercial", "government"] = "household"
     entity_id: str | None = None
+    history: list[ChatHistoryMessage] = Field(default_factory=list)
     conversation_id: str | None = None
+    session_id: str | None = None
 
 
 class CommercialWorkflowRequestModel(BaseModel):

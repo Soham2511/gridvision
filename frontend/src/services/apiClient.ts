@@ -1,12 +1,11 @@
 /**
- * GridVision — Centralized REST API Client
- * Configured via VITE_API_BASE_URL.
+ * Centralized API Client for GridVision frontend.
+ * Provides unified fetch wrapper with error handling, timeouts, and auth.
  */
 
 export interface ApiResponse<T = unknown> {
-  success: boolean;
+  status: 'success' | 'error';
   data: T;
-  meta?: Record<string, unknown>;
   error?: {
     code: string;
     message: string;
@@ -45,13 +44,7 @@ class ApiClient {
   private baseUrl: string;
 
   constructor() {
-    const rawUrl =
-      import.meta.env.VITE_API_BASE_URL ||
-      import.meta.env.VITE_API_URL ||
-      'http://127.0.0.1:5000/api/v1';
-
-    // Normalize URL (strip trailing slash)
-    this.baseUrl = rawUrl.endsWith('/') ? rawUrl.slice(0, -1) : rawUrl;
+    this.baseUrl = (import.meta.env.VITE_API_BASE_URL || '/api/v1').replace(/\/+$/, '');
   }
 
   public getBaseUrl(): string {
@@ -60,11 +53,16 @@ class ApiClient {
 
   private buildUrl(path: string, params?: Record<string, string | number | boolean | undefined | null>): string {
     const cleanPath = path.startsWith('/') ? path : `/${path}`;
-    const url = new URL(`${this.baseUrl}${cleanPath}`);
+    const fullPath = `${this.baseUrl}${cleanPath}`;
+    const base =
+      typeof window !== 'undefined' && window.location?.origin
+        ? window.location.origin
+        : 'http://127.0.0.1:5000';
+    const url = new URL(fullPath, base);
 
     if (params) {
       Object.entries(params).forEach(([key, val]) => {
-        if (val !== undefined && val !== null && val !== '') {
+        if (val !== undefined && val !== null) {
           url.searchParams.append(key, String(val));
         }
       });
@@ -75,14 +73,20 @@ class ApiClient {
 
   private async request<T>(
     path: string,
-    options: RequestInit = {},
+    options: RequestInit & { timeoutMs?: number } = {},
     params?: Record<string, string | number | boolean | undefined | null>,
-    timeoutMs = 15000,
+    timeoutMs?: number,
     credentials?: ApiCredentials,
   ): Promise<T> {
     const fullUrl = this.buildUrl(path, params);
+    const activeHousehold = typeof window !== 'undefined' ? localStorage.getItem('gv_active_entity_household') : null;
+    const defaultDevUser = activeHousehold ? activeHousehold.replace(/METER-/i, '') : '2254213';
+    const accessToken = typeof window !== 'undefined' ? localStorage.getItem('gv_access_token') : null;
+
     const headers: Record<string, string> = {
       Accept: 'application/json',
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+      ...(defaultDevUser ? { 'X-Dev-User-Id': defaultDevUser } : {}),
       ...((options.headers as Record<string, string>) || {}),
     };
     if (!(options.body instanceof FormData) && !headers['Content-Type']) {
@@ -96,11 +100,17 @@ class ApiClient {
       headers.Authorization = `Basic ${btoa(binary)}`;
     }
 
+    const timeoutDuration =
+      timeoutMs ||
+      options?.timeoutMs ||
+      (path.includes('/assistant/chat') ? 75000 : 30000);
+
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    const timeoutId = setTimeout(() => controller.abort(), timeoutDuration);
 
     try {
       const response = await fetch(fullUrl, {
+        credentials: 'include',
         ...options,
         headers,
         signal: controller.signal,
@@ -108,9 +118,12 @@ class ApiClient {
 
       clearTimeout(timeoutId);
 
-      const contentType = response.headers.get('content-type') || '';
-      const isJson = contentType.includes('application/json');
-      const body: ApiResponse<T> | null = isJson ? await response.json() : null;
+      let body: any = null;
+      try {
+        body = await response.json();
+      } catch {
+        // Response might not be JSON (e.g. 204 or plain text)
+      }
 
       if (!response.ok) {
         const errorMsg =
@@ -127,56 +140,60 @@ class ApiClient {
       }
 
       if (body && typeof body === 'object' && 'data' in body) {
-        return body.data;
+        return body.data as T;
       }
 
-      return body as unknown as T;
-    } catch (err) {
+      return body as T;
+    } catch (err: unknown) {
       clearTimeout(timeoutId);
       if (err instanceof ApiClientError) {
         throw err;
       }
       if (err instanceof Error) {
         if (err.name === 'AbortError') {
+          const secs = Math.round(timeoutDuration / 1000);
           throw new ApiClientError(
-            `Request to ${path} timed out after ${Math.round(timeoutMs / 1000)}s. Ensure backend is running.`,
+            `Request to ${path} timed out after ${secs}s. Ensure backend is running.`,
             'TIMEOUT_ERROR',
             408
           );
         }
-        throw new ApiClientError(
-          `Network connection failed: ${err.message}. Ensure Flask backend is running on ${this.baseUrl}.`,
-          'NETWORK_ERROR',
-          0
-        );
+        throw new ApiClientError(err.message, 'NETWORK_ERROR', 0);
       }
-      throw new ApiClientError('An unexpected error occurred during API communication.', 'UNKNOWN', 500);
+      throw new ApiClientError('An unknown error occurred.', 'UNKNOWN_ERROR', 500);
     }
   }
 
   public async get<T>(
     path: string,
-    params?: Record<string, string | number | boolean | undefined | null>
+    params?: Record<string, string | number | boolean | undefined | null>,
+    options?: RequestInit & { timeoutMs?: number }
   ): Promise<T> {
-    return this.request<T>(path, { method: 'GET' }, params);
+    return this.request<T>(path, { method: 'GET', ...options }, params);
   }
 
   public async post<T>(
     path: string,
     body?: unknown,
-    params?: Record<string, string | number | boolean | undefined | null>
+    params?: Record<string, string | number | boolean | undefined | null>,
+    options?: RequestInit & { timeoutMs?: number }
   ): Promise<T> {
     return this.request<T>(
       path,
       {
         method: 'POST',
         body: body ? JSON.stringify(body) : undefined,
+        ...options,
       },
       params
     );
   }
 
-  public async postLong<T>(path: string, body?: unknown, timeoutMs = 300000): Promise<T> {
+  public async postLong<T>(
+    path: string,
+    body?: unknown,
+    timeoutMs = 60000,
+  ): Promise<T> {
     return this.request<T>(
       path,
       {
@@ -247,14 +264,29 @@ class ApiClient {
     );
   }
 
-  public async getBlob(path: string): Promise<Blob> {
-    const response = await fetch(this.buildUrl(path), {
-      headers: { Accept: 'application/octet-stream' },
+  public async getBlob(
+    path: string,
+    params?: Record<string, string | number | boolean | undefined | null>,
+    credentials?: ApiCredentials,
+  ): Promise<Blob> {
+    const fullUrl = this.buildUrl(path, params);
+    const headers: Record<string, string> = {};
+    if (credentials) {
+      const encoded = new TextEncoder().encode(
+        `${credentials.username}:${credentials.password}`,
+      );
+      const binary = Array.from(encoded, (byte) => String.fromCharCode(byte)).join('');
+      headers.Authorization = `Basic ${btoa(binary)}`;
+    }
+    const response = await fetch(fullUrl, {
+      method: 'GET',
+      headers,
+      credentials: 'include',
     });
     if (!response.ok) {
       let message = `Request failed with status ${response.status} (${response.statusText})`;
       try {
-        const body = await response.json() as ApiResponse<unknown>;
+        const body = (await response.json()) as ApiResponse<unknown>;
         message = body.error?.message || message;
       } catch {
         // Keep the HTTP diagnostic when the error body is not JSON.
@@ -262,6 +294,21 @@ class ApiClient {
       throw new ApiClientError(message, `HTTP_${response.status}`, response.status);
     }
     return response.blob();
+  }
+
+  public async put<T>(
+    path: string,
+    body?: unknown,
+    params?: Record<string, string | number | boolean | undefined | null>
+  ): Promise<T> {
+    return this.request<T>(
+      path,
+      {
+        method: 'PUT',
+        body: body ? JSON.stringify(body) : undefined,
+      },
+      params
+    );
   }
 
   public async patch<T>(
@@ -277,6 +324,13 @@ class ApiClient {
       },
       params
     );
+  }
+
+  public async delete<T>(
+    path: string,
+    params?: Record<string, string | number | boolean | undefined | null>
+  ): Promise<T> {
+    return this.request<T>(path, { method: 'DELETE' }, params);
   }
 }
 

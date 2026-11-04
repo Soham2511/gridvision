@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { usePersona } from '../context';
 import { Bot, FileText, LogOut, Send, Sparkles, Upload, User } from 'lucide-react';
+import { AiAssistantPage as ResidentialAssistantPage } from '../../../ai/residential/frontend/src/pages/AiAssistantPage';
 import {
   analyticsService,
   type AssistantChatResponse,
@@ -963,7 +964,11 @@ const LegacyAssistantPage: React.FC = () => {
 
 export const AiAssistantPage: React.FC = () => {
   const { currentPersona } = usePersona();
-  return currentPersona === 'commercial'
-    ? <CommercialAssistantPage />
-    : <LegacyAssistantPage />;
+  if (currentPersona === 'commercial') {
+    return <CommercialAssistantPage />;
+  }
+  if (currentPersona === 'household') {
+    return <ResidentialAssistantPage />;
+  }
+  return <LegacyAssistantPage />;
 };

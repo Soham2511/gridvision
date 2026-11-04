@@ -95,6 +95,8 @@ export interface PairedCommercialForecast {
 
 export interface ResidentialMeter {
   householdId: string;
+  objectId?: number | string;
+  meterId?: string;
   dailyKwh: number;
   actualCycleKwhSoFar: number;
   targetRemainingKwh: number;
@@ -116,6 +118,8 @@ export interface HouseholdConsumptionPoint {
 
 export interface HouseholdOverview {
   householdId: string;
+  objectId?: number | string;
+  meterId?: string;
   userName: string;
   currentDailyUsageKwh: number;
   dailyAvgKwh: number;

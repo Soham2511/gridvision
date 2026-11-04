@@ -375,24 +375,27 @@ class GridVisionApplicationTests(unittest.TestCase):
                 artifact = client.get(
                     f"/api/v1/models/anomaly-prediction/runs/{run_id}/download/{filename}"
                 )
-                self.assertEqual(artifact.status_code, 200)
-                self.assertTrue(artifact.content_type.startswith(content_type))
-                self.assertEqual(
-                    artifact.headers["X-GridVision-Source-Provenance"], "unverified"
-                )
-                self.assertEqual(
-                    artifact.headers["X-GridVision-Verified-Fault-Evidence"], "false"
-                )
-                if filename == "events.geojson":
-                    feature_collection = artifact.get_json()
+                try:
+                    self.assertEqual(artifact.status_code, 200)
+                    self.assertTrue(artifact.content_type.startswith(content_type))
                     self.assertEqual(
-                        feature_collection["features"][0]["geometry"]["type"],
-                        "Point",
+                        artifact.headers["X-GridVision-Source-Provenance"], "unverified"
                     )
                     self.assertEqual(
-                        feature_collection["features"][0]["geometry"]["coordinates"],
-                        [-118.0, 34.0],
+                        artifact.headers["X-GridVision-Verified-Fault-Evidence"], "false"
                     )
+                    if filename == "events.geojson":
+                        feature_collection = artifact.get_json()
+                        self.assertEqual(
+                            feature_collection["features"][0]["geometry"]["type"],
+                            "Point",
+                        )
+                        self.assertEqual(
+                            feature_collection["features"][0]["geometry"]["coordinates"],
+                            [-118.0, 34.0],
+                        )
+                finally:
+                    artifact.close()
 
             invalid = client.post(
                 "/api/v1/models/anomaly-prediction/predict",

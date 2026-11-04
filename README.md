@@ -48,7 +48,6 @@ gridvision-app/
 ├── .venv/                          # Python virtual environment
 ├── backend/                        # Modular Flask REST API
 │   ├── run.py                      # Development server runner
-│   ├── .env.example                # Backend environment configuration template
 │   ├── app/
 │   │   ├── __init__.py             # Application factory & blueprint registration
 │   │   ├── config.py               # Environment configuration (Dev, Test, Prod)
@@ -68,8 +67,7 @@ gridvision-app/
 │   │   │       ├── peak.py         # /peak-demand & /peak-demand/curtail
 │   │   │       ├── anomalies.py    # /anomalies & status updates
 │   │   │       ├── customers.py    # /customers/segments, diurnal curves, matrix
-│   │   │       ├── insights.py     # /energy-insights
-│   │   │       └── assistant.py    # /assistant/chat domain answers
+│   │   │       └── insights.py     # /energy-insights
 │   │   ├── services/               # Business logic services
 │   │   │   ├── forecast_service.py
 │   │   │   ├── dashboard_service.py
@@ -88,6 +86,12 @@ gridvision-app/
 │   │       ├── logging.py          # Centralized structured logging
 │   │       ├── responses.py        # Consistent JSON response builders
 │   │       └── validation.py       # Pydantic request schemas
+├── ai/residential/                 # Residential assistant, RAG, and complaint features
+│   ├── backend/app/                # Assistant, RAG, reference, complaint, and residential modules
+│   ├── frontend/src/               # Assistant and complaint UI
+│   ├── tests/                      # Residential AI and complaint tests
+│   ├── docs/                       # Residential assistant documentation
+│   └── backend/.env.example        # Residential backend environment template
 ├── airflow/customer/               # Customer bronze/silver/gold DAG
 ├── airflow/commercial/             # Commercial building Silver/Gold DAG and ETL
 ├── airflow/2_government_load_prediction/ # Government grid ETL and forecasting
@@ -160,7 +164,14 @@ in Docker; Linux/WSL2 uses its Linux Airflow environment. By default,
 `GRIDVISION_DATA_DIR` points to the checkout's `data/` directory, and the source
 dataset is expected at `data/sample/training_sample_50000.parquet`.
 
-If starting Compose directly instead of using the automation script, create a root `.env` file (it is git-ignored) with `GRIDVISION_DATA_DIR` set to the absolute `data/` directory in your checkout and a private `SECRET_KEY`. Generate a strong key with:
+If starting Compose directly instead of using the automation script, create a root `.env` file (it is
+git-ignored) with `GRIDVISION_DATA_DIR` set to the absolute `data/` directory in your checkout and a
+private `SECRET_KEY`. The backend connects to host-installed Ollama at
+`http://host.docker.internal:11434` by default, uses `qwen3:8b`, and persists its RAG/reference
+database under `data/backend/`. Override `OLLAMA_BASE_URL` and `OLLAMA_MODEL` in `.env` if your
+runtime uses different values, and ensure the Ollama service is running with that model available.
+On Linux, Compose adds the `host.docker.internal` host-gateway mapping; Ollama must accept
+connections from Docker's host-gateway address. Generate a strong key with:
 
 ```powershell
 python -c "import secrets; print(secrets.token_urlsafe(48))"
@@ -361,7 +372,7 @@ To connect your real production database or data warehouse:
        data_provider = SampleDataProvider()
    ```
 
-3. **Configure your production environment** in `backend/.env`:
+3. **Configure your production environment** in `ai/residential/backend/.env`:
    ```bash
    DATA_PROVIDER=database
    DATABASE_URL=postgresql://user:password@timescale-db:5432/gridvision

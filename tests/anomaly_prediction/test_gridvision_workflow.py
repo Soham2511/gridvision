@@ -240,7 +240,7 @@ class GridVisionWorkflowTests(unittest.TestCase):
                     }
                     return {"metrics": self.metrics, "artifacts": artifacts}
 
-            tracking_uri = f"sqlite:///{(root / 'mlflow.db').as_posix()}"
+            tracking_uri = (root / "mlflow").as_uri()
             previous_directory = Path.cwd()
             try:
                 os.chdir(root)

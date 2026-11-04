@@ -122,8 +122,8 @@ services:
       - 0.0.0.0
       - --port
       - "5001"
-      - --workers
-      - "1"
+      - --gunicorn-opts
+      - "--timeout 300"
     volumes:
       - ${GRIDVISION_DATA_DIR:?Set GRIDVISION_DATA_DIR}/mlflow:/mlflow
     ports:
@@ -173,6 +173,11 @@ services:
       REPORT_EMAIL_SMTP_PASSWORD: ${REPORT_EMAIL_SMTP_PASSWORD:-losbwveudqvfqwjv}
       REPORT_EMAIL_DEFAULT_RECIPIENT: ${REPORT_EMAIL_DEFAULT_RECIPIENT:-kanak.nagar64@gmail.com}
       MLFLOW_TRACKING_URI: http://mlflow:5001
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3:8b}
+      ASSISTANT_TIMEOUT_SECONDS: ${ASSISTANT_TIMEOUT_SECONDS:-60}
+      ASSISTANT_COMPLEX_TIMEOUT_SECONDS: ${ASSISTANT_COMPLEX_TIMEOUT_SECONDS:-75}
+      DATABASE_URL: ${DATABASE_URL:-sqlite:////data/reference.db}
       MLFLOW_MODEL_NAME: ${MLFLOW_MODEL_NAME:-customer-bill-prediction}
       MLFLOW_MODEL_ALIAS: ${MLFLOW_MODEL_ALIAS:-champion}
       COMMERCIAL_MLFLOW_MODEL_NAME: ${COMMERCIAL_MLFLOW_MODEL_NAME:-gridvision-commercial-building-forecast}
@@ -217,7 +222,7 @@ services:
       ENERGY_NETWORK_PATH: /app/ai/Govt_interpretion+redistribution_plan/data/grid_network.json
       ENERGY_ASSISTANT_OUTPUT_DIR: /app/ai/Govt_interpretion+redistribution_plan/assistant/output
       ENERGY_ASSISTANT_HISTORY_PATH: /app/ai/Govt_interpretion+redistribution_plan/data/assistant_history.json
-      CORS_ORIGINS: http://localhost:8082,http://127.0.0.1:8082
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8082,http://127.0.0.1:8082,http://localhost:5173,http://127.0.0.1:5173}
       DEMO_USER_ID: ${DEMO_USER_ID:?Set DEMO_USER_ID in your local .env}
       DEMO_PASSWORD: ${DEMO_PASSWORD:?Set DEMO_PASSWORD in your local .env}
       COMMERCIAL_LLM_PROVIDER: ${COMMERCIAL_LLM_PROVIDER:-ollama}
@@ -227,6 +232,7 @@ services:
       COMMERCIAL_OLLAMA_TIMEOUT_SECONDS: ${COMMERCIAL_OLLAMA_TIMEOUT_SECONDS:-180}
       COMMERCIAL_RAG_UPLOAD_ROOT: /app/data/commercial/rag/uploads
     volumes:
+      - ${GRIDVISION_DATA_DIR:?Set GRIDVISION_DATA_DIR}/backend:/data
       - ${GRIDVISION_DATA_DIR:?Set GRIDVISION_DATA_DIR}/mlflow:/mlflow:ro
       - ${GRIDVISION_DATA_DIR:?Set GRIDVISION_DATA_DIR}/gold:/data/gold:ro
       - ${GRIDVISION_DATA_DIR:?Set GRIDVISION_DATA_DIR}/silver:/data/silver:ro
@@ -258,6 +264,8 @@ services:
       - ./models/customer_bill_prediction.metadata.json:/models/customer_bill_prediction.metadata.json:ro
       - ./key_vault/tavily/api.key:/run/secrets/tavily_api_key:ro
       - ${GRIDVISION_LOG_DIR:-./logs}:/logs
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "127.0.0.1:${GRIDVISION_BACKEND_HOST_PORT:-5000}:5000"
     depends_on:

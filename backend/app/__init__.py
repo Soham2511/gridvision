@@ -8,6 +8,23 @@ import time
 import uuid
 from pathlib import Path
 
+_RESIDENTIAL_APP_ROOT = (
+    Path(__file__).resolve().parents[2] / "ai" / "residential" / "backend" / "app"
+)
+if _RESIDENTIAL_APP_ROOT.is_dir():
+    __path__.append(str(_RESIDENTIAL_APP_ROOT))
+
+
+def _extend_residential_package_path(
+    package_path: list[str], relative_path: str
+) -> None:
+    """Keep moved residential modules importable through the existing app namespace."""
+    candidate = _RESIDENTIAL_APP_ROOT / relative_path
+    candidate_text = str(candidate)
+    if candidate.is_dir() and candidate_text not in package_path:
+        package_path.append(candidate_text)
+from pathlib import Path
+
 from flask import Flask, Response, g, jsonify, request
 from flask_cors import CORS
 
@@ -15,6 +32,7 @@ from app.config import BaseConfig, get_config
 from app.utils.logging import setup_logging
 from app.api.error_handlers import register_error_handlers
 from app.api.v1 import api_v1_bp
+from app.providers.parquet_data_provider import ParquetDataProvider
 from app.providers.unavailable_data_provider import UnavailableDataProvider
 from app.providers.unavailable_model_provider import UnavailableModelProvider
 from app.providers.mlflow_adapter import MLflowModelAdapter
@@ -29,6 +47,7 @@ from app.services.customer_silver_history_service import CustomerSilverHistorySe
 from app.services.commercial_silver_history_service import CommercialSilverHistoryService
 from app.services.insight_service import InsightService
 from app.services.assistant_service import AssistantService
+from app.providers.llm import OllamaLLMAdapter, GroqLLMAdapter
 from app.models.customer_bill_prediction import CustomerBillPredictionService
 from app.services.segmentation_service import SegmentationService
 from app.models.anomaly_prediction import AnomalyPredictionService
@@ -123,6 +142,12 @@ def create_app(config_class: type[BaseConfig] | None = None) -> Flask:
         from app.providers.sample_data_provider import SampleDataProvider
 
         data_provider = SampleDataProvider()
+    elif data_provider_type == "parquet":
+        data_provider = ParquetDataProvider()
+    elif data_provider_type == "sample":
+        from app.providers.sample_data_provider import SampleDataProvider
+
+        data_provider = SampleDataProvider()
     elif data_provider_type == "unavailable":
         data_provider = UnavailableDataProvider()
     else:
@@ -204,6 +229,12 @@ def create_app(config_class: type[BaseConfig] | None = None) -> Flask:
             commercial_metadata=app.config["COMMERCIAL_GOLD_METADATA_PATH"],
         )
 
+    # Instantiate LLM provider for conversational assistant (Ollama Active Runtime)
+    llm_provider = OllamaLLMAdapter(
+        base_url=app.config.get("OLLAMA_BASE_URL", "http://localhost:11434"),
+        model=app.config.get("OLLAMA_MODEL", "qwen3:8b"),
+    )
+
     # Instantiate business services
     health_svc = HealthService(data_provider, model_provider)
     forecast_svc = ForecastService(data_provider, model_provider)
@@ -212,11 +243,6 @@ def create_app(config_class: type[BaseConfig] | None = None) -> Flask:
     anomaly_svc = AnomalyService(data_provider)
     customer_svc = CustomerService(data_provider)
     insight_svc = InsightService(data_provider)
-    assistant_svc = AssistantService(
-        data_provider,
-        anomaly_service=None,
-        route_government_queries=not app.testing,
-    )
     customer_bill_prediction_svc = CustomerBillPredictionService(
         dataset_path=app.config["CUSTOMER_GOLD_DATASET_PATH"],
         metadata_path=app.config["CUSTOMER_MODEL_METADATA_PATH"],
@@ -225,18 +251,28 @@ def create_app(config_class: type[BaseConfig] | None = None) -> Flask:
         tariff_inr_per_kwh=app.config["CUSTOMER_TARIFF_INR_PER_KWH"],
         forecast_model_provider=model_provider,
     )
-    government_segmentation_svc = SegmentationService(
-        output_dir=app.config["SEGMENTATION_OUTPUT_DIR"],
-        reports_dir=app.config["SEGMENTATION_REPORTS_DIR"],
-        max_page_size=app.config["SEGMENTATION_API_MAX_PAGE_SIZE"],
-    )
     anomaly_prediction_svc = AnomalyPredictionService(
         dataset_path=app.config["ANOMALY_DATASET_PATH"],
         model_path=app.config["ANOMALY_MODEL_PATH"],
         project_root=app.config["PROJECT_ROOT"],
         runs_path=app.config["ANOMALY_RUNS_PATH"],
     )
-    assistant_svc.anomaly_service = anomaly_prediction_svc
+    assistant_svc = AssistantService(
+        data_provider,
+        anomaly_service=anomaly_prediction_svc,
+        route_government_queries=not app.testing,
+        llm_provider=llm_provider,
+        tariff_rate=app.config.get("CUSTOMER_TARIFF_INR_PER_KWH", 10.0),
+        authorized_meters=app.config.get("AUTHORIZED_RESIDENTIAL_METERS"),
+        temperature=app.config.get("ASSISTANT_TEMPERATURE", 0.2),
+        max_tokens=app.config.get("ASSISTANT_MAX_TOKENS", 800),
+        prediction_service=customer_bill_prediction_svc,
+    )
+    government_segmentation_svc = SegmentationService(
+        output_dir=app.config["SEGMENTATION_OUTPUT_DIR"],
+        reports_dir=app.config["SEGMENTATION_REPORTS_DIR"],
+        max_page_size=app.config["SEGMENTATION_API_MAX_PAGE_SIZE"],
+    )
     commercial_settings = CommercialSettings.from_env()
     commercial_tools = DocumentRAGCommercialTools(
         commercial_settings.rag_documents,
@@ -364,6 +400,13 @@ def create_app(config_class: type[BaseConfig] | None = None) -> Flask:
 
     # Register API v1 blueprint
     app.register_blueprint(api_v1_bp, url_prefix=app.config.get("API_PREFIX", "/api/v1"))
+
+    # Seed verified initial residential account if not present
+    try:
+        from app.services.auth_service import auth_service
+        auth_service.seed_initial_residential_user()
+    except Exception as exc:
+        logging.getLogger("gridvision.auth").warning("Initial residential account seeding deferred: %s", exc)
 
     # Root service index
     @app.route("/", methods=["GET"])

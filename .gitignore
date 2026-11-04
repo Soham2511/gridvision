@@ -12,6 +12,11 @@ __pycache__/
 *.pytest_cache/
 .coverage
 htmlcov/
+.tox/
+.nox/
+build/
+*.egg-info/
+.ipynb_checkpoints/
 
 # Local datasets, generated manifests, and runtime stores
 /instance/ai_private/
@@ -32,10 +37,16 @@ htmlcov/
 *.sqlite
 *.sqlite3
 *.db
+*.db-wal
+*.db-shm
+*.duckdb.wal
+*.sqlite-wal
+*.sqlite-shm
 *.stage
 *.tmp
 
 # Generated GridVision runtime and test logs
+*.log
 /logs/**
 !/logs/
 !/logs/README.md
@@ -72,6 +83,8 @@ frontend/node_modules/
 dist/
 frontend/dist/
 .eslintcache
+.vite/
+.turbo/
 
 # Environment variables & secrets
 .env
@@ -93,6 +106,11 @@ frontend/.env
 /ai/Govt_interpretion+redistribution_plan/data/conversations/
 /ai/Govt_interpretion+redistribution_plan/logs/
 /ai/Govt_interpretion+redistribution_plan/output/
+*.pem
+*.key
+*.crt
+*.pfx
+*.p12
 
 # IDE & OS files
 .vscode/
@@ -100,3 +118,8 @@ frontend/.env
 .slingshot/
 .DS_Store
 Thumbs.db
+desktop.ini
+ehthumbs.db
+*.swp
+*.swo
+*~

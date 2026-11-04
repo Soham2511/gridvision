@@ -2,6 +2,14 @@
 
 from __future__ import annotations
 
+import sys
+
+if sys.platform == "win32":
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 import argparse
 from collections import deque
 from dataclasses import replace
@@ -454,6 +462,7 @@ def _run_airflow_dag_test(
     airflow_command: list[str],
     dag_id: str,
     env: dict[str, str],
+    is_etl_only: bool = False,
 ) -> dict[str, str]:
     execution_date = date.today().isoformat()
     command = airflow_command + ["dags", "test", dag_id, execution_date]
@@ -478,6 +487,46 @@ def _run_airflow_dag_test(
             f"Airflow DAG test failed (exit {return_code}): {' '.join(command)}"
             + (f"\nLast task output:\n{details}" if details else "")
         )
+    os.environ.update(env)
+    if airflow_command == ["python-direct-runner"]:
+        if dag_id == DAG_ID:
+            from airflow.customer.data_pipeline import (
+                SOURCE_PATH,
+                BRONZE_PATH,
+                SILVER_PATH,
+                GOLD_PATH,
+                create_bronze,
+                create_customer_silver,
+                build_customer_bill_gold,
+            )
+            create_bronze(SOURCE_PATH, BRONZE_PATH)
+            create_customer_silver(BRONZE_PATH, SILVER_PATH)
+            build_customer_bill_gold(SILVER_PATH, GOLD_PATH)
+        elif dag_id == GOVERNMENT_DAG_ID:
+            gov_dir = PROJECT_ROOT / "airflow" / "2_government_load_prediction"
+            for p in (PROJECT_ROOT, gov_dir):
+                if str(p) not in sys.path:
+                    sys.path.insert(0, str(p))
+            from training.government_load.config import PipelineSettings
+            settings = PipelineSettings.from_environment()
+            ready_file = settings.output_path.expanduser().resolve()
+            reuse = os.getenv("GOVERNMENT_PIPELINE_REUSE_PREPARED", "").strip().lower() in {"1", "true", "yes"}
+            if not (reuse and ready_file.is_file()):
+                from grid_forecasting_pipeline.etl import prepare_training_data
+                prepare_training_data(settings)
+            if not is_etl_only and env.get("MLFLOW_TRACKING_URI"):
+                model_file = settings.model_path.expanduser().resolve()
+                if reuse and model_file.is_file():
+                    print(f"Reusing existing government model artifact at {model_file}", flush=True)
+                else:
+                    from training.government_load.modeling import train_hybrid_model
+                    training_settings = PipelineSettings(
+                        **{
+                            **settings.model_dump(),
+                            "input_path": ready_file,
+                        }
+                    )
+                    train_hybrid_model(training_settings)
     result = {"dag_id": dag_id, "execution_date": execution_date}
     print(
         f"Airflow DAG run completed: {dag_id} ({execution_date}). "
@@ -875,6 +924,7 @@ def _run_airflow_dag_if_dataset_changed(
     env: dict[str, str],
     *,
     force: bool = False,
+    is_etl_only: bool = False,
 ) -> dict[str, Any]:
     """Skip a DAG when its recorded input and generated datasets are unchanged."""
     inputs, outputs = _dag_dataset_paths(dag_id, env)
@@ -976,7 +1026,7 @@ def _run_airflow_dag_if_dataset_changed(
     if dag_id == ANOMALY_DAG_ID:
         dag_env["ANOMALY_FORCE_PREPARE"] = "1"
         dag_env["ANOMALY_FORCE_RETRAIN"] = "1"
-    result = _run_airflow_dag_test(airflow_command, dag_id, dag_env)
+    result = _run_airflow_dag_test(airflow_command, dag_id, dag_env, is_etl_only=is_etl_only)
     if dag_id == SEGMENTATION_DAG_ID:
         _, outputs = _dag_dataset_paths(dag_id, env)
     missing_outputs = [
@@ -1438,6 +1488,30 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Retrain the anomaly detector instead of reusing a valid saved artifact.",
     )
+    parser.add_argument(
+        "--remote-mlflow",
+        default=os.getenv("MLFLOW_TRACKING_URI"),
+        help=(
+            "Remote MLflow tracking server URI (e.g. http://127.0.0.1:15001 via SSH tunnel or EC2 IP). "
+            "Skips starting a local MLflow container."
+        ),
+    )
+    parser.add_argument(
+        "--pipeline-only",
+        action="store_true",
+        help=(
+            "Run local ETL and model training only, logging to MLflow and "
+            "registering the champion model, then exit without starting local containers."
+        ),
+    )
+    parser.add_argument(
+        "--etl-only",
+        action="store_true",
+        help=(
+            "Run local Airflow ETL only to create the gold dataset and government features, "
+            "verifying outputs before training on EC2."
+        ),
+    )
     arguments = parser.parse_args(argv)
     steps.clear()
     started = time.perf_counter()
@@ -1445,6 +1519,10 @@ def main(argv: list[str] | None = None) -> int:
     result_code = 0
     staged_build_context: tempfile.TemporaryDirectory[str] | None = None
     env = os.environ.copy()
+    env["PYTHONIOENCODING"] = "utf-8"
+    env["PYTHONUTF8"] = "1"
+    os.environ["PYTHONIOENCODING"] = "utf-8"
+    os.environ["PYTHONUTF8"] = "1"
     env["GRIDVISION_DATA_DIR"] = str(DATA_ROOT)
     env["GRIDVISION_LOG_DIR"] = str(LOG_ROOT)
     env["GRIDVISION_SOURCE_PATH"] = str(SOURCE_PATH)
@@ -1524,7 +1602,14 @@ def main(argv: list[str] | None = None) -> int:
     env["AIRFLOW__WEBSERVER__WEB_SERVER_HOST"] = "127.0.0.1"
     env["AIRFLOW__WEBSERVER__WEB_SERVER_PORT"] = "8081"
     env.setdefault("GIT_PYTHON_REFRESH", "quiet")
-    env.setdefault("MLFLOW_TRACKING_URI", MLFLOW_HOST_URI)
+    is_remote_mlflow = bool(arguments.remote_mlflow)
+    effective_mlflow_uri = arguments.remote_mlflow or MLFLOW_HOST_URI
+    if not arguments.etl_only:
+        env["MLFLOW_TRACKING_URI"] = effective_mlflow_uri
+        os.environ["MLFLOW_TRACKING_URI"] = effective_mlflow_uri
+    else:
+        env.pop("MLFLOW_TRACKING_URI", None)
+        os.environ.pop("MLFLOW_TRACKING_URI", None)
     env.setdefault("COMMERCIAL_SILVER_DATASET", str(DATA_ROOT / "silver" / "commercial_silver.parquet"))
     env.setdefault("COMMERCIAL_GOLD_DATASET", str(DATA_ROOT / "gold" / "commercial_gold.parquet"))
     env.setdefault("COMMERCIAL_GOLD_MANIFEST", str(DATA_ROOT / "metadata" / "commercial" / "dataset_versions" / "gold" / "latest.json"))
@@ -1622,16 +1707,27 @@ def main(argv: list[str] | None = None) -> int:
         if staged_build_context:
             env["GRIDVISION_BUILD_CONTEXT"] = staged_build_context.name
 
-        run_step(
-            "Build and start persistent MLflow tracking service",
-            lambda: _compose(compose, ["up", "--build", "-d", "mlflow"], env),
-        )
-        run_step(
-            "Wait for MLflow tracking service",
-            lambda: _wait_for_http(
-                f"{MLFLOW_HOST_URI}/health", "MLflow", timeout=180
-            ),
-        )
+        if not arguments.etl_only:
+            if is_remote_mlflow:
+                run_step(
+                    f"Verify connection to remote MLflow ({effective_mlflow_uri})",
+                    lambda: _wait_for_http(
+                        f"{effective_mlflow_uri}/health",
+                        "Remote MLflow tracking service",
+                        timeout=30,
+                    ),
+                )
+            else:
+                run_step(
+                    "Build and start persistent MLflow tracking service",
+                    lambda: _compose(compose, ["up", "--build", "-d", "mlflow"], env),
+                )
+                run_step(
+                    "Wait for MLflow tracking service",
+                    lambda: _wait_for_http(
+                        f"{MLFLOW_HOST_URI}/health", "MLflow", timeout=180
+                    ),
+                )
 
         airflow = prerequisites["airflow"]
         airflow_command = airflow
@@ -1694,8 +1790,16 @@ def main(argv: list[str] | None = None) -> int:
                 GOVERNMENT_DAG_ID,
                 env,
                 force=arguments.force_airflow_dags,
+                is_etl_only=arguments.etl_only,
             )
         )
+
+        if arguments.etl_only:
+            print("\n[SUCCESS] Local ETL completed successfully!", flush=True)
+            print(f"  Customer Gold Dataset: {DATA_ROOT / 'gold' / 'customer_gold.parquet'}", flush=True)
+            print(f"  Government Features:   {DATA_ROOT / 'airflow' / 'government'}", flush=True)
+            print("  You can now start EC2 whenever you are ready and run model training.", flush=True)
+            return 0
         run_step(
             "Generate and publish Government customer segmentation outputs",
             lambda: _run_airflow_dag_if_dataset_changed(
@@ -1727,7 +1831,7 @@ def main(argv: list[str] | None = None) -> int:
                     "--data-path",
                     str(DATA_ROOT / "gold" / "customer_gold.parquet"),
                     "--tracking-uri",
-                    MLFLOW_HOST_URI,
+                    effective_mlflow_uri,
                     "--model-name",
                     env["MLFLOW_MODEL_NAME"],
                     "--alias",
@@ -1751,6 +1855,16 @@ def main(argv: list[str] | None = None) -> int:
             "Run anomaly inference, spatial localization, event generation, and storage",
             lambda: _run_anomaly_inference(env),
         )
+
+        if arguments.pipeline_only:
+            print("\n[SUCCESS] Local ETL and candidate model training complete!", flush=True)
+            print(f"  Target MLflow: {effective_mlflow_uri}", flush=True)
+            print(
+                f"  Registered Model: {env['MLFLOW_MODEL_NAME']}@{env['MLFLOW_MODEL_ALIAS']}",
+                flush=True,
+            )
+            print("  EC2 Flask service will dynamically load this champion version.", flush=True)
+            return 0
 
         airflow_service = run_step(
             "Start Airflow scheduler and web UI",
@@ -1801,7 +1915,7 @@ def main(argv: list[str] | None = None) -> int:
                 flush=True,
             )
         print(f"  Structured logs: {LOG_ROOT}", flush=True)
-        print(f"  MLflow UI: {MLFLOW_HOST_URI}", flush=True)
+        print(f"  MLflow UI: {effective_mlflow_uri}", flush=True)
         print(
             f"  Registered model: {env['MLFLOW_MODEL_NAME']}@{env['MLFLOW_MODEL_ALIAS']}",
             flush=True,
@@ -1810,6 +1924,7 @@ def main(argv: list[str] | None = None) -> int:
     except KeyboardInterrupt:
         print("\nAutomation interrupted by user.", flush=True)
         result_code = 130
+        print("  Stop containers with: podman compose down (or docker compose down)", flush=True)
     except Exception as exc:
         print(f"\nAutomation stopped: {exc}", flush=True)
         result_code = 1

@@ -26,6 +26,13 @@ import {
   KpiMetric,
   PairedCommercialForecast,
 } from '../types/analytics';
+import {
+  QuestionnaireSchema,
+  HouseEnergyPlanningResult,
+  ApplianceScenarioResult,
+  CostManagementResult,
+  AssistantResponsePayload,
+} from '../../../ai/residential/frontend/src/types/residentialFeatures';
 
 export interface OverviewApiResponse {
   kpis: KpiMetric[];
@@ -139,9 +146,13 @@ class AnalyticsService {
     return apiClient.get<OverviewApiResponse>('/overview');
   }
 
-  // --- Commercial Facilities ---
+  // --- Commercial Buildings ---
   async getCommercialBuildings(): Promise<CommercialBuilding[]> {
     return apiClient.get<CommercialBuilding[]>('/entities/commercial');
+  }
+
+  async getCommercialBuilding(buildingId: string): Promise<CommercialBuilding> {
+    return apiClient.get<CommercialBuilding>(`/entities/commercial/${encodeURIComponent(buildingId)}`);
   }
 
   async getCommercialForecast(buildingId: string): Promise<{
@@ -161,7 +172,7 @@ class AnalyticsService {
   }
 
   async getCommercialDashboard(
-    tab: 'building' | 'regional' = 'building',
+    tab: 'building' | 'regional' | 'portfolio' | 'eui' = 'building',
     timeRange: '1D' | '7D' | '1M' | '3M' | '1Y' = '1D',
     buildingId: string = 'Panther_office_1'
   ): Promise<CommercialDashboardData> {
@@ -175,6 +186,10 @@ class AnalyticsService {
   // --- Residential Meters ---
   async getResidentialMeters(): Promise<ResidentialMeter[]> {
     return apiClient.get<ResidentialMeter[]>('/entities/residential');
+  }
+
+  async getResidentialMeter(householdId: string): Promise<ResidentialMeter> {
+    return apiClient.get<ResidentialMeter>(`/entities/residential/${encodeURIComponent(householdId)}`);
   }
 
   async getResidentialForecast(householdId: string): Promise<{
@@ -320,15 +335,24 @@ class AnalyticsService {
     prompt: string,
     persona: string = 'household',
     entityId?: string,
+    historyOrConversationId?: { role: 'user' | 'assistant' | 'system'; content: string }[] | string,
     conversationId?: string
-  ): Promise<{ answer: string; persona: string; entityId: string | null; status?: string; availability?: string }> {
-    return apiClient.post<{ answer: string; persona: string; entityId: string | null; status?: string; availability?: string }>(
+  ): Promise<AssistantResponsePayload> {
+    let history: { role: 'user' | 'assistant' | 'system'; content: string }[] | undefined;
+    let effectiveConversationId = conversationId;
+    if (typeof historyOrConversationId === 'string') {
+      effectiveConversationId = historyOrConversationId;
+    } else if (Array.isArray(historyOrConversationId)) {
+      history = historyOrConversationId;
+    }
+    return apiClient.post<AssistantResponsePayload>(
       '/assistant/chat',
       {
         prompt,
         persona,
         entity_id: entityId,
-        ...(conversationId ? { conversation_id: conversationId } : {}),
+        history: history || [],
+        ...(effectiveConversationId ? { conversation_id: effectiveConversationId } : {}),
       }
     );
   }
@@ -455,6 +479,91 @@ class AnalyticsService {
       `/commercial/schedules/${encodeURIComponent(proposalId)}/approval`,
       { decision },
       credentials,
+    );
+  }
+
+  // --- Persistent Conversation Sessions ---
+  async listConversations(params?: {
+    include_archived?: boolean;
+    limit?: number;
+    offset?: number;
+  }): Promise<any[]> {
+    return apiClient.get<any[]>('/assistant/conversations', params);
+  }
+
+  async createConversation(payload?: {
+    title?: string;
+    meter_id?: string;
+  }): Promise<any> {
+    return apiClient.post<any>('/assistant/conversations', payload || {});
+  }
+
+  async getConversation(conversationId: string): Promise<{
+    session: any;
+    messages: Array<{
+      id: string;
+      role: 'user' | 'assistant' | 'system';
+      content: string;
+      mode?: string;
+      created_at?: string;
+    }>;
+  }> {
+    return apiClient.get<any>(`/assistant/conversations/${encodeURIComponent(conversationId)}`);
+  }
+
+  async updateConversation(
+    conversationId: string,
+    payload: { title?: string; is_archived?: boolean }
+  ): Promise<any> {
+    return apiClient.patch<any>(
+      `/assistant/conversations/${encodeURIComponent(conversationId)}`,
+      payload
+    );
+  }
+
+  async deleteConversation(conversationId: string): Promise<{ deleted: boolean; conversation_id: string }> {
+    return apiClient.delete<{ deleted: boolean; conversation_id: string }>(
+      `/assistant/conversations/${encodeURIComponent(conversationId)}`
+    );
+  }
+
+  // --- Dedicated Residential Features ---
+  async getResidentialQuestionnaire(featureId: string): Promise<QuestionnaireSchema> {
+    return apiClient.get<QuestionnaireSchema>(`/residential/questionnaires/${encodeURIComponent(featureId)}`);
+  }
+
+  async planHouseEnergy(payload: any): Promise<HouseEnergyPlanningResult> {
+    const res = await apiClient.post<any>('/residential/plan-house-energy', payload);
+    return ((res && res.results) ? res.results : res) as HouseEnergyPlanningResult;
+  }
+
+  async analyzeApplianceScenario(payload: any): Promise<ApplianceScenarioResult> {
+    const res = await apiClient.post<any>('/residential/analyze-appliance', payload);
+    return ((res && res.results) ? res.results : res) as ApplianceScenarioResult;
+  }
+
+  async manageEnergyCost(payload: any): Promise<CostManagementResult> {
+    const res = await apiClient.post<any>('/residential/manage-cost', payload);
+    return ((res && res.results) ? res.results : res) as CostManagementResult;
+  }
+
+  async createResidentialSession(
+    featureId: string,
+    entityId?: string
+  ): Promise<{ session_id: string; status: string }> {
+    return apiClient.post<{ session_id: string; status: string }>('/residential/sessions', {
+      feature_id: featureId,
+      entity_id: entityId,
+    });
+  }
+
+  async updateResidentialSession(
+    sessionId: string,
+    payload: any
+  ): Promise<{ session_id: string; status: string }> {
+    return apiClient.put<{ session_id: string; status: string }>(
+      `/residential/sessions/${encodeURIComponent(sessionId)}`,
+      payload
     );
   }
 }

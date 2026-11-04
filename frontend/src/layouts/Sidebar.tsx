@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { usePersona, PersonaType } from '../context';
+import { useAuth } from '../context/AuthContext';
 import {
   Home,
   BarChart2,
@@ -18,10 +19,13 @@ import {
   ShieldAlert,
   FileText,
   Bell,
+  Cpu,
+  LifeBuoy,
 } from 'lucide-react';
 
 export const Sidebar: React.FC = () => {
   const { currentPersona, setPersona } = usePersona();
+  const { logout } = useAuth();
   const navigate = useNavigate();
   const [showPersonaMenu, setShowPersonaMenu] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(
@@ -72,6 +76,15 @@ export const Sidebar: React.FC = () => {
           },
         ]
       : []),
+    ...(currentPersona === 'household' || !currentPersona
+      ? [
+          {
+            path: '/app/complaints',
+            label: 'Complaint Centre',
+            icon: <LifeBuoy size={18} />,
+          },
+        ]
+      : []),
     {
       path: '/app/assistant',
       label: 'AI Assistant',
@@ -79,6 +92,11 @@ export const Sidebar: React.FC = () => {
     },
     { path: '/app/reports', label: 'Reports', icon: <FileText size={18} /> },
     { path: '/app/notifications', label: 'Notifications', icon: <Bell size={18} /> },
+    {
+      path: '/models',
+      label: 'Models',
+      icon: <Cpu size={18} />,
+    },
     {
       path: '/profile',
       label: currentPersona === 'government' ? 'Profile' : 'Building Profile',
@@ -97,9 +115,10 @@ export const Sidebar: React.FC = () => {
     navigate('/');
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    await logout();
     setPersona(null);
-    navigate('/');
+    navigate('/login');
   };
 
   return (
