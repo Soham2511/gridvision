@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from flask import Blueprint
 
+from app import _extend_residential_package_path
+
+_extend_residential_package_path(__path__, "api/v1")
+
 from app.api.v1.health import bp as health_bp
 from app.api.v1.overview import bp as overview_bp
 from app.api.v1.entities import bp as entities_bp

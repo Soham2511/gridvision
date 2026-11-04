@@ -55,6 +55,7 @@ from app.services.assistant.dialogue_state import (
 from app.services.assistant.intelligent_router import IntelligentRouter
 from app.services.assistant.context_manager import ConversationContextManager
 from app.services.assistant.orchestrator import ResidentialAssistantOrchestrator
+from app.providers.llm.mock_adapter import MockLLMAdapter
 from app.providers.sample_data_provider import SampleDataProvider
 
 
@@ -376,6 +377,50 @@ class TestIntelligentToolRouting(unittest.TestCase):
                 "granularity": "daily",
             },
         )
+
+    def test_explicit_prediction_routes_to_monthly_model_tool(self):
+        plan = self.router.route(
+            current_message="And predict the usage on march 2019"
+        )
+        self.assertEqual(plan.primary_intent, "forward_bill_prediction")
+        self.assertEqual(plan.candidate_tools, ["predict_usage_and_bill"])
+        self.assertEqual(plan.routed_tool_arguments, {"target_month": "2019-03"})
+        self.assertTrue(plan.requires_tool_execution)
+
+    def test_llm_classification_drives_intent_and_allowlisted_tools(self):
+        classifier = MockLLMAdapter(
+            canned_response='{"intent":"forward_bill_prediction"}'
+        )
+        prompt = "show me the household usage for March 2019"
+        resolved = resolve_dialogue_context(prompt)
+
+        intent = self.router.classify_intent(prompt, classifier)
+        plan = self.router.create_routing_plan(
+            prompt=prompt,
+            resolved_state=resolved,
+            classified_intent=intent,
+        )
+
+        self.assertEqual(intent, "forward_bill_prediction")
+        self.assertEqual(plan.primary_intent, "forward_bill_prediction")
+        self.assertEqual(plan.candidate_tools, ["predict_usage_and_bill"])
+        self.assertEqual(plan.routed_tool_arguments, {"target_month": "2019-03"})
+        self.assertTrue(plan.requires_tool_execution)
+
+    def test_invalid_llm_classification_falls_back_to_existing_router(self):
+        classifier = MockLLMAdapter(canned_response='{"intent":"run_arbitrary_code"}')
+        prompt = "tell bill for dec 2018"
+
+        intent = self.router.classify_intent(prompt, classifier)
+        plan = self.router.create_routing_plan(
+            prompt=prompt,
+            resolved_state=resolve_dialogue_context(prompt),
+            classified_intent=intent,
+        )
+
+        self.assertIsNone(intent)
+        self.assertEqual(plan.primary_intent, "historical_monthly_billing")
+        self.assertEqual(plan.candidate_tools, ["query_consumption_history"])
 
     def test_last_month_consumption_routes_to_verified_historical_tool(self):
         plan = self.router.route(

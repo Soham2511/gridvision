@@ -306,18 +306,21 @@ class GridVisionApplicationTests(unittest.TestCase):
                 artifact = client.get(
                     f"/api/v1/models/anomaly-prediction/runs/{run_id}/download/{filename}"
                 )
-                self.assertEqual(artifact.status_code, 200)
-                self.assertTrue(artifact.content_type.startswith(content_type))
-                if filename == "events.geojson":
-                    feature_collection = artifact.get_json()
-                    self.assertEqual(
-                        feature_collection["features"][0]["geometry"]["type"],
-                        "Point",
-                    )
-                    self.assertEqual(
-                        feature_collection["features"][0]["geometry"]["coordinates"],
-                        [-118.0, 34.0],
-                    )
+                try:
+                    self.assertEqual(artifact.status_code, 200)
+                    self.assertTrue(artifact.content_type.startswith(content_type))
+                    if filename == "events.geojson":
+                        feature_collection = artifact.get_json()
+                        self.assertEqual(
+                            feature_collection["features"][0]["geometry"]["type"],
+                            "Point",
+                        )
+                        self.assertEqual(
+                            feature_collection["features"][0]["geometry"]["coordinates"],
+                            [-118.0, 34.0],
+                        )
+                finally:
+                    artifact.close()
 
             invalid = client.post(
                 "/api/v1/models/anomaly-prediction/predict",

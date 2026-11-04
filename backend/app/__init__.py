@@ -5,6 +5,23 @@ from __future__ import annotations
 import logging
 import time
 import uuid
+from pathlib import Path
+
+_RESIDENTIAL_APP_ROOT = (
+    Path(__file__).resolve().parents[2] / "ai" / "residential" / "backend" / "app"
+)
+if _RESIDENTIAL_APP_ROOT.is_dir():
+    __path__.append(str(_RESIDENTIAL_APP_ROOT))
+
+
+def _extend_residential_package_path(
+    package_path: list[str], relative_path: str
+) -> None:
+    """Keep moved residential modules importable through the existing app namespace."""
+    candidate = _RESIDENTIAL_APP_ROOT / relative_path
+    candidate_text = str(candidate)
+    if candidate.is_dir() and candidate_text not in package_path:
+        package_path.append(candidate_text)
 
 from flask import Flask, Response, g, jsonify, request
 from flask_cors import CORS

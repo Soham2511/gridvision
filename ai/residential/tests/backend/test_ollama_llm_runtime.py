@@ -55,7 +55,7 @@ class TestOllamaConfigurationAndCredentials(unittest.TestCase):
         self.assertTrue(hasattr(BaseConfig, "GROQ_MODEL"))
 
     def test_env_file_retains_groq_and_defines_ollama(self):
-        """backend/.env must have OLLAMA_MODEL=qwen3:8b and preserve GROQ_API_KEY."""
+        """Residential backend .env must define Ollama and preserve Groq config."""
         env_path = os.path.join(os.path.dirname(__file__), "..", "..", "backend", ".env")
         if os.path.exists(env_path):
             with open(env_path, "r", encoding="utf-8") as f:
@@ -325,6 +325,34 @@ class TestResidentialAgentFactoryWithOllama(unittest.TestCase):
         self.assertIn("3,829", result["answer"])
         self.assertIn("calculated", result["answer"].lower())
         self.assertLessEqual(len(result["answer"]), 500)
+
+    def test_live_orchestrator_predicts_explicit_month_from_verified_tool_result(self):
+        """A dated prediction invokes the monthly model and synthesizes its verified result."""
+        if not self.factory.is_ollama_available():
+            self.skipTest("Local Ollama is unavailable.")
+
+        app = create_app(config_class=TestingConfig)
+        with (
+            app.app_context(),
+            patch.object(BaseConfig, "TESTING", False),
+            patch.dict(os.environ, {"FLASK_ENV": "production"}),
+        ):
+            orchestrator = ResidentialAssistantOrchestrator(
+                data_provider=SampleDataProvider(),
+                authorized_meters=["METER-1000"],
+                agent_factory=self.factory,
+            )
+            result = orchestrator.answer_query(
+                prompt="And predict the usage on march 2019",
+                entity_id="METER-1000",
+                user_id="ollama-prediction-test",
+                conversation_id="ollama-prediction-test",
+            )
+
+        self.assertEqual(result["status"], "success")
+        self.assertIn("march 2019", result["answer"].lower())
+        self.assertIn("330.75", result["answer"])
+        self.assertTrue(result["isLlmGenerated"])
 
     def test_live_ollama_generates_direct_response_without_tool_call(self):
         """Simple conceptual questions receive a normal answer without invoking tools."""

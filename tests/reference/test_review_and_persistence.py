@@ -508,7 +508,16 @@ class TestCustomerDataIsolation(unittest.TestCase):
         self.assertTrue(silver_file.exists(), "customer_silver.parquet must exist in data/silver")
 
         # Invariant: No customer PII in reference tables
-        for table in Base.metadata.tables.values():
+        reference_models = (
+            ApprovedReferenceModel,
+            CandidateReferenceModel,
+            DocumentArtifactModel,
+            ReferenceAuditLogModel,
+            ReferenceParameterModel,
+            SourceDocumentModel,
+        )
+        for model in reference_models:
+            table = model.__table__
             col_names = {c.name for c in table.columns}
             for forbidden in ["meter_id", "customer_name", "account_number", "ssn", "phone"]:
                 self.assertNotIn(

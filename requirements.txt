@@ -2,7 +2,7 @@
 flask>=3.0.0
 flask-cors>=4.0.0
 pydantic>=2.7.0
-SQLAlchemy>=2.0,<3
+SQLAlchemy>=2.0,<2.1
 python-dotenv>=1.0.0
 waitress>=3.0.0,<4
 langchain>=1.4.0

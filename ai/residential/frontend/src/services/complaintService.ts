@@ -4,7 +4,7 @@
  * and list/retrieve customer complaints.
  */
 
-import { apiClient } from './apiClient';
+import { apiClient } from '../../../../../frontend/src/services/apiClient';
 import {
   Complaint,
   ComplaintCategory,
@@ -41,4 +41,3 @@ export const complaintService = {
     return apiClient.post<Complaint>('/complaints', payload, undefined, { timeoutMs: 60000 });
   },
 };
-

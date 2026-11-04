@@ -211,12 +211,35 @@ def resolve_dialogue_context(
         "last month's usage", "last month consumption", "past usage", "what was my electricity",
         "outage", "sparking", "power cut"
     ])
+    mentions_energy_cost = any(
+        word in p_lower for word in ("bill", "electricity", "energy", "consumption", "usage")
+    )
+    asks_to_reduce_energy_cost = any(
+        phrase in p_lower
+        for phrase in (
+            "reduce",
+            "lower",
+            "save",
+            "saving",
+            "cut",
+            "without compromising",
+            "cost management",
+            "intervention",
+        )
+    )
+    is_cost_management_request = (
+        mentions_energy_cost and asks_to_reduce_energy_cost
+    )
     is_explicit_topic_shift = (
         p_lower.startswith(("actually", "by the way", "first explain", "before that", "wait", "first tell me", "first answer"))
         or is_telemetry_or_billing_query
     )
 
-    if is_explicit_topic_shift and is_telemetry_or_billing_query:
+    if (
+        is_explicit_topic_shift
+        and is_telemetry_or_billing_query
+        and not is_cost_management_request
+    ):
         # Route directly to historical analytics, releasing any active questionnaire lock
         return ResolvedDialogueState(
             raw_prompt=clean_p,
@@ -629,4 +652,3 @@ def compact_history_for_llm(
                 sanitized.append({"role": "assistant", "content": text})
 
     return sanitized
-

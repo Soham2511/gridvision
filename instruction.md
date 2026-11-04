@@ -75,15 +75,19 @@ gridvision-final/
 │   └── anomaly_prediction/         # Wavelet + Isolation Forest training DAG
 ├── backend/                        # Modular Flask REST API
 │   ├── run.py                      # Development server runner
-│   ├── .env.example                # Backend environment configuration template
 │   └── app/
 │       ├── __init__.py             # Application factory & provider assembly
 │       ├── config.py               # Centralized configuration classes
 │       ├── api/v1/                 # Versioned REST API endpoints
-│       ├── domain/residential/     # Pure clean-architecture engineering calculators & schemas
-│       ├── services/               # Forecast, peak, anomaly, segmentation, & assistant services
-│       ├── providers/              # Parquet, sample, MLflow, and Groq LLM adapters
+│       ├── services/               # Forecast, peak, anomaly, and segmentation services
+│       ├── providers/              # Parquet, sample, and MLflow adapters
 │       └── models/                 # Model registry and runtime prediction packages
+├── ai/residential/                 # Residential assistant, RAG, and complaint features
+│   ├── backend/app/                # Assistant, RAG, reference, complaint, and residential modules
+│   ├── frontend/src/               # Assistant and complaint UI
+│   ├── tests/                      # Residential AI and complaint tests
+│   ├── docs/                       # Residential assistant documentation
+│   └── backend/.env.example        # Residential backend environment template
 ├── data/                           # Data lake hierarchy
 │   ├── sample/                     # Raw input Parquet (training_sample_50000.parquet)
 │   ├── bronze/                     # Raw Parquet staging copies
@@ -183,7 +187,7 @@ MODEL_PROVIDER=mlflow
 DATA_PROVIDER=parquet
 ```
 
-### 2. Backend `.env` (`backend/.env`)
+### 2. Backend `.env` (`ai/residential/backend/.env`)
 Configure the Flask API server and the Residential Assistant:
 ```bash
 FLASK_ENV=development
@@ -201,10 +205,9 @@ MODEL_PROVIDER=mlflow
 MLFLOW_TRACKING_URI=http://127.0.0.1:15001
 MLFLOW_MODEL_ALIAS=champion
 
-# Residential Assistant LLM (Groq Cloud)
-GROQ_API_KEY=your_groq_api_key_here
-GROQ_BASE_URL=https://api.groq.com/openai/v1
-GROQ_MODEL=qwen/qwen3.8-27b
+# Residential Assistant LLM (Ollama)
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_MODEL=qwen3:8b
 ASSISTANT_TEMPERATURE=0.2
 ASSISTANT_MAX_TOKENS=800
 
@@ -476,4 +479,4 @@ pytest --maxfail=5 --durations=10
 
 ### 5. Groq API Rate Limit or Timeout
 - **Behavior:** The Residential Assistant automatically detects rate limits (HTTP 429) or timeouts, retries with exponential backoff, and if still unavailable, triggers the deterministic context fallback.
-- **Fix:** Verify `GROQ_API_KEY` in `backend/.env` and ensure network access to `api.groq.com`.
+- **Fix:** Verify Ollama is running, `OLLAMA_BASE_URL` points to the Ollama server, and `OLLAMA_MODEL` is available. For Docker Compose, use `http://host.docker.internal:11434` to reach host Ollama.

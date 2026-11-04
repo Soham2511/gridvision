@@ -8,7 +8,7 @@ import { ProtectedRoute } from '../components/auth/ProtectedRoute';
 import { PersonaDashboardPage } from '../pages/PersonaDashboardPage';
 import { HistoricalAnalysisPage } from '../pages/HistoricalAnalysisPage';
 import { DataModelHealthPage } from '../pages/DataModelHealthPage';
-import { AiAssistantPage } from '../pages/AiAssistantPage';
+import { AiAssistantPage } from '../../../ai/residential/frontend/src/pages/AiAssistantPage';
 import { OverviewPage } from '../pages/OverviewPage';
 import { DemandForecastingPage } from '../pages/DemandForecastingPage';
 import { PeakDemandPage } from '../pages/PeakDemandPage';
@@ -19,7 +19,7 @@ import { ProfilePage } from '../pages/ProfilePage';
 import { CustomerBillModelPage } from '../pages/CustomerBillModelPage';
 import { ModelWorkbenchPage } from '../pages/ModelWorkbenchPage';
 import { GovernmentSegmentationPage } from '../pages/GovernmentSegmentationPage';
-import { ComplaintCentrePage } from '../pages/ComplaintCentrePage';
+import { ComplaintCentrePage } from '../../../ai/residential/frontend/src/pages/ComplaintCentrePage';
 import { usePersona } from '../context';
 
 const PersonaCustomerSegmentationPage: React.FC = () => {

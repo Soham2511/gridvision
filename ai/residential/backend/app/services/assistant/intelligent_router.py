@@ -10,6 +10,7 @@ Enforces:
 from __future__ import annotations
 
 import calendar
+import json
 import logging
 import re
 from datetime import date
@@ -26,6 +27,22 @@ logger = logging.getLogger("gridvision.services.assistant.router")
 
 class IntelligentRouter:
     """Classifies user intent, identifies follow-up relationships, and constructs a typed routing plan."""
+
+    _CLASSIFIABLE_INTENTS = {
+        "current_billing_summary",
+        "historical_telemetry_query",
+        "forward_bill_prediction",
+        "consumption_period_comparison",
+        "tariff_resolution",
+        "regulatory_standards_rag",
+        "electricity_knowledge_rag",
+        "house_energy_planning",
+        "appliance_lifecycle_analysis",
+        "cost_management",
+        "general_energy_query",
+        "general_chat",
+        "irrelevant",
+    }
 
     _MONTH_NUMBERS = {
         "january": 1, "jan": 1,
@@ -95,15 +112,243 @@ class IntelligentRouter:
             "granularity": "daily",
         }
 
+    @classmethod
+    def classify_intent(
+        cls,
+        prompt: str,
+        llm_provider: Any,
+        history: Optional[List[Dict[str, Any]]] = None,
+    ) -> Optional[str]:
+        """Ask the configured LLM to classify a turn into a supported domain intent."""
+        if not llm_provider:
+            return None
+
+        recent_context = [
+            {
+                "role": message.get("role"),
+                "content": str(message.get("content", ""))[-500:],
+            }
+            for message in (history or [])[-6:]
+            if message.get("role") in {"user", "assistant"}
+        ]
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "Classify the latest user request for GridVision's residential "
+                    "electricity assistant. Return only a JSON object with one "
+                    '"intent" string, no explanation. Choose exactly one: '
+                    + ", ".join(sorted(cls._CLASSIFIABLE_INTENTS))
+                    + ". Use current_billing_summary for the ongoing cycle; "
+                    "historical_telemetry_query for recorded past usage or bills; "
+                    "forward_bill_prediction for a requested forecast, even when the "
+                    "word 'usage' appears; consumption_period_comparison for comparing "
+                    "periods; tariff_resolution for the user's applicable tariff; "
+                    "regulatory_standards_rag for safety, rules, or official standards; "
+                    "electricity_knowledge_rag for general electricity questions; "
+                    "house_energy_planning for planning a home installation; "
+                    "appliance_lifecycle_analysis for appliance selection or upgrades; "
+                    "cost_management for reducing household energy costs; "
+                    "general_energy_query for other electricity-related requests; "
+                    "general_chat for greetings or small talk; irrelevant only when "
+                    "unrelated to electricity or GridVision."
+                ),
+            },
+            {
+                "role": "user",
+                "content": (
+                    f"Recent conversation: {json.dumps(recent_context, ensure_ascii=True)}\n"
+                    f"Latest request: {prompt.strip()}"
+                ),
+            },
+        ]
+        try:
+            if not llm_provider.is_available():
+                return None
+            response = llm_provider.generate_chat_completion(
+                messages=messages,
+                temperature=0.0,
+                max_tokens=60,
+            )
+            match = re.search(r"\{[^{}]*\}", response, flags=re.DOTALL)
+            if not match:
+                raise ValueError("LLM classifier did not return a JSON intent object.")
+            intent = json.loads(match.group(0)).get("intent")
+            if not isinstance(intent, str) or intent not in cls._CLASSIFIABLE_INTENTS:
+                raise ValueError(f"LLM classifier returned an unsupported intent: {intent!r}")
+            logger.info("LLM classified residential request as '%s'", intent)
+            return intent
+        except Exception as exc:
+            logger.warning(
+                "LLM intent classification failed; using deterministic routing fallback: %s",
+                exc,
+            )
+            return None
+
+    @classmethod
+    def _plan_from_classified_intent(
+        cls,
+        intent: str,
+        prompt: str,
+        resolved_state: ResolvedDialogueState,
+    ) -> TurnRoutingPlan:
+        """Translate an LLM intent into an allow-listed tool plan and validated arguments."""
+        month_range = cls._extract_month_range(prompt.lower())
+        common = {
+            "is_continuation": resolved_state.is_continuation,
+            "follow_up_type": (
+                "topic_change" if resolved_state.is_topic_change else "new_request"
+            ),
+            "effective_prompt": resolved_state.effective_prompt,
+        }
+
+        if intent == "current_billing_summary":
+            return TurnRoutingPlan(
+                primary_intent=intent,
+                resolved_workflow="general_chat",
+                resolved_tool_scope="context_only",
+                recommended_tools=[],
+                requires_tool_execution=False,
+                explanation="LLM classified the request as a current billing summary.",
+                **common,
+            )
+        if intent == "historical_telemetry_query":
+            args = month_range or (
+                cls._relative_month_range(-1)
+                if re.search(r"\b(?:last|previous) month\b", prompt, re.I)
+                else {}
+            )
+            return TurnRoutingPlan(
+                primary_intent=intent,
+                resolved_workflow="general_chat",
+                resolved_tool_scope="telemetry_and_billing",
+                recommended_tools=["query_consumption_history"],
+                routed_tool_arguments=args,
+                requires_tool_execution=True,
+                explanation="LLM classified the request as a historical telemetry lookup.",
+                **common,
+            )
+        if intent == "forward_bill_prediction":
+            target_month = (
+                month_range["start_date"][:7]
+                if month_range
+                else (
+                    cls._relative_month_range(1)["start_date"][:7]
+                    if re.search(r"\bnext month\b", prompt, re.I)
+                    else None
+                )
+            )
+            return TurnRoutingPlan(
+                primary_intent=intent,
+                resolved_workflow="general_chat",
+                resolved_tool_scope="telemetry_and_billing",
+                recommended_tools=["predict_usage_and_bill"],
+                routed_tool_arguments=(
+                    {"target_month": target_month} if target_month else {}
+                ),
+                requires_tool_execution=True,
+                explanation="LLM classified the request as a forward usage prediction.",
+                **common,
+            )
+        if intent == "consumption_period_comparison":
+            previous_period = cls._relative_month_range(-1)
+            current_period = cls._relative_month_range(0, end_on_today=True)
+            return TurnRoutingPlan(
+                primary_intent=intent,
+                resolved_workflow="general_chat",
+                resolved_tool_scope="telemetry_and_billing",
+                recommended_tools=["compare_consumption_periods"],
+                routed_tool_arguments={
+                    "start_date_a": current_period["start_date"],
+                    "end_date_a": current_period["end_date"],
+                    "start_date_b": previous_period["start_date"],
+                    "end_date_b": previous_period["end_date"],
+                    "metric": "consumption",
+                },
+                requires_tool_execution=True,
+                explanation="LLM classified the request as a period comparison.",
+                **common,
+            )
+        intent_tools = {
+            "tariff_resolution": (
+                "telemetry_and_billing",
+                ["resolve_reference_parameter", "get_customer_premises_profile"],
+            ),
+            "regulatory_standards_rag": (
+                "regulatory_and_standards",
+                ["search_regulatory_documents", "get_document_clause"],
+            ),
+            "electricity_knowledge_rag": (
+                "regulatory_and_standards",
+                ["search_regulatory_documents"],
+            ),
+            "house_energy_planning": (
+                "planning_and_upgrades",
+                ["plan_house_energy", "plan_house_area_m2", "search_regulatory_documents"],
+            ),
+            "appliance_lifecycle_analysis": (
+                "planning_and_upgrades",
+                [
+                    "analyze_appliance_scenario",
+                    "lookup_appliance_benchmark",
+                    "get_customer_appliance_inventory",
+                ],
+            ),
+            "cost_management": (
+                "planning_and_upgrades",
+                ["generate_energy_cost_recommendations"],
+            ),
+            "general_energy_query": (
+                "balanced_core",
+                [
+                    "query_consumption_history",
+                    "predict_usage_and_bill",
+                    "generate_energy_cost_recommendations",
+                ],
+            ),
+        }
+        if intent in intent_tools:
+            scope, tools = intent_tools[intent]
+            return TurnRoutingPlan(
+                primary_intent=intent,
+                resolved_workflow=(
+                    "house_planning" if intent == "house_energy_planning"
+                    else "appliance_lifecycle" if intent == "appliance_lifecycle_analysis"
+                    else resolved_state.resolved_mode
+                ),
+                resolved_tool_scope=scope,
+                recommended_tools=tools,
+                requires_tool_execution=intent != "general_energy_query",
+                explanation=f"LLM classified the request as '{intent}'.",
+                **common,
+            )
+        return TurnRoutingPlan(
+            primary_intent=intent,
+            resolved_workflow=resolved_state.resolved_mode,
+            resolved_tool_scope="context_only",
+            recommended_tools=[],
+            requires_tool_execution=False,
+            explanation=f"LLM classified the request as '{intent}'.",
+            **common,
+        )
+
     @staticmethod
     def create_routing_plan(
         prompt: str,
         resolved_state: ResolvedDialogueState,
         active_state: Optional[ActiveConversationState] = None,
+        classified_intent: Optional[str] = None,
     ) -> TurnRoutingPlan:
         """Construct a deterministic routing decision driven by the current query and active context."""
         p_raw = prompt.strip()
         p_low = p_raw.lower()
+
+        if classified_intent in IntelligentRouter._CLASSIFIABLE_INTENTS:
+            return IntelligentRouter._plan_from_classified_intent(
+                classified_intent,
+                p_raw,
+                resolved_state,
+            )
 
         is_forward_prediction = any(
             word in p_low
@@ -323,7 +568,7 @@ class IntelligentRouter:
                 )
             )
             or is_negated_predict
-        )
+        ) and not is_forward_prediction
 
         if is_historical_telemetry:
             return TurnRoutingPlan(
@@ -345,7 +590,12 @@ class IntelligentRouter:
                 follow_up_type="new_request",
                 resolved_workflow="general_chat",
                 resolved_tool_scope="telemetry_and_billing",
-                recommended_tools=["predict_usage_and_bill", "forecast_consumption"],
+                recommended_tools=["predict_usage_and_bill"],
+                routed_tool_arguments=(
+                    {"target_month": month_range["start_date"][:7]}
+                    if month_range
+                    else {}
+                ),
                 requires_tool_execution=True,
                 effective_prompt=resolved_state.effective_prompt,
                 explanation="Customer requested future ML bill or consumption forecast. Invoking predictive tools.",

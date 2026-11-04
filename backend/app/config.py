@@ -6,8 +6,14 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
-# Automatically load environment variables from backend/.env or root .env
-load_dotenv(Path(__file__).resolve().parents[2] / "backend" / ".env")
+# Automatically load environment variables from ai/residential/backend/.env or root .env
+load_dotenv(
+    Path(__file__).resolve().parents[2]
+    / "ai"
+    / "residential"
+    / "backend"
+    / ".env"
+)
 load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 load_dotenv()
 

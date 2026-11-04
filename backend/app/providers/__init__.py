@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from app import _extend_residential_package_path
+
+_extend_residential_package_path(__path__, "providers")
+
 from app.providers.data_provider import BaseDataProvider
 from app.providers.model_provider import BaseModelProvider
 from app.providers.sample_data_provider import SampleDataProvider

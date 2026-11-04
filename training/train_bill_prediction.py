@@ -11,6 +11,7 @@ import tempfile
 from datetime import datetime, timezone
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
+from pathlib import PurePosixPath
 from typing import Any
 
 import joblib
@@ -102,14 +103,18 @@ def _dataset_lineage(data_path: Path) -> dict[str, Any]:
     def resolve_manifest_path(
         value: str, *, root: Path, container_root: Path, host_root: Path
     ) -> Path:
-        path = Path(value)
-        if not path.is_absolute():
-            return root / path
+        path = PurePosixPath(value.replace("\\", "/"))
+        container_root_posix = PurePosixPath(
+            str(container_root).replace("\\", "/")
+        )
         try:
-            relative_path = path.relative_to(container_root)
+            relative_path = path.relative_to(container_root_posix)
         except ValueError:
-            return path
-        return host_root / relative_path
+            native_path = Path(value)
+            if native_path.is_absolute():
+                return native_path
+            return root.joinpath(*path.parts)
+        return host_root.joinpath(*relative_path.parts)
 
     report_path = resolve_manifest_path(
         manifest["quality_report"],

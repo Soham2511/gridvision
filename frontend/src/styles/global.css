@@ -1,5 +1,5 @@
 @import './variables.css';
-@import './complaints.css';
+@import '../../../ai/residential/frontend/src/styles/complaints.css';
 
 /* CSS Reset & Base */
 *, *::before, *::after {

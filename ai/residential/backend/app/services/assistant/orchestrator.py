@@ -687,10 +687,23 @@ class ResidentialAssistantOrchestrator:
             conversation_id=conversation_id,
         )
         resolved_state = turn_ctx.resolved_state
+        classified_intent = None
+        if resolved_state.follow_up_type not in {
+            "answer_to_pending",
+            "partial_answer",
+            "correction",
+            "reference_to_result",
+        }:
+            classified_intent = self.router.classify_intent(
+                prompt=clean_user_prompt,
+                llm_provider=self.llm_provider,
+                history=turn_ctx.recent_messages,
+            )
         routing_plan = self.router.create_routing_plan(
             prompt=clean_user_prompt,
             resolved_state=resolved_state,
             active_state=turn_ctx.active_state,
+            classified_intent=classified_intent,
         )
         effective_prompt = routing_plan.effective_prompt
         tool_scope = routing_plan.resolved_tool_scope

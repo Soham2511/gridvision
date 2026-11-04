@@ -162,7 +162,7 @@ npm run dev
 ```powershell
 cd d:\Projects\gridvision-final
 $env:PYTHONPATH="backend"
-python -m unittest tests/backend/test_residential_assistant.py tests/backend/test_historical_analytics.py
+python -m pytest ai/residential/tests/backend/test_residential_assistant.py ai/residential/tests/backend/test_historical_analytics.py
 ```
 
 ### Execute Historical Snapshot Backfill & Refresh

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { usePersona, useAuth } from '../context';
-import { analyticsService } from '../services/analyticsService';
+import { usePersona, useAuth } from '../../../../../frontend/src/context';
+import { analyticsService } from '../../../../../frontend/src/services/analyticsService';
 import { ChatMessageRenderer } from '../components/chat/ChatMessageRenderer';
 import {
   ResidentialFeatureId,

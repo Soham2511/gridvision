@@ -1,5 +1,9 @@
 """Infrastructure repositories."""
 
+from app import _extend_residential_package_path
+
+_extend_residential_package_path(__path__, "infrastructure/repositories")
+
 from app.infrastructure.repositories.household_energy_repository import (
     BaseHouseholdEnergyRepository,
     HouseholdEnergyRepository,

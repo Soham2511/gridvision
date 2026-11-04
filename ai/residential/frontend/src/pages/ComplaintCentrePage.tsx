@@ -16,7 +16,7 @@ import {
   ComplaintDetailModal,
   ComplaintRegistrationModal,
 } from '../components/complaints';
-import { usePersona } from '../context';
+import { usePersona } from '../../../../../frontend/src/context';
 
 export const ComplaintCentrePage: React.FC = () => {
   const { activeEntity } = usePersona();

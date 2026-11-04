@@ -32,7 +32,7 @@ import {
   ApplianceScenarioResult,
   CostManagementResult,
   AssistantResponsePayload,
-} from '../types/residentialFeatures';
+} from '../../../ai/residential/frontend/src/types/residentialFeatures';
 
 export interface OverviewApiResponse {
   kpis: KpiMetric[];

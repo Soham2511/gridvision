@@ -57,7 +57,7 @@ class TestAgenticRAGScenarios(unittest.TestCase):
         cls.resolver = ReferenceResolver()
 
         # Wire verified dataset provider
-        cls.data_dir = Path(__file__).resolve().parents[2] / "data"
+        cls.data_dir = Path(__file__).resolve().parents[4] / "data"
         silver_path = cls.data_dir / "silver" / "customer_silver.parquet"
         gold_path = cls.data_dir / "gold" / "customer_gold.parquet"
 
@@ -238,7 +238,7 @@ class TestAgenticRAGScenarios(unittest.TestCase):
     # -----------------------------------------------------------------
     def test_protected_components_preserved(self):
         """Verify Silver/Gold parquet datasets and models exist and are intact."""
-        root = Path(__file__).resolve().parents[2]
+        root = Path(__file__).resolve().parents[4]
         silver_pq = root / "data" / "silver" / "customer_silver.parquet"
         gold_pq = root / "data" / "gold" / "customer_gold.parquet"
         self.assertTrue(silver_pq.exists())
