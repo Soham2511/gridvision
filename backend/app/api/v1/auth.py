@@ -15,6 +15,9 @@ from app.services.assistant.auth import (
     require_auth,
 )
 from app.services.auth_service import auth_service
+from app.services.assistant.historical.snapshot_repository import (
+    HistoricalSnapshotRepository,
+)
 from app.utils.responses import error_response, success_response
 
 logger = logging.getLogger("gridvision.api.v1.auth")
@@ -120,6 +123,26 @@ def login():
     except Exception as e:
         logger.error("Login failure: %s", e, exc_info=True)
         return error_response("An unexpected authentication error occurred.", code="INTERNAL_ERROR", status_code=500)
+
+    try:
+        snapshot_repository = HistoricalSnapshotRepository()
+    except Exception as exc:
+        logger.warning(
+            "Could not initialize historical snapshot repository after login: %s",
+            exc,
+            exc_info=True,
+        )
+    else:
+        for meter in user.meters:
+            try:
+                snapshot_repository.generate_snapshot_if_missing(meter.id)
+            except Exception as exc:
+                logger.warning(
+                    "Could not generate historical snapshot for authenticated meter '%s': %s",
+                    meter.id,
+                    exc,
+                    exc_info=True,
+                )
 
     user_payload = {
         "id": str(user.id),
