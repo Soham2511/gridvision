@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+import re
 import threading
 import uuid
 from datetime import datetime, timezone
@@ -357,7 +358,9 @@ class AnalysisStore:
             "event_localization_evaluation.json",
             "events.geojson",
         }
-        if name not in allowed_files:
+        if name not in allowed_files and not re.fullmatch(
+            r"assistant_export_[a-f0-9]{32}\.(?:csv|json)", name
+        ):
             return None
         aliases = {
             "spatial_temporal_events.csv": "events.csv",

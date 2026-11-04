@@ -19,4 +19,10 @@ logs
 /D/
 frontend/dist
 frontend/.vite
+ai/anamoly/Key
+ai/anamoly/Key/**
+ai/anamoly/vector_store/storage/chroma/persistent_db
+ai/anamoly/vector_store/storage/chroma/persistent_db/**
+ai/Govt_interpretion+redistribution_plan/key
+ai/Govt_interpretion+redistribution_plan/key/**
 /.pytest_cache/

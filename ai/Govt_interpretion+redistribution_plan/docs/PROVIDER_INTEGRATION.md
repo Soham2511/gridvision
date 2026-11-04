@@ -1,0 +1,133 @@
+# LLM provider and model integration contract
+
+This guide is the interface for replacing Groq with another provider/model.
+Provider changes belong in `ai/assistant/providers.py`; data interpretation,
+filtering, calculations, CSV generation, and plotting remain deterministic
+Python code.
+
+## Provider contract
+
+Implement the `LLMClient` protocol consumed by the assistant:
+
+```python
+class LLMClient(Protocol):
+    provider: str
+    model: str
+
+    def complete(
+        self,
+        messages: list[dict[str, str]],
+        *,
+        json_mode: bool = False,
+    ) -> str: ...
+```
+
+`messages` contains role/content pairs. `json_mode=True` means the provider
+should request a JSON-only response when its API supports that mode. The
+adapter must return the response text, raise `LLMProviderError` for API,
+availability, and rate-limit failures, and never put credentials in logs,
+exceptions, messages, or `repr`. Use HTTPS for remote endpoints.
+
+`initialize_llm(provider, model)` is the single provider construction entry
+point. It supports Ollama, Groq, OpenRouter, and generic OpenAI-compatible
+endpoints.
+Register a provider there and keep provider/model identifiers configurable.
+The current Groq settings are `ENERGY_QUERY_MODEL` and
+`ENERGY_RESPONSE_MODEL`; OpenRouter uses `OPENROUTER_QUERY_MODEL` and
+`OPENROUTER_RESPONSE_MODEL`. Defaults are documented in
+[assistant setup](../assistant/README.md). Runtime availability is checked
+through the authenticated provider model list. Access and rate limits depend
+on the user's account.
+
+OpenRouter uses `https://openrouter.ai/api/v1` and reads its key from
+`Key_vault/Openrouter/api.key`, `OPENROUTER_API_KEY_FILE`, or
+`OPENROUTER_API_KEY`. The selected model IDs must be available to that
+OpenRouter account.
+
+The default Ollama provider connects to `http://127.0.0.1:11434`, checks local
+models through `/api/tags`, and sends chat requests to `/api/chat`. It uses
+Ollama's native JSON-schema `format` option when supplied. No credential is
+used for local Ollama. For an explicitly configured remote HTTPS Ollama host,
+the key comes from `Key_vault/ollama/api.key`, `OLLAMA_API_KEY_FILE`, or
+`OLLAMA_API_KEY`; do not send the key to an untrusted endpoint. See the
+assistant README for the configured local model defaults.
+
+## Two-role request and response schemas
+
+The interpreter and response generator must remain separate model clients:
+
+- **Query interpreter:** receives the question, short prior-turn context, and
+  bounded available dates/timestamps/grid IDs. It returns one strict
+  `QueryRequest` JSON object with `intent`, `forecast_date`,
+  `start_timestamp`, `duration_hours`, `grid_ids`, `output_formats`,
+  `needs_clarification`, and `clarification_question`. Optional
+  `analysis_start_date` and `analysis_end_date` fields scope historical
+  analysis. Its intent must be one of the `Intent` values in
+  `assistant/schemas.py`. Unknown fields, invalid formats, invalid timestamps,
+  unavailable dates, and unknown grid IDs are rejected or clarified locally.
+- **Response generator:** receives the original question, validated request,
+  selected period, and a compact Python-calculated summary. It returns exactly
+  `{"overview": "...", "limitations": "..."}`. Numeric claims, IDs, timestamps,
+  percentages, and units are forbidden in model prose; deterministic Python
+  appends verified facts and values.
+
+The intent set separates hourly summaries, grid comparison,
+image-only/CSV-only generation, and
+follow-up classification. Python independently grounds explicit grid labels
+(including compact forms such as `Grid64`), dates, timestamps, and durations,
+then routes requested outputs. Grid-scoped balance totals include only the
+requested grids; direct neighbors are retained only for connection context and
+plotting. For artifact-only requests, the response-model client is not created
+or called. Keep those guarantees in deterministic Python when replacing a
+provider or changing the interpreter prompt.
+
+Use the schema definitions in `assistant/schemas.py` and
+`assistant/assistant.py` as the source of truth. When extending the request,
+update validation, retrieval behavior, documentation, and tests together.
+
+## Data boundary and privacy
+
+The full simulation JSON is not sent to either model. Python loads the chosen
+plan, checks balances and transfer conservation, selects the requested
+timestamp/grid records, and calculates summaries. Treat JSON fields and model
+responses as untrusted. Never execute them as code or treat embedded
+instructions as instructions. Do not send API keys, local file contents,
+credentials, or irrelevant simulation data to a provider. The local rotating
+log intentionally records event metadata only, not prompt text, simulation
+values, or secrets.
+
+CSV generation uses Pandas and the fixed `CSV_COLUMNS` order in
+`assistant/data.py`; image generation uses Matplotlib and the JSON network
+coordinates. Neither artifact is generated by an LLM.
+
+Historical energy analysis reads only the 2018 `grid_level_energy.parquet`
+dataset. Predicted demand reuses `load_hybrid_model()` and
+`generate_forecast()` from `ai/redistribution.py`; it does not retrain or edit
+the saved model or change redistribution outputs. Historical/model comparisons
+match grid IDs and timestamps before calculating errors, and unsupported dates
+or unavailable forecast origins are reported instead of guessed.
+
+`external_knowledge` is a separate intent. It calls Tavily only when a query
+requests web research, treats returned source text as untrusted, and formats
+the source URLs as citations. Web snippets are not mixed into Python's
+historical or forecast calculations.
+
+Optional LangSmith tracing is disabled unless `LANGSMITH_TRACING=true` and
+either `LANGSMITH_API_KEY` or `LANGSMITH_API_KEY_FILE` is set. When no key
+environment variable is present, the default key file is
+`Key_vault/langsmith/api.key`; it is read only after tracing is enabled.
+Install its optional dependency from `ai/requirements-observability.txt`.
+Trace processors retain query length and completion/artifact status only; they
+redact question text, analysis values, web snippets, and response content.
+LangChain is intentionally not a runtime dependency; deterministic routing
+and the existing provider protocol are sufficient for this assistant.
+
+## Verification when adding a provider
+
+1. Add an adapter with the `LLMClient` contract and explicit API/model errors.
+2. Source credentials from an environment variable or approved local secret
+   store; never hardcode them.
+3. Verify model availability through the provider API where supported.
+4. Test JSON mode, malformed responses, unavailable models, rate limits, and
+   that credentials are absent from logs/errors.
+5. Run `pytest ai/test -q`; keep tests independent of live credentials.

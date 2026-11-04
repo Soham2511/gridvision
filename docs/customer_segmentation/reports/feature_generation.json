@@ -25,11 +25,9 @@
     {
       "GeneralUseType": "Commercial",
       "building_count": 170
-      "building_count": 170
     },
     {
       "GeneralUseType": "Industrial",
-      "building_count": 77
       "building_count": 77
     },
     {
@@ -42,7 +40,6 @@
     },
     {
       "GeneralUseType": "Residential",
-      "building_count": 4759
       "building_count": 4759
     }
   ],
@@ -50,16 +47,13 @@
     {
       "GeneralUseType": "Residential",
       "building_count": 4759
-      "building_count": 4759
     },
     {
       "GeneralUseType": "Commercial",
       "building_count": 170
-      "building_count": 170
     },
     {
       "GeneralUseType": "Industrial",
-      "building_count": 77
       "building_count": 77
     },
     {
@@ -71,7 +65,6 @@
       "building_count": 1
     }
   ],
-  "eligible_buildings": 5034,
   "eligible_buildings": 5034,
   "excluded_low_coverage_buildings": 0,
   "expected_hourly_observations": 8760,
@@ -118,7 +111,6 @@
   "feature_rows": 5034,
   "maximum_observed_coverage": 0.9583333333333334,
   "mean_observed_coverage": 0.9583333333333391,
-  "mean_observed_coverage": 0.9583333333333391,
   "metadata_columns_excluded_from_clustering": [
     "GeneralUseType",
     "OBJECTID",
@@ -133,7 +125,6 @@
   ],
   "minimum_coverage": 0.9,
   "minimum_observed_coverage": 0.9583333333333334,
-  "missing_finer_grid_buildings": 12,
   "missing_finer_grid_buildings": 12,
   "null_feature_values_by_column": {
     "afternoon_energy_share": 0,
@@ -162,6 +153,6 @@
   "processed_source_path": "/opt/gridvision/data/segmentation/source_sample.parquet",
   "quantile_method": "DuckDB APPROX_QUANTILE T-Digest estimates for median and p95",
   "scope": "all GeneralUseType values in the configured Bronze source, including Residential",
-  "source_path": "/mnt/d/GridVision/data/bronze/training_sample_50000.parquet",
+  "source_path": "/opt/gridvision/data/bronze/training_sample_50000.parquet",
   "window_months": 12
 }

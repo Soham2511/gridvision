@@ -195,6 +195,28 @@ services:
       ANOMALY_DATASET_PATH: /data/anomaly_prediction/synthetic_2019_normal.parquet
       ANOMALY_MODEL_PATH: /models/anomaly_prediction/gridvision_anomaly_model.joblib
       ANOMALY_RUNS_PATH: /reports/anomaly_prediction/application_runs
+      GRIDVISION_ANOMALY_VECTOR_DB_PATH: /app/ai/anamoly/vector_store/storage/chroma/persistent_db
+      GRIDVISION_ANOMALY_OLLAMA_BASE_URL: ${GRIDVISION_ANOMALY_OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      GRIDVISION_ANOMALY_SECRETS_DIR: /run/secrets/gridvision-anomaly
+      GRIDVISION_ANOMALY_LANGSMITH_TRACING: ${GRIDVISION_ANOMALY_LANGSMITH_TRACING:-false}
+      GRIDVISION_ANOMALY_CHAT_MODEL: ${GRIDVISION_ANOMALY_CHAT_MODEL:-qwen3:8b}
+      GRIDVISION_ANOMALY_EMBEDDING_MODEL: ${GRIDVISION_ANOMALY_EMBEDDING_MODEL:-qwen3-embedding:0.6b}
+      GRIDVISION_ROUTER_MODEL: ${GRIDVISION_ROUTER_MODEL:-qwen3:8b}
+      GRIDVISION_ROUTER_OLLAMA_URL: ${GRIDVISION_ROUTER_OLLAMA_URL:-${GRIDVISION_ANOMALY_OLLAMA_BASE_URL:-http://host.docker.internal:11434}}
+      OLLAMA_HOST: ${OLLAMA_HOST:-http://host.docker.internal:11434}
+      OLLAMA_QUERY_MODEL: ${OLLAMA_QUERY_MODEL:-qwen3:1.7b}
+      OLLAMA_RESPONSE_MODEL: ${OLLAMA_RESPONSE_MODEL:-batiai/gemma4-e2b:q4}
+      ENERGY_QUERY_MODEL: ${ENERGY_QUERY_MODEL:-qwen3:1.7b}
+      ENERGY_RESPONSE_MODEL: ${ENERGY_RESPONSE_MODEL:-batiai/gemma4-e2b:q4}
+      OLLAMA_TIMEOUT_SECONDS: ${OLLAMA_TIMEOUT_SECONDS:-300}
+      ENERGY_PROJECT_ROOT: /app
+      ENERGY_FORECAST_DATA_PATH: /data/government/training_ready_2018.parquet
+      ENERGY_MODEL_PATH: /data/government/hybrid_grid_2018.joblib
+      ENERGY_HISTORICAL_DATA_PATH: /data/government/grid_level_energy.parquet
+      ENERGY_SIMULATIONS_DIR: /app/ai/Govt_interpretion+redistribution_plan/output
+      ENERGY_NETWORK_PATH: /app/ai/Govt_interpretion+redistribution_plan/data/grid_network.json
+      ENERGY_ASSISTANT_OUTPUT_DIR: /app/ai/Govt_interpretion+redistribution_plan/assistant/output
+      ENERGY_ASSISTANT_HISTORY_PATH: /app/ai/Govt_interpretion+redistribution_plan/data/assistant_history.json
       CORS_ORIGINS: http://localhost:8082,http://127.0.0.1:8082
       DEMO_USER_ID: ${DEMO_USER_ID:?Set DEMO_USER_ID in your local .env}
       DEMO_PASSWORD: ${DEMO_PASSWORD:?Set DEMO_PASSWORD in your local .env}
@@ -211,6 +233,12 @@ services:
       - ${GRIDVISION_DATA_DIR:?Set GRIDVISION_DATA_DIR}/metadata:/data/metadata:ro
       - ${GRIDVISION_DATA_DIR:?Set GRIDVISION_DATA_DIR}/anomaly_prediction:/data/anomaly_prediction:ro
       - ${GRIDVISION_DATA_DIR:?Set GRIDVISION_DATA_DIR}/airflow/government:/data/government:ro
+      - ./ai/Govt_interpretion+redistribution_plan/data:/app/ai/Govt_interpretion+redistribution_plan/data
+      - ./ai/Govt_interpretion+redistribution_plan/output:/app/ai/Govt_interpretion+redistribution_plan/output
+      - ./ai/Govt_interpretion+redistribution_plan/assistant/output:/app/ai/Govt_interpretion+redistribution_plan/assistant/output
+      - ./ai/Govt_interpretion+redistribution_plan/assistant:/app/ai/Govt_interpretion+redistribution_plan/assistant:ro
+      - ./ai/Govt_interpretion+redistribution_plan/docs:/app/ai/Govt_interpretion+redistribution_plan/docs:ro
+      - ./ai/govt:/app/ai/govt:ro
       - ${GRIDVISION_DATA_DIR:?Set GRIDVISION_DATA_DIR}/segmentation:/data/segmentation:ro
       - ./instance:/instance
       - ./backend/app:/app/app:ro
@@ -218,6 +246,10 @@ services:
       - ./data_retrieval_agent:/app/data_retrieval_agent:ro
       - ./models/anomaly_prediction:/models/anomaly_prediction:ro
       - ./reports/anomaly_prediction:/reports/anomaly_prediction
+      - ./ai/anamoly/knowledge_base:/app/ai/anamoly/knowledge_base:ro
+      - ./ai/anamoly/raw_knowledge_base:/app/ai/anamoly/raw_knowledge_base
+      - ./ai/anamoly/Key:/run/secrets/gridvision-anomaly:ro
+      - ./ai/anamoly/vector_store/storage/chroma/persistent_db:/app/ai/anamoly/vector_store/storage/chroma/persistent_db
       - ./docs/customer_segmentation/reports:/docs/customer_segmentation/reports:ro
       - ./docs/ai_commercial:/app/docs/ai_commercial:ro
       - ${GRIDVISION_DATA_DIR:?Set GRIDVISION_DATA_DIR}/commercial/rag:/app/data/commercial/rag

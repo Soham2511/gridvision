@@ -1,0 +1,39 @@
+TITLE: Pending and Recent Telecommunications Cases | Department of Public Service
+SOURCE_URL: https://dps.ny.gov/pending-and-recent-telecommunications-cases
+
+Pending and Recent Telecommunications Cases
+Notable Cases
+See
+Document and Matter Management System (DMM) Help Topics
+.
+Case 15-M-0742
+- Proceeding on Motion of the Commission to Review the State Universal Service Fund:
+Ongoing administration of and modifications to the NY State Universal Service Fund (SUSF) that provides high-cost support to qualifying telephone corporations. Most recently, the SUSF was conditionally continued through December 31, 2026 (Opinion and Order issued December 15, 2022).
+Case 20-C-0267
+- Frontier Communications Corporation and Subsidiaries Notice of Filing of Chapter 11 and for Financial Restructuring:
+The Commission conditionally approved Frontier Communications’ financial restructuring contemplated under its Chapter 11 bankruptcy filing (Order issued October 16, 2020) and associated action plan (Order issued May 13, 2021).
+Case 22-M-0101
+- Proceeding to Review Certain Pole Attachment Rules:
+Ongoing administration of and modifications to the Commission’s 2004 Policy Statement on Pole Attachments and related proceedings (most recent Order issued July 22, 2024).
+Case 24-C-0179
+- In the Matter of Quality of Service Provided by Local Exchange Companies in New York State for 2024:
+Quarterly reports on Verizon's service quality for 2024 (Orders issued May 16, 2024, August 15, 2024, November 14, 2024, and February 13, 2025) and Report on the Service Quality of Local Exchange Telephone Companies and Commendations for Excellent Service Quality (Order issued May 16, 2025).
+Case 24-C-0537
+-
+In the Matter of a Focused Operations Audit of Frontier Communications Parent, Inc.:
+Ongoing focused operations audit, conducted by QSI Consulting, Inc. (QSI) of Frontier Communications and its New York affiliates, via contract with QSI and the Commission (Orders issued November 20, 2024 and March 21, 2025).
+Case 21-M-0042
+- In the Matter of an Investigation into the Utilities' Preparation for and Response to August 2020 Tropical Storm Isaias and Resulting Telephone and Cable TV Service Outages:
+The Commission conditionally approved a Settlement Agreement that would resolve alleged violations committed by certain communications companies in New York (Orders issued March 18, 2021 and July 15, 2021).
+Case 08-C-1140
+- In the Matter of Frontier Telephone of Rochester, Inc.'s Petition Seeking Termination of Remaining Open Market Plan Provisions:
+Ongoing maintenance of service quality protections and reduction of regulatory burdens imposed on Frontier (Order issued October 17, 2008).
+Case 22-M-0180
+- In the Matter of the Rules and Regulations of the Public Service Commission, Contained in 16 NYCRR, Chapter VI, Subchapter A, Part 603 and Chapter VIII, Subchapter B, Parts 890 and 896:
+The regulatory changes require telephone and cable television companies that meet the definition of a “major service provider” to develop and implement an enhanced emergency response contingency plan (EERP), among other requirements. A “major service provider” for telephone is defined as 1) any service provider that is an incumbent local exchange carrier, 2) any facilities-based service provider with over 500,000 access lines, or 3) a certified 911 service provider. A cable television company with 1,000 or more subscribers is defined as a major service provider. All local exchange providers that aren’t required to file an EERP must file a standard emergency contingency plan (ECP). The required plans are due on January 31 of each year.
+Case 24-M-0255
+- In the Matter of the Affordable Broadband Act:
+Commission Order, with conditions, reopening a proceeding and reinstating temporary exemptions from the requirement to offer a low-income broadband product (Orders issued May 20, 2021 and January 9, 2025).
+Case 24-C-0618
+- Joint Petition of Verizon Communications Inc., Frontier Communications Parent, Inc., Frontier Telephone of Rochester, Inc., Frontier Communications of Seneca-Gorham, Inc., Ogden Telephone Company, Frontier Communications of Sylvan Lake, Inc., Frontier Communications of New York, Inc., Citizens Telecommunications Company of New York, Inc., Frontier Communications of Ausable Valley, Inc., Frontier Communications of Rochester Inc., and Frontier Communications of America, Inc. for Approval of a Proposed Transaction Pursuant to Sections 99 and 100 of the Public Service Law:
+Petition of Verizon and Frontier requesting approval of a proposed parent-level transaction, pursuant to an Agreement and Plan of Merger, which would result in Frontier’s NY operating companies becoming indirect subsidiaries of Verizon Communications.

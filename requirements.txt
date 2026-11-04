@@ -23,6 +23,15 @@ pyarrow==16.1.0
 h3>=4.0
 PyWavelets>=1.4
 
+# group: anomaly-assistant
+chromadb>=0.5,<2
+langgraph>=0.2,<2
+langsmith>=0.1,<1
+pypdf>=4,<6
+
+# group: government-assistant
+matplotlib>=3.9,<4
+
 # group: notebook
 jupyter
 

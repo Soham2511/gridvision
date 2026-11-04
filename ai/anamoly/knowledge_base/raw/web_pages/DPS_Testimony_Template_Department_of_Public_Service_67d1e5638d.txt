@@ -1,0 +1,52 @@
+TITLE: DPS Testimony Template | Department of Public Service
+SOURCE_URL: https://dps.ny.gov/dps-testimony-template
+
+DPS Testimony Template
+DPS Testimony Template
+Pre-Filed Testimony Overview
+Q. What is the purpose of pre-filed testimony?
+A. In proceedings with evidentiary hearings, the parties to the proceedings explain their positions through written pre-filed testimony. Pre-filed testimony is written in question-and-answer format as if it were a transcript of testimony given orally at the evidentiary hearing.
+Q. What types of witnesses provide testimony?
+A. There are expert witnesses and non-expert, or lay witnesses.
+Q. How is a witness qualified as an expert witness to provide testimony on an issue?
+A. Generally, a person qualified as an expert by knowledge, skill, experience, training, or education may testify to an opinion concerning scientific, technical, or other specialized knowledge. An expert witness’s testimony should include an explanation of the witness’s qualifications as an expert, their credentials, e.g., education and professional background.
+Q. How is a lay witness qualified to provide testimony on an issue?
+A. A lay witness may testify to their opinion if that opinion is rationally based on the witness’s personal perception, is within the ambit of the witness’s personal experience, and the witness’s testimony would aid in the resolution of factual disputes regarding an issue in the case.
+Q. How does pre-filed testimony get entered into the evidentiary record?
+A. Pre-filed testimony shall be received with the same force and effect as though it were stated orally by the witness,
+provided each of the witnesses is present at the hearing at which his or her prepared written testimony is offered and adopts that testimony under oath.
+If cross-examination of a witness’s prepared written testimony is waived by all other parties, and the administrative law judge (Judge) does not have questions for that witness, the Judge may determine that witness need not be present at the evidentiary hearing and may allow the witness’s testimony to be adopted by affidavit.
+Setting Up Testimony
+Q. How is testimony typically organized?
+A. Generally, testimony begins with an introduction of the witness or panel members, identifying their name(s) and business address(es). Second, each witness or panel member would describe their credentials, e.g., education and professional background. Third, the testimony will provide a brief overview of the testimony. In this section, you would identify the topics that the testimony will address. You would also identify and briefly describe each of the exhibits you are providing along with your testimony. The fourth and main section of testimony provides the substantive questions and answers on your chosen subjects.
+Q. Can I use headings in testimony?
+A. You can choose to use headings for different sections in your testimony, but it is not required.
+Q. Can I include a table of contents in testimony?
+A. You can choose to create a table of contents if you want to, but it is not required.
+Q. Can I include charts or footnotes in my testimony?
+A. No. Pre-filed testimony must be in question-and-answer format, as if given orally at the evidentiary hearing. Thus, it cannot include footnotes or charts. To provide a citation as you would in a footnote, please include the relevant information in the body of the testimony. You can include charts as exhibits to your testimony.
+Q. Can I refer to a website in my testimony?
+A. Yes. If you do, provide the full URL in the body of your testimony, with the link disabled.
+Q. What are exhibits?
+A. Exhibits are additional information or support you refer to in your testimony. For example, if you wish to provide a resume in addition to the explanation of your credentials in testimony, the resume would be an exhibit. Other exhibits common in proceedings before the Commission are compilations of responses to information requests and charts or schedules created in a spreadsheet program.
+Q. Do I need to include documents previously filed with the Commission as exhibits?
+A. No. If you want to refer to a prior Commission Order or a filing from a utility in another proceeding that is available on the Commission’s document and matter management system, you do not need to include the document as an exhibit to your testimony. You can simply refer to the document in your testimony with an identification of source information including the case number, case title, document tile, and issuance of filing date.
+Q. Can I file testimony and exhibits together as one document?
+A. No. Testimony and exhibits must be filed as separate “portable document format” (.pdf) files. When filing testimony, the selected document in the Commission’s document and matter management system is “Testimony”. When filing exhibits, the selected document in the Commission’s document and matter management system is “Exhibits”. You can compile multiple exhibits associated with one panel or witness into one .pdf file. Additionally, you can file exhibits in MS Excel format. Each individual file submitted must be no larger than 25 MB.
+Q. If I need more information, where can I turn?
+A. The Commission has published regulations regarding hearing, which can be found in 16 New York Codes, Rules and Regulations Part 4. Specifically, 16 NYCRR §4.5 provides the general procedures for hearings, including information about submitting pre-filed testimony and exhibits. Additionally, you can refer to the Commission’s website at dps.ny.gov, in particular the
+guidelines for filings
+. Finally, you can ask procedural questions of the Judge(s) assigned to your case.
+How to Use this Template
+What is the purpose of this document?
+A. Any party presenting an initial or rebuttal case in a proceeding must do so by means of prepared written testimony and exhibits (16 NYCRR 4.5). This template is formatted in conformance with the requirements found in 16 NYCRR 4.5(b)(3).
+Q. How do I use this template?
+A. This template has all of the appropriate formatting in place and presents instructions in question-and-answer format demonstrating how pre-filed testimony should be written. To use this template, save this document with a file name you want to use, delete the existing questions and answers, and start typing your own. Note that each question should be preceded with a “Q.” and a 0.5-inch tab; answers should be preceded with an “A.” and a 0.5-inch tab. Subsequent lines of the question or answer will automatically start 0.5-inches from the left margin until you add a “return” to start a new line.
+Q. How do I fix the formatting parameters if they change while I’m drafting the testimony?
+A. If the formatting parameters change, you can reset them by selecting “Testimony” in the styles available in the “Home ribbon” in MS Word.
+Q. How do I fill out the cover page?
+A. Please replace the bracketed text, e.g., “[Full Utility Name]” with the appropriate information, e.g., “Consolidated Edison Company of New York, Inc.” If the testimony is from a single witness, you can just state the witness’s full name and, if applicable, the witness’s title on the subsequent line. If the testimony is from a panel consisting of multiple witnesses, provide a name for the panel, e.g., “Staff Accounting Panel” and then list the names and titles of the panel members below that. Please provide a business address for the witness(es). You also need to replace the bracketed text with the case number and witness or panel name in the header on the second page (first page of your testimony itself). This header should be consistent throughout the remainder of your testimony.
+Testimony Template
+NYS DPS Testimony Template
+Template to use for submitted testimony to PSC/DPS.
+Download

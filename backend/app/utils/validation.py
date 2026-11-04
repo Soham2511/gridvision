@@ -47,6 +47,7 @@ class AssistantChatRequestModel(BaseModel):
     prompt: str = Field(..., min_length=1, max_length=2000)
     persona: Literal["household", "commercial", "government"] = "household"
     entity_id: str | None = None
+    conversation_id: str | None = None
 
 
 class CommercialWorkflowRequestModel(BaseModel):
@@ -71,3 +72,4 @@ class ScheduleApprovalRequestModel(BaseModel):
 
     decision: Literal["approved", "rejected"]
     note: str | None = Field(default=None, max_length=1000)
+    conversation_id: str | None = Field(default=None, min_length=1, max_length=100)

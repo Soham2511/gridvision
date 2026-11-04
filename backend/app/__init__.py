@@ -212,7 +212,11 @@ def create_app(config_class: type[BaseConfig] | None = None) -> Flask:
     anomaly_svc = AnomalyService(data_provider)
     customer_svc = CustomerService(data_provider)
     insight_svc = InsightService(data_provider)
-    assistant_svc = AssistantService(data_provider)
+    assistant_svc = AssistantService(
+        data_provider,
+        anomaly_service=None,
+        route_government_queries=not app.testing,
+    )
     customer_bill_prediction_svc = CustomerBillPredictionService(
         dataset_path=app.config["CUSTOMER_GOLD_DATASET_PATH"],
         metadata_path=app.config["CUSTOMER_MODEL_METADATA_PATH"],
@@ -232,6 +236,7 @@ def create_app(config_class: type[BaseConfig] | None = None) -> Flask:
         project_root=app.config["PROJECT_ROOT"],
         runs_path=app.config["ANOMALY_RUNS_PATH"],
     )
+    assistant_svc.anomaly_service = anomaly_prediction_svc
     commercial_settings = CommercialSettings.from_env()
     commercial_tools = DocumentRAGCommercialTools(
         commercial_settings.rag_documents,

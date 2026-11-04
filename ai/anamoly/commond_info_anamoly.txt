@@ -1,0 +1,523 @@
+Architcure example: 
+ai/
+└── anamoly/
+    │
+    ├── raw_knowledge_base/
+    │   ├── pdfs/
+    │   ├── manuals/
+    │   └── standards/
+    │
+    ├── ingestion/
+    │   ├── document_loader.py
+    │   ├── chunking.py
+    │   └── ingestion_pipeline.py
+    │
+    ├── vector_store/
+    │   ├── database.py
+    │   ├── embeddings.py
+    │   ├── retriever.py
+    │   │
+    │   └── storage/
+    │       └── chroma/
+    │           └── persistent_db/
+    │
+    └── ...
+gridvision/
+└── ai/
+    └── anomaly/
+        │
+        ├── raw_knowledge_base/
+        │   ├── pdfs/
+        │   ├── manuals/
+        │   ├── standards/
+        │   └── source_manifest.json
+        │
+        ├── crawler/
+        │   ├── scraper.py
+        │   ├── pdf_downloader.py
+        │   └── sources.yaml
+        │
+        ├── ingestion/
+        │   ├── document_loader.py
+        │   ├── pdf_extractor.py
+        │   ├── chunking.py
+        │   └── ingestion_pipeline.py
+        │
+        ├── vector_store/
+        │   ├── embeddings.py
+        │   ├── retriever.py
+        │   └── database.py
+        │
+        ├── graph/
+        │   ├── graph_builder.py
+        │   └── graph_retriever.py
+        │
+        ├── agents/
+        │   ├── orchestrator.py
+        │   ├── query_router.py
+        │   ├── anomaly_agent.py
+        │   └── recommendation_agent.py
+        │
+        ├── tools/
+        │   ├── registry.py
+        │   ├── run_tools.py
+        │   ├── event_tools.py
+        │   ├── localization_tools.py
+        │   ├── analysis_tools.py
+        │   ├── rag_tools.py
+        │   ├── web_search_tools.py
+        │   └── export_tools.py
+        │
+        ├── memory/
+        │   ├── conversation_memory.py
+        │   └── checkpointer.py
+        │
+        ├── schemas/
+        ├── config/
+        ├── evaluation/
+        ├── tests/
+        ├── docs/
+        └── README.md
+
+# GridVision — Anomaly Intelligence Assistant: Tool Registry, Agentic GraphRAG and Knowledge Base
+
+I want to implement the complete Anomaly Intelligence Assistant inside a separate, modular directory:
+
+`ai/anamoly/`
+
+All AI assistant-related functionality must remain inside this directory, including web scraping, document ingestion, vector database, graph retrieval, LangGraph agents, tool registry, memory, evaluation and documentation.
+
+The assistant must integrate with the existing GridVision Flask backend and React frontend through clean service/API interfaces.
+
+## 1. Inspect Existing Tool Infrastructure
+
+First inspect the complete parent project to determine whether a dedicated AI tool registry already exists.
+
+Important distinction:
+
+- `backend/app/models/registry.py` is the ML Model Registry.
+- It is NOT an Agent Tool Registry.
+
+Search for any existing agent/tool registration mechanism.
+
+If a suitable tool registry exists, reuse and extend it.
+
+If not, create:
+
+`ai/anamoly/tools/registry.py`
+
+Implement a centralized registry that supports:
+
+- Tool name.
+- Tool description.
+- Input schema.
+- Tool implementation/handler.
+- Allowed personas and permissions.
+- Whether the tool has side effects.
+- Whether user confirmation is required.
+- Tool execution logging.
+- Error handling.
+- Tool availability/status.
+
+All LangGraph agents must access functions through this registry.
+
+Do not allow unrestricted Python execution, arbitrary SQL, filesystem access or unregistered tool calls.
+
+## 2. Knowledge Base Location
+
+I will manually place my collected PDFs, technical manuals, standards and other reference documents inside:
+
+`ai/anamoly/raw_knowledge_base/`
+
+Treat this as the original source directory.
+
+Do not delete, overwrite, modify or relocate original documents.
+
+The system must automatically discover supported files inside this directory.
+
+Support:
+
+- PDF.
+- TXT.
+- Markdown.
+- HTML.
+- JSON.
+- Other appropriate technical document formats.
+
+## 3. Web Scraping
+
+Integrate the previously provided Python knowledge scraper.
+
+Keep all scraping functionality under:
+
+`ai/anamoly/crawler/`
+
+Support configurable authoritative domains and seed URLs, including energy.gov, ferc.gov, dps.ny.gov, nyc.gov and osha.gov.
+
+Requirements:
+
+- Domain allowlisting.
+- Respect robots.txt and website restrictions.
+- Rate limiting.
+- PDF downloading.
+- Relevant HTML page extraction.
+- Duplicate detection using SHA-256.
+- Source URL and publication metadata.
+- Incremental scraping.
+- Document collection manifest.
+
+Allow downloaded documents to be stored under a separate subdirectory of `raw_knowledge_base/` without overwriting my manually supplied documents.
+
+## 4. Document Ingestion and Vector Database
+
+Implement an independent ingestion pipeline under:
+
+`ai/anamoly/ingestion/`
+
+Workflow:
+
+Raw documents → Text extraction → Cleaning → Page-aware chunking → Metadata enrichment → Ollama embeddings → Persistent vector database.
+
+Use Ollama with configurable Qwen3-Embedding.
+
+Use Chroma or an existing compatible vector database.
+
+Create separate modules for:
+
+- Document loading.
+- PDF extraction.
+- Text cleaning.
+- Chunking.
+- Embedding generation.
+- Vector indexing.
+- Retrieval.
+- Incremental ingestion.
+
+Preserve page numbers, document titles, publisher, source URL, publication date and document ID.
+
+Support updates, duplicate detection, re-indexing and source deletion.
+
+Persist embeddings across application restarts.
+
+Do not embed raw customer time-series datasets or large CSV files.
+
+## 5. Agentic GraphRAG
+
+Implement a hybrid architecture:
+
+- Vector RAG for technical documents.
+- Structured queries for saved GridVision analysis results.
+- Graph retrieval for relationships between customers, anomalies, events, areas and documents.
+
+Use LangGraph for agent orchestration.
+
+Use a graph database only if necessary; do not create duplicate infrastructure unnecessarily.
+
+## 6. Central Tool Registry
+
+Register the following tools:
+
+**Run tools**
+- list_available_runs()
+- find_run_by_date()
+- get_run_details(run_id)
+- get_run_status(run_id)
+
+**Anomaly tools**
+- query_anomalies()
+- query_events()
+- get_event_details(event_id)
+- get_event_timeline()
+- query_customer_impact()
+- get_localization_metrics()
+
+**Analysis tools**
+- execute_anomaly_analysis()
+- get_analysis_progress()
+- get_analysis_configuration()
+
+**Knowledge tools**
+- search_knowledge_base()
+- retrieve_document()
+- retrieve_graph_context()
+
+**External research**
+- tavily_web_search()
+- tavily_extract_content()
+
+**Export tools**
+- export_anomaly_records()
+- export_events()
+- export_event_details()
+- export_consolidated_report()
+
+All tools must call the existing backend services and storage interfaces wherever possible.
+
+Do not duplicate existing anomaly detection or localization logic.
+
+Apply authenticated user permissions before executing each tool.
+
+## 7. Historical Run Intelligence
+
+Existing application runs are stored under:
+
+`reports/anomaly_prediction/application_runs/<run_id>/`
+
+Use existing run storage, jobs.py and APIs.
+
+For date-specific questions:
+
+1. Check for a suitable completed run covering the requested date.
+2. Reuse saved results if available.
+3. Return the run ID and source date range.
+4. If no suitable run exists, explain that the date has not been analysed.
+5. Ask whether to execute the missing analysis when the user has only asked an informational question.
+6. If the user explicitly requests analysis, execute using existing defaults unless they specify overrides.
+7. Wait for actual completion before presenting results.
+
+Current limits and defaults must remain unchanged:
+
+- Maximum duration: 1–7 days per run.
+- Spatial radius: 5 km.
+- H3 resolution: 8.
+- Maximum start-time difference: 30 minutes.
+- Minimum interval overlap: 0.25.
+- Maximum interval gap: 60 minutes.
+
+Allow optional per-run overrides.
+
+Never change global defaults or main configuration files through chatbot queries.
+
+For longer periods, divide requested dates into sequential runs and consolidate their results.
+
+## 8. Rectification Recommendation Agent
+
+Implement an evidence-grounded recommendation agent.
+
+Use:
+
+- Anomaly type.
+- Severity.
+- Event scope.
+- Affected customers.
+- Impact radius.
+- Event duration.
+- Spatial distribution.
+- Recovery behaviour.
+- Relevant retrieved technical documents.
+
+Generate:
+
+- Observed problem.
+- Probable cause.
+- Recommended investigation.
+- Possible corrective/mitigation measures.
+- Priority.
+- Responsible party.
+- Supporting references and document page numbers.
+- Confidence and limitations.
+
+Support spike, drop, zero_block and flatline.
+
+Do not present probable causes as confirmed faults.
+
+Do not recommend dangerous electrical work to residential users.
+
+## 9. Tavily Integration
+
+Use Tavily only when:
+
+- Local knowledge is insufficient.
+- Current regulations or safety guidance are requested.
+- Recent external information is required.
+
+Do not use it for every query.
+
+Cite retrieved webpages and distinguish external information from saved GridVision results.
+
+Do not automatically ingest external search results into the permanent vector database.
+
+## 10. Persistent Memory
+
+Implement LangGraph persistent conversation memory.
+
+Memory must be separated by authenticated user and conversation thread.
+
+Remember:
+
+- Current run ID.
+- Selected event.
+- Previous questions.
+- Relevant conversational context.
+- User-approved preferences.
+
+Prevent residential, commercial and government memory leakage.
+
+## 11. CSV and JSON Export Tools
+
+When a user requests a download:
+
+1. Query actual stored records.
+2. Apply their filters.
+3. Generate the requested CSV or JSON.
+4. Save the output through the existing report storage system.
+5. Return a secure download link.
+
+Support GeoJSON where appropriate.
+
+Never let the LLM fabricate numerical records.
+
+## 12. LangSmith
+
+Integrate LangSmith for:
+
+- Agent traces.
+- Tool execution traces.
+- Retrieval evaluation.
+- Answer quality.
+- Groundedness.
+- Citation correctness.
+- Tool selection accuracy.
+- Latency and errors.
+
+Use environment variables for credentials and redact sensitive customer information.
+
+## 13. Backend and React Integration
+
+Expose the assistant through the existing Flask API and integrate it into the existing React AI Assistant interface.
+
+Keep all agent implementation in `ai/anamoly/`.
+
+Use thin integration adapters in the existing backend services and API routes.
+
+Respect Residential, Commercial and Government authorization.
+
+Government can access complete anomaly information.
+
+Residential and Commercial users can access only directly relevant events and impact-zone information.
+
+Support streaming responses, citations, run references and downloadable reports.
+
+Do not create a separate chatbot application.
+
+## 14. Expected Modular Architecture
+
+Keep the main responsibilities separated:
+
+- crawler: collects documents.
+- ingestion: processes documents.
+- vector_store: embeddings and retrieval.
+- graph: entity relationships.
+- agents: LangGraph workflows.
+- tools: registry and callable functions.
+- memory: persistent conversations.
+- evaluation: quality testing.
+- config: environment and model settings.
+- tests: automated verification.
+- docs: architecture and usage documentation.
+
+Integrate with existing GridVision services rather than creating competing implementations.
+
+## 15. Documentation
+
+Create complete documentation under:
+
+`ai/anamoly/docs/`
+
+Include:
+
+- System architecture.
+- Tool registry design.
+- Tool descriptions and schemas.
+- GraphRAG architecture.
+- Scraping and source configuration.
+- Document ingestion.
+- Ollama setup.
+- Vector database.
+- LangGraph workflow.
+- Persistent memory.
+- LangSmith setup.
+- Tavily setup.
+- Historical run lookup and execution.
+- Rectification recommendations.
+- Export functionality.
+- Persona permissions.
+- Evaluation and testing.
+
+Include architecture diagrams and example conversations.
+
+## 16. Testing and Acceptance
+
+Test:
+
+- Tool registry discovery and execution.
+- Persona permissions.
+- Historical run lookup.
+- Missing-run handling.
+- Default parameter preservation.
+- New analysis execution.
+- Persistent memory isolation.
+- PDF ingestion.
+- Embedding and retrieval.
+- Graph retrieval.
+- Tavily fallback.
+- Document citations.
+- Rectification recommendation grounding.
+- CSV/JSON downloads.
+- React integration.
+
+Do not break existing GridVision models, dashboards, automation.py, MLflow, Airflow or backend APIs.
+
+Do not create duplicate services.
+
+Do not change unrelated project files.
+
+Complete the actual implementation, not just empty modules or placeholder functions.
+
+At completion, provide the folder structure, registered tools, configuration instructions, test results and example chatbot queries.
+
+### Persistent Vector Database Storage — Mandatory
+
+I want the vector database to be stored permanently inside:
+
+`ai/anamoly/vector_store/storage/chroma/persistent_db/`
+
+Requirements:
+
+1. Use ChromaDB with persistent storage.
+2. Use Ollama Qwen3-Embedding for document embeddings.
+3. Save all generated embeddings, vectors, indexes and metadata in the specified directory.
+4. Do not recreate or re-embed all documents every time the application starts.
+5. Support incremental ingestion and duplicate detection.
+6. Maintain document IDs, source URLs, page numbers, publisher, publication date and chunk metadata.
+7. Support multiple collections or versioned collections when needed.
+8. Keep vector database code separate from its persisted data.
+9. Configure the storage path through `GRIDVISION_ANOMALY_VECTOR_DB_PATH`, with the above location as its default.
+10. Preserve the database across application restarts and Docker container rebuilds using a persistent volume.
+11. Add the vector database storage directory to `.gitignore`. Do not commit generated embeddings or database files.
+12. Do not place vector database files inside `raw_knowledge_base/`, `reports/`, `models/` or the frontend.
+13. Do not delete existing vector database collections during application startup or routine ingestion.
+14. Document backup, restoration, re-indexing and database migration procedures.
+
+Ensure that the Flask application, LangGraph agents and ingestion pipeline all use the same configured persistent database rather than creating separate vector database instances.
+
+### 2019 Dataset Date Guardrail — Mandatory
+
+The current GridVision anomaly prediction dataset contains hourly electricity data for **1 January 2019 through 31 December 2019 only**.
+
+The chatbot and analysis tools must enforce this date range.
+
+1. All anomaly-related historical queries must use the available 2019 dataset.
+2. If a user asks about a date in 2019, check for an existing completed application run first.
+3. If no suitable run exists, offer or execute a new analysis using the existing configuration defaults.
+4. Each analysis run must cover 1–7 days maximum.
+5. If a user asks about a date in 2020, 2025, 2026 or any other unavailable period, clearly explain that the anomaly dataset currently covers only 2019.
+6. Never silently substitute an unavailable date with a date from 2019.
+7. Never fabricate anomaly records for dates outside the dataset period.
+8. If the user does not specify a date, do not automatically analyse the current date. Ask which date or period in 2019 they want to investigate.
+9. For queries such as "What happened yesterday?" or "Show today's anomalies", explain that the available anomaly data is historical (2019) and ask for a supported date.
+10. For date ranges partially outside 2019, explain the unsupported portion and ask whether the user wants to analyse only the overlapping 2019 period.
+11. Apply this restriction to run lookup, new analysis execution, event retrieval, memory-based answers, exports and agent tools.
+12. Keep the date boundaries configurable from the dataset metadata rather than hardcoding different date assumptions in multiple modules.
+
+**The dataset date range is a hard validation boundary, not merely a chatbot recommendation. Enforce it in the backend analysis service as well as the LangGraph agent.**

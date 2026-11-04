@@ -44,24 +44,33 @@ class SpikeDetector:
         return np.column_stack((1.0 - anomaly_probability, anomaly_probability))
 
 
-def make_source(path: Path) -> None:
+def make_source(path: Path, customer_ids: tuple[int, ...] = (101,)) -> None:
     timestamps = pd.date_range("2019-01-01", periods=96, freq="h")
-    energy = np.full(len(timestamps), 1.0)
-    energy[48] = 8.0
-    data = pd.DataFrame(
-        {
-            "OBJECTID": np.full(len(timestamps), 101, dtype=np.int64),
-            "timestamp": timestamps,
-            "normalized_building_energy_kwh": energy,
-            "latitude": np.full(len(timestamps), 34.0),
-            "longitude": np.full(len(timestamps), -118.0),
-            "is_anomaly": np.ones(len(timestamps), dtype=bool),
-            "anomaly_event_id": np.full(len(timestamps), "MUST_NOT_BE_USED"),
-            "anomaly_type": np.full(len(timestamps), "zero_block"),
-        }
-    )
+    parts = []
+    for customer_id in customer_ids:
+        energy = np.full(len(timestamps), 1.0)
+        energy[48] = 8.0
+        parts.append(
+            pd.DataFrame(
+                {
+                    "OBJECTID": np.full(
+                        len(timestamps), customer_id, dtype=np.int64
+                    ),
+                    "timestamp": timestamps,
+                    "normalized_building_energy_kwh": energy,
+                    "latitude": np.full(len(timestamps), 34.0),
+                    "longitude": np.full(len(timestamps), -118.0),
+                    "is_anomaly": np.ones(len(timestamps), dtype=bool),
+                    "anomaly_event_id": np.full(
+                        len(timestamps), "MUST_NOT_BE_USED"
+                    ),
+                    "anomaly_type": np.full(len(timestamps), "zero_block"),
+                }
+            )
+        )
+    data = pd.concat(parts, ignore_index=True)
     table = pa.Table.from_pandas(data, preserve_index=False)
-    pq.write_table(table, path, row_group_size=24)
+    pq.write_table(table, path, row_group_size=len(data))
 
 
 def make_bundle(path: Path) -> None:
@@ -86,6 +95,60 @@ def make_bundle(path: Path) -> None:
 
 
 class GridVisionApplicationTests(unittest.TestCase):
+    def test_analysis_batches_customers_and_localizes_after_combining(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            data_path = root / "input.parquet"
+            model_path = root / "model.joblib"
+            make_source(data_path, (101, 102, 103))
+            make_bundle(model_path)
+            service = InferenceService(data_path, model_path)
+
+            import gridvision_app.inference as inference_module
+
+            original_limit = inference_module.MAX_ANALYSIS_ROWS
+            inference_module.MAX_ANALYSIS_ROWS = 100
+            try:
+                result = service.analyze(
+                    customer_ids=[101, 102, 103],
+                    start_date=pd.Timestamp("2019-01-03").date(),
+                    end_date=pd.Timestamp("2019-01-03").date(),
+                    localization=EventLocalizationConfig(),
+                )
+            finally:
+                inference_module.MAX_ANALYSIS_ROWS = original_limit
+
+            self.assertEqual(result["metadata"]["customer_batch_count"], 3)
+            self.assertEqual(result["metadata"]["customer_batch_size"], 1)
+            self.assertEqual(result["metrics"]["input_rows_scored"], 252)
+            self.assertEqual(result["metrics"]["selected_customer_count"], 3)
+
+    def test_multi_day_analysis_is_batched_when_workload_exceeds_limit(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            data_path = root / "input.parquet"
+            model_path = root / "model.joblib"
+            make_source(data_path, (101, 102, 103))
+            make_bundle(model_path)
+            inference = InferenceService(data_path, model_path)
+
+            import gridvision_app.inference as inference_module
+
+            original_limit = inference_module.MAX_ANALYSIS_ROWS
+            inference_module.MAX_ANALYSIS_ROWS = 100
+            try:
+                result = inference.analyze(
+                    customer_ids=[101, 102, 103],
+                    start_date=pd.Timestamp("2019-01-03").date(),
+                    end_date=pd.Timestamp("2019-01-04").date(),
+                    localization=EventLocalizationConfig(),
+                )
+            finally:
+                inference_module.MAX_ANALYSIS_ROWS = original_limit
+
+            self.assertEqual(result["metadata"]["customer_batch_count"], 3)
+            self.assertGreater(result["metadata"]["input_rows_scored"], 100)
+
     def test_geojson_contains_a_closed_event_extent_boundary(self) -> None:
         feature = _event_geojson(
             [

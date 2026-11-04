@@ -17,6 +17,8 @@ htmlcov/
 /instance/ai_private/
 /data/
 /mlruns/
+/ai/anamoly/vector_store/storage/chroma/persistent_db/
+/ai/anamoly/Key/
 /notebooks/.tmp/
 /notebooks/artifacts/
 /models/**/*.joblib
@@ -79,7 +81,18 @@ frontend/dist/
 key_vault/**/*.key
 frontend/.env
 *.local
-/key_vault/
+/Key_vault/
+**/key/
+**/api.key
+**/*.env
+
+# Generated assistant and anomaly run outputs
+/reports/anomaly_prediction/application_runs/
+/ai/Govt_interpretion+redistribution_plan/assistant/output/
+/ai/Govt_interpretion+redistribution_plan/data/assistant_history.json
+/ai/Govt_interpretion+redistribution_plan/data/conversations/
+/ai/Govt_interpretion+redistribution_plan/logs/
+/ai/Govt_interpretion+redistribution_plan/output/
 
 # IDE & OS files
 .vscode/

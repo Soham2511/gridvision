@@ -1,0 +1,955 @@
+{
+  "grid_count": 53,
+  "connection_count": 96,
+  "grids": [
+    {
+      "grid_id": 9.0,
+      "centroid_latitude": 34.02644061362909,
+      "centroid_longitude": -118.76824801876651
+    },
+    {
+      "grid_id": 10.0,
+      "centroid_latitude": 34.14775311576977,
+      "centroid_longitude": -118.78108396316587
+    },
+    {
+      "grid_id": 11.0,
+      "centroid_latitude": 34.163811976451036,
+      "centroid_longitude": -118.7742465742823
+    },
+    {
+      "grid_id": 23.0,
+      "centroid_latitude": 34.04790715626254,
+      "centroid_longitude": -118.6190934941386
+    },
+    {
+      "grid_id": 24.0,
+      "centroid_latitude": 34.15820039297594,
+      "centroid_longitude": -118.63772869424827
+    },
+    {
+      "grid_id": 25.0,
+      "centroid_latitude": 34.20640388737463,
+      "centroid_longitude": -118.63544642972779
+    },
+    {
+      "grid_id": 30.0,
+      "centroid_latitude": 33.34256398857852,
+      "centroid_longitude": -118.32735370970362
+    },
+    {
+      "grid_id": 34.0,
+      "centroid_latitude": 33.77025354150742,
+      "centroid_longitude": -118.38807362093868
+    },
+    {
+      "grid_id": 35.0,
+      "centroid_latitude": 33.853016181455715,
+      "centroid_longitude": -118.38960387838068
+    },
+    {
+      "grid_id": 36.0,
+      "centroid_latitude": 33.96785204673127,
+      "centroid_longitude": -118.43544679906034
+    },
+    {
+      "grid_id": 37.0,
+      "centroid_latitude": 34.036573659934355,
+      "centroid_longitude": -118.47611398440745
+    },
+    {
+      "grid_id": 38.0,
+      "centroid_latitude": 34.176509111427144,
+      "centroid_longitude": -118.52726011110971
+    },
+    {
+      "grid_id": 39.0,
+      "centroid_latitude": 34.24629180981863,
+      "centroid_longitude": -118.5489124945348
+    },
+    {
+      "grid_id": 40.0,
+      "centroid_latitude": 34.390738441742954,
+      "centroid_longitude": -118.56060224109444
+    },
+    {
+      "grid_id": 41.0,
+      "centroid_latitude": 34.46011406990203,
+      "centroid_longitude": -118.59435061314376
+    },
+    {
+      "grid_id": 48.0,
+      "centroid_latitude": 33.76525815996636,
+      "centroid_longitude": -118.29797452605638
+    },
+    {
+      "grid_id": 49.0,
+      "centroid_latitude": 33.863602641448786,
+      "centroid_longitude": -118.31554506442417
+    },
+    {
+      "grid_id": 50.0,
+      "centroid_latitude": 33.97026888754894,
+      "centroid_longitude": -118.32924444071803
+    },
+    {
+      "grid_id": 51.0,
+      "centroid_latitude": 34.063196259170184,
+      "centroid_longitude": -118.36471189496463
+    },
+    {
+      "grid_id": 52.0,
+      "centroid_latitude": 34.18143141779969,
+      "centroid_longitude": -118.40132666851858
+    },
+    {
+      "grid_id": 53.0,
+      "centroid_latitude": 34.273297283845096,
+      "centroid_longitude": -118.44147512063061
+    },
+    {
+      "grid_id": 54.0,
+      "centroid_latitude": 34.41732093294435,
+      "centroid_longitude": -118.4667315586237
+    },
+    {
+      "grid_id": 55.0,
+      "centroid_latitude": 34.45336919978151,
+      "centroid_longitude": -118.51800321896269
+    },
+    {
+      "grid_id": 62.0,
+      "centroid_latitude": 33.79571534773808,
+      "centroid_longitude": -118.15016303351263
+    },
+    {
+      "grid_id": 63.0,
+      "centroid_latitude": 33.88766295421512,
+      "centroid_longitude": -118.1787600981446
+    },
+    {
+      "grid_id": 64.0,
+      "centroid_latitude": 33.98727424975543,
+      "centroid_longitude": -118.21836503287267
+    },
+    {
+      "grid_id": 65.0,
+      "centroid_latitude": 34.098548726536166,
+      "centroid_longitude": -118.23650419816077
+    },
+    {
+      "grid_id": 66.0,
+      "centroid_latitude": 34.19666749646237,
+      "centroid_longitude": -118.2693870569233
+    },
+    {
+      "grid_id": 67.0,
+      "centroid_latitude": 34.262826951302934,
+      "centroid_longitude": -118.3089846210889
+    },
+    {
+      "grid_id": 68.0,
+      "centroid_latitude": 34.44451349723538,
+      "centroid_longitude": -118.39233324302124
+    },
+    {
+      "grid_id": 69.0,
+      "centroid_latitude": 34.50116479748577,
+      "centroid_longitude": -118.34608212490028
+    },
+    {
+      "grid_id": 76.0,
+      "centroid_latitude": 33.833333155052074,
+      "centroid_longitude": -118.08043672138203
+    },
+    {
+      "grid_id": 77.0,
+      "centroid_latitude": 33.91126680569893,
+      "centroid_longitude": -118.06191317841866
+    },
+    {
+      "grid_id": 78.0,
+      "centroid_latitude": 34.01531642632278,
+      "centroid_longitude": -118.09398879749243
+    },
+    {
+      "grid_id": 79.0,
+      "centroid_latitude": 34.11671180008319,
+      "centroid_longitude": -118.11097835619724
+    },
+    {
+      "grid_id": 80.0,
+      "centroid_latitude": 34.190778097930604,
+      "centroid_longitude": -118.15237682058797
+    },
+    {
+      "grid_id": 82.0,
+      "centroid_latitude": 34.47336187501096,
+      "centroid_longitude": -118.1882071589221
+    },
+    {
+      "grid_id": 83.0,
+      "centroid_latitude": 34.58365041452083,
+      "centroid_longitude": -118.17948197394917
+    },
+    {
+      "grid_id": 91.0,
+      "centroid_latitude": 33.95723910059966,
+      "centroid_longitude": -117.94565174079511
+    },
+    {
+      "grid_id": 92.0,
+      "centroid_latitude": 34.047079000286104,
+      "centroid_longitude": -117.95473718074467
+    },
+    {
+      "grid_id": 93.0,
+      "centroid_latitude": 34.12861156370676,
+      "centroid_longitude": -118.0007429352894
+    },
+    {
+      "grid_id": 97.0,
+      "centroid_latitude": 34.56991520431213,
+      "centroid_longitude": -118.09085100504848
+    },
+    {
+      "grid_id": 105.0,
+      "centroid_latitude": 33.989903798414076,
+      "centroid_longitude": -117.8366452280068
+    },
+    {
+      "grid_id": 106.0,
+      "centroid_latitude": 34.06901813649703,
+      "centroid_longitude": -117.83436583678449
+    },
+    {
+      "grid_id": 107.0,
+      "centroid_latitude": 34.1312203348584,
+      "centroid_longitude": -117.87259667470782
+    },
+    {
+      "grid_id": 110.0,
+      "centroid_latitude": 34.51702775018362,
+      "centroid_longitude": -117.95647584317372
+    },
+    {
+      "grid_id": 111.0,
+      "centroid_latitude": 34.567114501702825,
+      "centroid_longitude": -118.01478969499657
+    },
+    {
+      "grid_id": 120.0,
+      "centroid_latitude": 34.086880046701864,
+      "centroid_longitude": -117.73737785443763
+    },
+    {
+      "grid_id": 121.0,
+      "centroid_latitude": 34.14064299768976,
+      "centroid_longitude": -117.75795199627171
+    },
+    {
+      "grid_id": 124.0,
+      "centroid_latitude": 34.47063551837995,
+      "centroid_longitude": -117.84516925660839
+    },
+    {
+      "grid_id": 125.0,
+      "centroid_latitude": 34.60717263712192,
+      "centroid_longitude": -117.83100787834377
+    },
+    {
+      "grid_id": 135.0,
+      "centroid_latitude": 34.23526451656471,
+      "centroid_longitude": -117.66052601472371
+    },
+    {
+      "grid_id": 136.0,
+      "centroid_latitude": 34.366379532123844,
+      "centroid_longitude": -117.6557757839122
+    }
+  ],
+  "configuration": {
+    "neighbor_count": 3,
+    "capacity_kwh_per_hour": 10000.0,
+    "earth_radius_km": 6371.0088,
+    "loss_parameters": {
+      "base_loss_pct": 0.01,
+      "additional_loss_pct_per_km": 0.0005,
+      "maximum_loss_pct": 0.08
+    }
+  },
+  "connections": [
+    {
+      "grid_a_id": 9.0,
+      "grid_b_id": 10.0,
+      "distance_km": 13.541046239592074,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.016770523119796037
+    },
+    {
+      "grid_a_id": 9.0,
+      "grid_b_id": 11.0,
+      "distance_km": 15.285003245253794,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.0176425016226269
+    },
+    {
+      "grid_a_id": 9.0,
+      "grid_b_id": 23.0,
+      "distance_km": 13.949514280085221,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.01697475714004261
+    },
+    {
+      "grid_a_id": 10.0,
+      "grid_b_id": 11.0,
+      "distance_km": 1.8932586987991207,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.01094662934939956
+    },
+    {
+      "grid_a_id": 10.0,
+      "grid_b_id": 24.0,
+      "distance_km": 13.242396273783582,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.016621198136891793
+    },
+    {
+      "grid_a_id": 11.0,
+      "grid_b_id": 24.0,
+      "distance_km": 12.57647158397687,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.016288235791988435
+    },
+    {
+      "grid_a_id": 11.0,
+      "grid_b_id": 25.0,
+      "distance_km": 13.617430430428973,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.016808715215214487
+    },
+    {
+      "grid_a_id": 23.0,
+      "grid_b_id": 24.0,
+      "distance_km": 12.383507399489375,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.01619175369974469
+    },
+    {
+      "grid_a_id": 23.0,
+      "grid_b_id": 37.0,
+      "distance_km": 13.23413243283962,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.016617066216419812
+    },
+    {
+      "grid_a_id": 24.0,
+      "grid_b_id": 25.0,
+      "distance_km": 5.3641012244562765,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.012682050612228138
+    },
+    {
+      "grid_a_id": 24.0,
+      "grid_b_id": 38.0,
+      "distance_km": 10.365322470826847,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.015182661235413425
+    },
+    {
+      "grid_a_id": 25.0,
+      "grid_b_id": 38.0,
+      "distance_km": 10.491168987534534,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.015245584493767266
+    },
+    {
+      "grid_a_id": 25.0,
+      "grid_b_id": 39.0,
+      "distance_km": 9.108624975279133,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.014554312487639567
+    },
+    {
+      "grid_a_id": 30.0,
+      "grid_b_id": 34.0,
+      "distance_km": 47.888654116768166,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.033944327058384086
+    },
+    {
+      "grid_a_id": 30.0,
+      "grid_b_id": 48.0,
+      "distance_km": 47.08029159263525,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.03354014579631762
+    },
+    {
+      "grid_a_id": 30.0,
+      "grid_b_id": 62.0,
+      "distance_km": 52.995050565815646,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.036497525282907825
+    },
+    {
+      "grid_a_id": 34.0,
+      "grid_b_id": 35.0,
+      "distance_km": 9.203884295192273,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.014601942147596136
+    },
+    {
+      "grid_a_id": 34.0,
+      "grid_b_id": 48.0,
+      "distance_km": 8.346918651112079,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.01417345932555604
+    },
+    {
+      "grid_a_id": 34.0,
+      "grid_b_id": 49.0,
+      "distance_km": 12.354719573608026,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.016177359786804013
+    },
+    {
+      "grid_a_id": 35.0,
+      "grid_b_id": 48.0,
+      "distance_km": 12.918705522337236,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.016459352761168618
+    },
+    {
+      "grid_a_id": 35.0,
+      "grid_b_id": 49.0,
+      "distance_km": 6.939048803138313,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.013469524401569156
+    },
+    {
+      "grid_a_id": 36.0,
+      "grid_b_id": 37.0,
+      "distance_km": 8.511528703290532,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.014255764351645266
+    },
+    {
+      "grid_a_id": 36.0,
+      "grid_b_id": 50.0,
+      "distance_km": 9.797504188780144,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.014898752094390073
+    },
+    {
+      "grid_a_id": 36.0,
+      "grid_b_id": 51.0,
+      "distance_km": 12.445969204838326,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.016222984602419162
+    },
+    {
+      "grid_a_id": 37.0,
+      "grid_b_id": 51.0,
+      "distance_km": 10.681944847294034,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.015340972423647018
+    },
+    {
+      "grid_a_id": 38.0,
+      "grid_b_id": 39.0,
+      "distance_km": 8.010865975411436,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.014005432987705718
+    },
+    {
+      "grid_a_id": 38.0,
+      "grid_b_id": 52.0,
+      "distance_km": 11.597567662276768,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.015798783831138384
+    },
+    {
+      "grid_a_id": 39.0,
+      "grid_b_id": 53.0,
+      "distance_km": 10.320243207703145,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.015160121603851572
+    },
+    {
+      "grid_a_id": 40.0,
+      "grid_b_id": 41.0,
+      "distance_km": 8.312097527149316,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.01415604876357466
+    },
+    {
+      "grid_a_id": 40.0,
+      "grid_b_id": 54.0,
+      "distance_km": 9.10521875103103,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.014552609375515516
+    },
+    {
+      "grid_a_id": 40.0,
+      "grid_b_id": 55.0,
+      "distance_km": 7.985490308542773,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.013992745154271386
+    },
+    {
+      "grid_a_id": 41.0,
+      "grid_b_id": 54.0,
+      "distance_km": 12.633796633061115,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.01631689831653056
+    },
+    {
+      "grid_a_id": 41.0,
+      "grid_b_id": 55.0,
+      "distance_km": 7.040073593919106,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.013520036796959553
+    },
+    {
+      "grid_a_id": 48.0,
+      "grid_b_id": 49.0,
+      "distance_km": 11.055245988253365,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.015527622994126682
+    },
+    {
+      "grid_a_id": 48.0,
+      "grid_b_id": 62.0,
+      "distance_km": 14.074632085748899,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.01703731604287445
+    },
+    {
+      "grid_a_id": 49.0,
+      "grid_b_id": 50.0,
+      "distance_km": 11.927935334633782,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.015963967667316892
+    },
+    {
+      "grid_a_id": 50.0,
+      "grid_b_id": 51.0,
+      "distance_km": 10.837808511729142,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.015418904255864571
+    },
+    {
+      "grid_a_id": 50.0,
+      "grid_b_id": 64.0,
+      "distance_km": 10.397351229528534,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.015198675614764267
+    },
+    {
+      "grid_a_id": 51.0,
+      "grid_b_id": 65.0,
+      "distance_km": 12.444722605592105,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.016222361302796053
+    },
+    {
+      "grid_a_id": 52.0,
+      "grid_b_id": 53.0,
+      "distance_km": 10.861465546807194,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.015430732773403597
+    },
+    {
+      "grid_a_id": 52.0,
+      "grid_b_id": 66.0,
+      "distance_km": 12.253388761751518,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.01612669438087576
+    },
+    {
+      "grid_a_id": 52.0,
+      "grid_b_id": 67.0,
+      "distance_km": 12.409691452649227,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.016204845726324614
+    },
+    {
+      "grid_a_id": 53.0,
+      "grid_b_id": 67.0,
+      "distance_km": 12.230485969901245,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.016115242984950623
+    },
+    {
+      "grid_a_id": 54.0,
+      "grid_b_id": 55.0,
+      "distance_km": 6.178758474128126,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.013089379237064063
+    },
+    {
+      "grid_a_id": 54.0,
+      "grid_b_id": 68.0,
+      "distance_km": 7.463352517342722,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.01373167625867136
+    },
+    {
+      "grid_a_id": 54.0,
+      "grid_b_id": 69.0,
+      "distance_km": 14.46641089935795,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.017233205449678976
+    },
+    {
+      "grid_a_id": 55.0,
+      "grid_b_id": 68.0,
+      "distance_km": 11.565288101423922,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.01578264405071196
+    },
+    {
+      "grid_a_id": 62.0,
+      "grid_b_id": 63.0,
+      "distance_km": 10.55974309960655,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.015279871549803276
+    },
+    {
+      "grid_a_id": 62.0,
+      "grid_b_id": 76.0,
+      "distance_km": 7.680654658234478,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.01384032732911724
+    },
+    {
+      "grid_a_id": 63.0,
+      "grid_b_id": 64.0,
+      "distance_km": 11.663333672043375,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.015831666836021687
+    },
+    {
+      "grid_a_id": 63.0,
+      "grid_b_id": 76.0,
+      "distance_km": 10.90507066387535,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.015452535331937675
+    },
+    {
+      "grid_a_id": 63.0,
+      "grid_b_id": 77.0,
+      "distance_km": 11.099045023054837,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.015549522511527417
+    },
+    {
+      "grid_a_id": 64.0,
+      "grid_b_id": 78.0,
+      "distance_km": 11.881879918954377,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.01594093995947719
+    },
+    {
+      "grid_a_id": 65.0,
+      "grid_b_id": 66.0,
+      "distance_km": 11.322190836741166,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.015661095418370585
+    },
+    {
+      "grid_a_id": 65.0,
+      "grid_b_id": 79.0,
+      "distance_km": 11.732049749750812,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.015866024874875408
+    },
+    {
+      "grid_a_id": 65.0,
+      "grid_b_id": 80.0,
+      "distance_km": 12.849648920521396,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.0164248244602607
+    },
+    {
+      "grid_a_id": 66.0,
+      "grid_b_id": 67.0,
+      "distance_km": 8.20805240767543,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.014104026203837716
+    },
+    {
+      "grid_a_id": 66.0,
+      "grid_b_id": 80.0,
+      "distance_km": 10.781821357514364,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.015390910678757183
+    },
+    {
+      "grid_a_id": 68.0,
+      "grid_b_id": 69.0,
+      "distance_km": 7.593250819396722,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.013796625409698362
+    },
+    {
+      "grid_a_id": 69.0,
+      "grid_b_id": 82.0,
+      "distance_km": 14.796257132089346,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.017398128566044675
+    },
+    {
+      "grid_a_id": 76.0,
+      "grid_b_id": 77.0,
+      "distance_km": 8.832971325275006,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.014416485662637504
+    },
+    {
+      "grid_a_id": 77.0,
+      "grid_b_id": 78.0,
+      "distance_km": 11.941990738564359,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.01597099536928218
+    },
+    {
+      "grid_a_id": 77.0,
+      "grid_b_id": 91.0,
+      "distance_km": 11.88170897938843,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.015940854489694213
+    },
+    {
+      "grid_a_id": 78.0,
+      "grid_b_id": 79.0,
+      "distance_km": 11.38275959476618,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.01569137979738309
+    },
+    {
+      "grid_a_id": 79.0,
+      "grid_b_id": 80.0,
+      "distance_km": 9.074138878214578,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.014537069439107288
+    },
+    {
+      "grid_a_id": 79.0,
+      "grid_b_id": 93.0,
+      "distance_km": 10.233250646393829,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.015116625323196915
+    },
+    {
+      "grid_a_id": 82.0,
+      "grid_b_id": 83.0,
+      "distance_km": 12.28956279861768,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.01614478139930884
+    },
+    {
+      "grid_a_id": 82.0,
+      "grid_b_id": 97.0,
+      "distance_km": 13.957819533947932,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.016978909766973967
+    },
+    {
+      "grid_a_id": 83.0,
+      "grid_b_id": 97.0,
+      "distance_km": 8.257024575429314,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.014128512287714657
+    },
+    {
+      "grid_a_id": 83.0,
+      "grid_b_id": 111.0,
+      "distance_km": 15.190232103365565,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.017595116051682784
+    },
+    {
+      "grid_a_id": 91.0,
+      "grid_b_id": 92.0,
+      "distance_km": 10.024801240265935,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.015012400620132968
+    },
+    {
+      "grid_a_id": 91.0,
+      "grid_b_id": 105.0,
+      "distance_km": 10.687975100453254,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.015343987550226628
+    },
+    {
+      "grid_a_id": 92.0,
+      "grid_b_id": 93.0,
+      "distance_km": 10.007091026689869,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.015003545513344936
+    },
+    {
+      "grid_a_id": 92.0,
+      "grid_b_id": 105.0,
+      "distance_km": 12.604716039934768,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.016302358019967385
+    },
+    {
+      "grid_a_id": 92.0,
+      "grid_b_id": 106.0,
+      "distance_km": 11.354005693186565,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.015677002846593284
+    },
+    {
+      "grid_a_id": 93.0,
+      "grid_b_id": 107.0,
+      "distance_km": 11.79861826586084,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.01589930913293042
+    },
+    {
+      "grid_a_id": 97.0,
+      "grid_b_id": 110.0,
+      "distance_km": 13.640376064089407,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.016820188032044704
+    },
+    {
+      "grid_a_id": 97.0,
+      "grid_b_id": 111.0,
+      "distance_km": 6.971391262519308,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.013485695631259655
+    },
+    {
+      "grid_a_id": 105.0,
+      "grid_b_id": 106.0,
+      "distance_km": 8.799632567632328,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.014399816283816164
+    },
+    {
+      "grid_a_id": 106.0,
+      "grid_b_id": 107.0,
+      "distance_km": 7.760830292381804,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.013880415146190903
+    },
+    {
+      "grid_a_id": 106.0,
+      "grid_b_id": 120.0,
+      "distance_km": 9.150760285576215,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.014575380142788107
+    },
+    {
+      "grid_a_id": 106.0,
+      "grid_b_id": 121.0,
+      "distance_km": 10.626795812743495,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.015313397906371748
+    },
+    {
+      "grid_a_id": 107.0,
+      "grid_b_id": 120.0,
+      "distance_km": 13.389896028602772,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.016694948014301388
+    },
+    {
+      "grid_a_id": 107.0,
+      "grid_b_id": 121.0,
+      "distance_km": 10.603458216386459,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.015301729108193229
+    },
+    {
+      "grid_a_id": 110.0,
+      "grid_b_id": 111.0,
+      "distance_km": 7.7165854596450565,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.013858292729822528
+    },
+    {
+      "grid_a_id": 110.0,
+      "grid_b_id": 124.0,
+      "distance_km": 11.430940091989477,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.015715470045994738
+    },
+    {
+      "grid_a_id": 110.0,
+      "grid_b_id": 125.0,
+      "distance_km": 15.24711839711726,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.017623559198558632
+    },
+    {
+      "grid_a_id": 111.0,
+      "grid_b_id": 124.0,
+      "distance_km": 18.88359435496017,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.019441797177480083
+    },
+    {
+      "grid_a_id": 111.0,
+      "grid_b_id": 125.0,
+      "distance_km": 17.403579281718564,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.018701789640859282
+    },
+    {
+      "grid_a_id": 120.0,
+      "grid_b_id": 121.0,
+      "distance_km": 6.271054763149626,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.013135527381574813
+    },
+    {
+      "grid_a_id": 120.0,
+      "grid_b_id": 135.0,
+      "distance_km": 17.9509941589564,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.018975497079478203
+    },
+    {
+      "grid_a_id": 121.0,
+      "grid_b_id": 135.0,
+      "distance_km": 13.82047066706213,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.016910235333531067
+    },
+    {
+      "grid_a_id": 121.0,
+      "grid_b_id": 136.0,
+      "distance_km": 26.799972095041102,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.02339998604752055
+    },
+    {
+      "grid_a_id": 124.0,
+      "grid_b_id": 125.0,
+      "distance_km": 15.237566275595956,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.01761878313779798
+    },
+    {
+      "grid_a_id": 124.0,
+      "grid_b_id": 136.0,
+      "distance_km": 20.885486193913092,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.020442743096956546
+    },
+    {
+      "grid_a_id": 135.0,
+      "grid_b_id": 136.0,
+      "distance_km": 14.585872820730877,
+      "capacity_kwh_per_hour": 10000.0,
+      "loss_pct": 0.017292936410365438
+    }
+  ]
+}

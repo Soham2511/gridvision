@@ -4,7 +4,6 @@
   "dag_id": "government_customer_segmentation",
   "feature_generation": {
     "eligible_buildings": 5034,
-    "eligible_buildings": 5034,
     "excluded_low_coverage_buildings": 0,
     "feature_path": "/opt/gridvision/data/gold/customer_segmentation_features.parquet",
     "feature_rows": 5034,
@@ -15,11 +14,7 @@
   "geospatial": {
     "coarse_region_segment_rows": 169,
     "finer_region_segment_rows": 4272,
-    "coarse_region_segment_rows": 169,
-    "finer_region_segment_rows": 4272,
     "priority_limitations": "Priority is based on building-consumption features only; it does not indicate transformer overload, voltage instability, or network inadequacy.",
-    "survey_priority_regions": 49,
-    "survey_priority_rows": 109,
     "survey_priority_regions": 49,
     "survey_priority_rows": 109,
     "target_segments": [],
@@ -46,12 +41,12 @@
       {
         "model_category": "Residential",
         "registered_model_name": "gridvision-government-customer-segmentation-residential",
-        "version": "2"
+        "version": "1"
       },
       {
         "model_category": "SHARED_SMALL_CATEGORIES",
         "registered_model_name": "gridvision-government-customer-segmentation-shared_small_categories",
-        "version": "2"
+        "version": "1"
       }
     ],
     "run_id": "723251e32c0a45ae84431640d0d6ed98"
@@ -70,8 +65,6 @@
           "cluster_size_distribution": {
             "0": 150,
             "1": 20
-            "0": 150,
-            "1": 20
           },
           "davies_bouldin": 0.8223281635180255,
           "k": 2,
@@ -79,11 +72,7 @@
           "mean_selection_rank": 1.0,
           "selection_rank_components": {
             "calinski_harabasz": 1,
-            "calinski_harabasz": 1,
             "davies_bouldin": 1,
-            "silhouette": 1,
-            "smallest_cluster_share": 1,
-            "stability_ari": 1
             "silhouette": 1,
             "smallest_cluster_share": 1,
             "stability_ari": 1
@@ -103,11 +92,7 @@
           "algorithm": "kmeans",
           "calinski_harabasz": 4643.117610814386,
           "cluster_count": 2,
-          "calinski_harabasz": 4643.117610814386,
-          "cluster_count": 2,
           "cluster_size_distribution": {
-            "0": 64,
-            "1": 13
             "0": 64,
             "1": 13
           },
@@ -116,11 +101,6 @@
           "largest_cluster_size": 64,
           "mean_selection_rank": 2.0,
           "selection_rank_components": {
-            "calinski_harabasz": 6,
-            "davies_bouldin": 1,
-            "silhouette": 1,
-            "smallest_cluster_share": 1,
-            "stability_ari": 1
             "calinski_harabasz": 6,
             "davies_bouldin": 1,
             "silhouette": 1,
@@ -141,18 +121,13 @@
         "evaluation": {
           "algorithm": "kmeans",
           "calinski_harabasz": 5965.493858897981,
-          "calinski_harabasz": 5965.493858897981,
           "cluster_count": 2,
           "cluster_size_distribution": {
             "0": 3816,
             "1": 943
-            "0": 3816,
-            "1": 943
           },
           "davies_bouldin": 0.7376706558784488,
-          "davies_bouldin": 0.7376706558784488,
           "k": 2,
-          "largest_cluster_size": 3816,
           "largest_cluster_size": 3816,
           "mean_selection_rank": 1.2,
           "selection_rank_components": {
@@ -175,7 +150,6 @@
         "algorithm": "kmeans",
         "evaluation": {
           "algorithm": "kmeans",
-          "calinski_harabasz": 45.94664169575778,
           "calinski_harabasz": 45.94664169575778,
           "cluster_count": 2,
           "cluster_size_distribution": {
@@ -227,16 +201,6 @@
       "region_summary_finer.parquet": 4272,
       "segment_distribution.parquet": 9,
       "survey_priority.parquet": 109
-      "cluster_daily_profile.parquet": 63,
-      "cluster_hourly_profile.parquet": 207,
-      "cluster_monthly_profile.parquet": 108,
-      "cluster_profiles.parquet": 8,
-      "consumer_assignments.parquet": 5034,
-      "customer_segmentation_features.parquet": 5034,
-      "region_summary_coarse.parquet": 169,
-      "region_summary_finer.parquet": 4272,
-      "segment_distribution.parquet": 9,
-      "survey_priority.parquet": 109
     },
     "reports_dir": "/opt/gridvision/docs/customer_segmentation/reports",
     "required_outputs": [
@@ -250,13 +214,11 @@
       "cluster_daily_profile.parquet",
       "cluster_monthly_profile.parquet",
       "model_metadata.json"
-      "model_metadata.json"
     ],
     "status": "complete",
     "unassigned_feature_buildings": 0
   },
   "source_profile": {
-    "distinct_buildings": 5034,
     "distinct_buildings": 5034,
     "distinct_timestamps": 8395,
     "duplicate_building_timestamp_rows": 0,

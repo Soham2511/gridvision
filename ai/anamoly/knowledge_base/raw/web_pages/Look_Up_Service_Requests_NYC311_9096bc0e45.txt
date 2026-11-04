@@ -1,0 +1,42 @@
+TITLE: Look Up Service Requests
+		 · NYC311
+SOURCE_URL: https://portal.311.nyc.gov/check-status/
+
+You’re offline. This is a read only version of the page.
+Skip Main Navigation
+Menu
+The Official Website of the City of New York
+Search
+Search
+Look Up Service Requests
+Sign In
+|
+Sign Up
+Check Service Request Status
+Look up a Service Request Number that starts with "311-"
+Invalid Service Request number
+Search
+Look up a Service Request Number that does not start with "311-"
+See Service Requests on a Map
+Search by location, date, or topic to see Service Requests that are open or were closed within the last five days.
+Looking for more information? Check
+NYC Open Data
+for all Service Requests since 2010.
+Follow NYC311
+Download the NYC311 Mobile App
+About NYC311
+Send Feedback
+NYC311 Privacy Policy
+×
+To change the text size on NYC.gov you can use your web browser's settings. Most browsers include functionality to let you increase or decrease the text on a web page. For example, to increase text size using:
+Chrome
+In the menu to the right of the address bar, select and set Zoom level. Menu > Zoom > +
+Firefox
+In the View menu, select Zoom. View > Zoom > Zoom In
+Internet Explorer
+In the View menu, select Text Size. View > Text Size > Largest
+Safari
+In the View menu, select Zoom In. View > Zoom In
+Macintosh Shortcut: Command+
+No Web Browser Endorsement
+Common browsers are included in this page; mention of a specific browser does not imply endorsement or recommendation.

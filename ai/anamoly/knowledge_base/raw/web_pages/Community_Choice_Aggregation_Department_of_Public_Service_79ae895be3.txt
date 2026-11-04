@@ -1,0 +1,137 @@
+TITLE: Community Choice Aggregation | Department of Public Service
+SOURCE_URL: https://dps.ny.gov/community-choice-aggregation
+
+Community Choice Aggregation
+Community Choice Aggregation
+Overview
+On April 21, 2016, the Commission issued its Order Authorizing Framework for Community Choice Aggregation Opt-Out Program, which authorized the establishment of CCA programs by municipalities statewide and articulated the necessary design principles and standards that municipalities must apply in developing and implementing CCA programs for their constituents.
+Well-designed CCA programs can provide substantial opportunities for local, community, and individual engagement on topics related to energy needs, such as innovative energy programs, products, and services that promote and advance local clean energy goals, while also increasing the benefits of retail competition for residential and small non-residential customers and supporting New York State in meeting its clean energy goals.
+There are seven CCA Administrators that have been authorized by the Public Service Commission to administer a municipal CCA program in New York State. Currently, there is 1 active municipal CCA program in NYS.
+CCA Program Evaluation
+As part of its Order Modifying Outreach and Education Requirements and Directing Program Evaluation (November 19, 2024), the Commission discussed concerns raised about the goals of the CCA Program, the recurring issues to-date, the lack of supply savings for CCA participants, and the absence of additional opt-in products and services and initiated a review process for a complete evaluation of the CCA program's anticipated goals and policy objectives. The evaluation is to also include recommendations intended to: a) improve program benefits; b) discontinue the program; or c) propose further program paths that are within public interest.
+View CCA Orders and filings for Case 14-M-0224
+To file comments or to be kept up to date on this case, or others, please register to become a DMM user by following these
+instructions
+or by going to
+https://dps.ny.gov/dmm-login-document-and-matter-management-system
+.
+Authorized CCA Administrators
+Sustainable Westchester
+Associated Case:
+14-M-0564
+Commission Approval: 02/26/2015
+INACTIVE
+Municipal Electric and Gas Alliance, Inc. (MEGA)
+Associated Case:
+16-M-0015
+Commission Approval: 10/19/2017
+INACTIVE
+Good Energy, L.P.
+Associated Case: N/A
+Commission Approval: 1/18/2018
+https://www.goodenergy.com/
+[email protected]
+866-955-2677
+Joule Assets, Inc.
+Associated Case:
+15-E-0082
+Commission Approval: 3/16/2018
+INACTIVE
+Local Power, LLC.
+Associated Case: N/A
+Commission Approval: 12/19/2024
+INACTIVE
+Mid-Hudson Energy Transition, Inc.
+Associated Case: N/A
+Commission Approval: 1/23/2025
+INACTIVE
+ProjectEconomics, Inc. dba PowerMarket
+Associated Case: N/A
+Commission Approval: 1/23/2025
+INACTIVE
+INACTIVE = Not currently providing CCA Administration services to a municipal CCA program.
+Information and Forms
+CCA Program Rules
+Data Security Agreement
+Environmental Disclosure Label
+NYSERDA CCA Toolkit
+: A toolkit to assist local governments and CCA Administrators to develop CCA programs in New York State.
+[email protected]
+CCA Administrator filings should be done in DMM via the
+e-filing process
+, and, unless otherwise identified, should be filed in the CCA proceeding, case number
+14-M-0224
+.
+Templates
+CCA Billing Issue Reporting Form
+Upon awareness of a billing issue that impacts 50+ participants, the CCA Administrator, ESCO serving, and utility must notify each other and Staff using this form of the suspected billing issue within 48-hours of awareness. This form is to be filed in
+Matter #23-00028: In the Matter of Community Choice Aggregation Issue Resolution
+. If final resolution is not completed at time of filing, a subsequent filing is required that details and affirms all impacted accounts have been corrected.
+Download
+CCA Administrator Master Implementation Plan
+CCA Master Implementation Plan v.2
+Each prospective CCA Administrator shall petition the Commission to become an authorized CCA Administrator. As part of this petition, the petitioning party shall complete the Master Implementation Plan template and submit it with their petition for Commission consideration. The petitioner shall also submit an attestation that they understand and will comply with the Commission’s CCA rules, which are compiled in the CCA Program Rules.
+Download
+CCA Municipality Filing
+CCA Municipality Filing v.5
+Upon seeking to add a new municipality to the program, the authorized CCA Administrator shall submit the Municipality Filing template that includes the local law filing, completed outreach and education plan with required verification, a copy of the Request for Proposal (RFP) and signed Energy Service Agreement (ESA), and a final template opt-out letter(s) for Staff approval. A Staff letter shall be filed in the Document Matter Management (DMM) system either approving or rejecting the filing within 15 days, based on whether or not the filing complies with Commission requirements.
+See related documents below:
+Opt-Out Letter (v.4)
+Frequently Asked Questions (FAQ) (v.2)
+Download
+CCA Opt-Out Letter
+CCA Opt-Out Letter v.4
+This template is to be used for all opt-out letter types and must be included as part of the Municipality Filing.
+Download
+CCA Frequently Asked Questions v.2
+Community Choice Aggregation FAQs.
+Download
+Utility Posted 12-Month Trailing Average
+Use the below links to find the utility posted 12-month trailing average electric and gas supply rates.
+Central Hudson
+Con Edison
+KEDLI
+KEDNY
+National Fuel Gas
+National Grid
+NYSEG
+Orange & Rockland
+Rochester Gas & Electric
+Dispute Resolution
+Dispute resolution process for disputes between CCA Administrators, Energy Service Entities (ESEs), and utilities in relation to a CCA program.
+Applicability
+This Section describes the dispute resolution processes available at the Department to resolve disputes relating to CCA programs involving utilities, CCA Administrators, and/or ESEs. The processes are not available to resolve disputes between customers and Administrators, ESEs, or distribution utilities. They are also not applicable to matters that, in the opinion of the Department Staff, should be submitted by formal petition to the Public Service Commission for its determination or are pending before a court, state, or federal agency. The availability of the processes does not limit the rights of a distribution utility, Administrator, or ESE to submit any dispute to another body for resolution.
+Dispute Resolution Processes
+The parties shall in good faith use reasonable efforts to resolve any dispute before invoking any of these processes. Distribution utility tariffs and operating and service agreements between the parties shall identify the processes used to resolve disputes and shall refer to these dispute resolution processes as acceptable processes to resolve disputes.
+Standard Process
+: The parties shall use a method to send documents described in this paragraph that will verify the date of receipt. Any distribution utility, Administrator, or ESE may initiate a formal dispute resolution process by providing written notice to the opposing party and Department Staff. Such notice shall include a statement that the CCA dispute resolution process is initiated, a description of the dispute, and a proposed resolution with supporting rationale. Department Staff may participate in the process at this or any later point to facilitate the parties' discussions and to assist the parties in reaching a mutually acceptable resolution.
+No later than ten calendar days following receipt of the dispute description, if no mutually acceptable resolution is reached, the opposing party shall provide a written response containing an alternative proposal for resolution with supporting rationale and send a copy to Department Staff.
+No later than ten days after receipt of the response, if no mutually acceptable resolution is reached, any party or Department Staff may request that the parties schedule a meeting for further discussions. The parties shall meet no later than 15 calendar days following such request, upon advance notice to Department Staff, unless the parties and Department Staff agree upon another date. The Department may assign one or more Staff members to assist the parties in resolving the dispute.
+If no mutually acceptable resolution is reached within 40 calendar days after receipt of the written description of the dispute, any party may request an initial decision from the Department. A party to the dispute may appeal the initial decision to the Public Service Commission.
+If the parties reach a mutually acceptable resolution of the dispute, they shall provide to Department Staff a description of the general terms of the resolution.
+Expedited Process
+: In the event that an emergency situation arises to justify immediate resolution of a dispute, any party may file a formal dispute resolution request with the Secretary to the Public Service Commission asking for expedited resolution. An emergency situation includes, but is not limited to, a threat to public safety or system reliability or a significant financial risk to the parties or the public. The filing party shall provide a copy of the request to other involved parties and the Department Staff designated to receive information related to dispute resolution under these provisions. The request shall describe in detail the emergency situation requiring expedited resolution, state in detail the facts of the dispute, and, to the extent known, set forth the positions of the parties.
+Enforcement Mechanism
+A CCA Administrator may be subject to an enforcement action for reasons, including, but not limited to:
+failure to comply with any Commission Order;
+failure to comply with the Administrator’s Commission-approved plan for program implementation;
+failure to comply with applicable NYISO requirements, reporting requirements, or Department oversight requirements;
+failure to adhere to the policies and procedures described in the CCA service agreement with the municipality;
+failure to comply with required customer protections;
+a material pattern of consumer complaints on matters within the Administrator’s control; or
+failure to comply with any federal, state, or local laws, rules, or regulations.
+In determining the appropriate consequence for a failure or non-compliance in one or more of the categories above, the Commission or Department may take into account the nature, the circumstances, including the scope of harm to individual customers, and the gravity of the failure or non- compliance, as well as the Administrator’s history of previous violations.
+An enforcement action may be initiated by either:
+notification to the Administrator in writing of its failure to comply and request that the Administrator take appropriate corrective action or provide remedies within the directed cure period, which will be based on a reasonable amount of time given the nature of the issue to be cured, or
+order that the Administrator show cause why a consequence should not be imposed.
+The Commission may impose the consequences described below if:
+the Administrator fails to take corrective actions or provide remedies within the cure period; or
+the Commission determines that the incident or incidents of non-compliance are substantiated, and the consequence is appropriate.
+Consequences shall not be imposed until after the Administrator is provided notice and an opportunity to respond.
+A CCA Administrator found to be non-compliant may be subject to consequences, including, but not limited to:
+revocation of the Administrator’s ability to conduct CCA programs in New York State, or any specific distribution utility territory;
+additional outreach and education requirements;
+forfeiture of any administrative fees collected; and
+issuance of refunds to customers.
+Staff Contact Information
+[email protected]

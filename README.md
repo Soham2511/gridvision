@@ -191,6 +191,41 @@ cd frontend
 npm run lint
 ```
 
+### Government & Utilities AI assistant
+
+The Government & Utilities assistant page sends each question to the Ollama
+supervisor in `ai/govt`. The supervisor uses examples from both AI packages to
+choose the anomaly assistant or the 2018 government-grid assistant. The selected
+assistant keeps its existing validation and data tools. Redistribution PNG
+visualizations are shown inline in the chat, with generated CSV files available
+as downloads. The backend image includes both assistant packages and the
+Government assistant's plotting dependency.
+
+The router defaults to `qwen3:8b`. Start Ollama where the backend can reach it;
+for Docker Compose, `GRIDVISION_ROUTER_OLLAMA_URL` defaults to
+`http://host.docker.internal:11434`. Override the routing model with
+`GRIDVISION_ROUTER_MODEL`. The anomaly assistant's existing Ollama settings
+continue to configure its answer model and retrieval embeddings. Government
+forecasting inputs and generated assistant artifacts are mounted into the
+backend container by Compose.
+
+The standalone router can also be used from the repository root:
+
+```bash
+.venv/bin/python -m ai.govt --query "Show the redistribution plan for 2018-09-24"
+.venv/bin/python -m ai.govt --query "Run anomaly analysis for 2019-05-03"
+```
+
+Router and Government UI integration tests are included in the root `tests/`
+suite. Run them with:
+
+```bash
+python -m pytest tests/test_govt_router.py tests/backend/test_insights.py
+```
+
+The full `automation.py` flow builds the backend image with the router and both
+assistants before starting the UI and API.
+
 ---
 
 ## API Endpoints Reference
@@ -224,6 +259,7 @@ npm run lint
 | `GET` | `/api/v1/government/segmentation/*` | Government building behaviour segments, category-aware regional drilldown, profiles and assignments |
 | `GET` | `/api/v1/energy-insights` | Algorithmic optimization recommendations |
 | `POST` | `/api/v1/assistant/chat` | Domain-grounded query answering |
+| `GET` | `/api/v1/assistant/government-artifacts/<filename>` | Generated Government assistant PNG/CSV outputs |
 | `GET` | `/api/v1/models` | Registered model catalog and gold dataset summary |
 | `GET` | `/api/v1/models/customer-bill-prediction/records` | Page through customer entities in the gold dataset |
 | `GET` | `/api/v1/models/customer-bill-prediction/records/<entity_id>` | Get a customer's available gold records |
@@ -416,7 +452,7 @@ cd /path/to/GridVision
 python3.10 -m venv ~/.venvs/gridvision
 source ~/.venvs/gridvision/bin/activate
 python scripts/filter_requirements.py requirements.txt /tmp/gridvision-model-requirements.txt \
-  --groups model-serving
+  --groups model-serving government-assistant
 python -m pip install --upgrade pip
 python -m pip install -r /tmp/gridvision-model-requirements.txt
 ```
@@ -428,7 +464,7 @@ Airflow and model-serving groups into the Linux Python 3.10 environment:
 python3.10 -m venv ~/.venvs/gridvision
 source ~/.venvs/gridvision/bin/activate
 python scripts/filter_requirements.py requirements.txt /tmp/gridvision-automation-requirements.txt \
-  --groups airflow model-serving
+  --groups airflow model-serving government-assistant
 python -m pip install -r /tmp/gridvision-automation-requirements.txt \
   --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-2.10.5/constraints-3.10.txt"
 ```
@@ -546,7 +582,7 @@ The backend loads the registered MLflow alias from the same persistent `data/mlf
    source ~/.venvs/gridvision/bin/activate
    python -m pip install --upgrade pip
    python scripts/filter_requirements.py requirements.txt /tmp/gridvision-automation-requirements.txt \
-     --groups airflow model-serving
+     --groups airflow model-serving government-assistant
    pip install -r /tmp/gridvision-automation-requirements.txt \
      --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-2.10.5/constraints-3.10.txt"
    ```
