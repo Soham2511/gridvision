@@ -264,8 +264,6 @@ services:
       - ./models/customer_bill_prediction.metadata.json:/models/customer_bill_prediction.metadata.json:ro
       - ./key_vault/tavily/api.key:/run/secrets/tavily_api_key:ro
       - ${GRIDVISION_LOG_DIR:-./logs}:/logs
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     ports:
       - "127.0.0.1:${GRIDVISION_BACKEND_HOST_PORT:-5000}:5000"
     depends_on:
