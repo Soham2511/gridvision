@@ -47,6 +47,30 @@ export interface CurtailmentResult {
   message: string;
 }
 
+export interface AssistantChatResponse {
+  answer: string;
+  persona: string;
+  entityId?: string;
+  conversationId: string;
+  citations: Array<{
+    title: string;
+    sourceUrl?: string | null;
+    page?: number | null;
+    publisher?: string | null;
+  }>;
+  runReferences: string[];
+  downloads: Array<{ format: string; label: string; url: string }>;
+  artifacts?: Array<{ format: string; label: string; url: string }>;
+  assistantRoute?: 'anomaly' | 'government' | 'clarify';
+  charts?: Array<{
+    title: string;
+    kind?: 'map';
+    points?: Array<{ id: string; latitude: number; longitude: number; severity: number; scope: string }>;
+    series?: Array<{ label: string; items: Record<string, number> }>;
+  }>;
+  status: string;
+}
+
 class AnalyticsService {
   public getApiBaseUrl(): string {
     return apiClient.getBaseUrl();
@@ -237,16 +261,83 @@ class AnalyticsService {
   async askAssistant(
     prompt: string,
     persona: string = 'household',
-    entityId?: string
-  ): Promise<{ answer: string; persona: string; entityId: string }> {
-    return apiClient.post<{ answer: string; persona: string; entityId: string }>(
+    entityId?: string,
+    conversationId?: string
+  ): Promise<AssistantChatResponse> {
+    return apiClient.postLong<AssistantChatResponse>(
       '/assistant/chat',
       {
         prompt,
         persona,
         entity_id: entityId,
+        conversation_id: conversationId,
       }
     );
+  }
+
+  async askAssistantStream(
+    prompt: string,
+    persona: string,
+    entityId: string | undefined,
+    conversationId: string,
+    onToken: (token: string) => void,
+  ): Promise<AssistantChatResponse> {
+    const response = await fetch(`${apiClient.getBaseUrl()}/assistant/chat/stream`, {
+      method: 'POST',
+      headers: {
+        Accept: 'text/event-stream',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        prompt,
+        persona,
+        entity_id: entityId,
+        conversation_id: conversationId,
+      }),
+    });
+    if (!response.ok) {
+      const errorBody = await response.json().catch(() => null) as {
+        error?: { message?: string };
+      } | null;
+      throw new Error(errorBody?.error?.message || `Assistant request failed (${response.status}).`);
+    }
+    if (!response.body) {
+      throw new Error('Assistant streaming response had no body.');
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let result: AssistantChatResponse | undefined;
+    let streamError: string | undefined;
+    while (true) {
+      const { value, done } = await reader.read();
+      buffer += decoder.decode(value, { stream: !done });
+      let boundary = buffer.indexOf('\n\n');
+      while (boundary >= 0) {
+        const frame = buffer.slice(0, boundary);
+        buffer = buffer.slice(boundary + 2);
+        const dataLine = frame.split('\n').find((line) => line.startsWith('data: '));
+        if (dataLine) {
+          const event = JSON.parse(dataLine.slice(6)) as {
+            type: string;
+            data?: string | AssistantChatResponse | { message?: string };
+          };
+          if (event.type === 'token' && typeof event.data === 'string') {
+            onToken(event.data);
+          } else if (event.type === 'complete') {
+            result = event.data as AssistantChatResponse;
+          } else if (event.type === 'error') {
+            streamError = (event.data as { message?: string })?.message || 'Assistant stream failed.';
+          }
+        }
+        boundary = buffer.indexOf('\n\n');
+      }
+      if (done) break;
+    }
+    if (streamError) throw new Error(streamError);
+    if (!result) throw new Error('Assistant stream ended without a final response.');
+    return result;
   }
 }
 

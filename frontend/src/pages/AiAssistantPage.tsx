@@ -13,6 +13,16 @@ interface ChatMessage {
   sender: 'user' | 'assistant';
   text: string;
   timestamp: string;
+  citations?: Array<{ title: string; sourceUrl?: string | null; page?: number | null; publisher?: string | null }>;
+  downloads?: Array<{ format: string; label: string; url: string }>;
+  artifacts?: Array<{ format: string; label: string; url: string }>;
+  runReferences?: string[];
+  charts?: Array<{
+    title: string;
+    kind?: 'map';
+    points?: Array<{ id: string; latitude: number; longitude: number; severity: number; scope: string }>;
+    series?: Array<{ label: string; items: Record<string, number> }>;
+  }>;
 }
 
 export const AiAssistantPage: React.FC = () => {
@@ -33,6 +43,8 @@ export const AiAssistantPage: React.FC = () => {
       'What is the cooling degree hours impact on HVAC load?',
     ],
     government: [
+      'Show the redistribution plan for 2018-09-24.',
+      'Show the model-predicted government grid demand for 2018-09-25.',
       'Compare the available regions by observed demand.',
       'How has aggregate demand changed over the selected period?',
       'Are any regions currently missing from aggregate reporting?',
@@ -43,6 +55,11 @@ export const AiAssistantPage: React.FC = () => {
   const suggestedPrompts = suggestedPromptsMap[persona] || suggestedPromptsMap.household;
 
   const [inputPrompt, setInputPrompt] = useState('');
+  const [conversationId] = useState(() =>
+    typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : `conversation-${Date.now()}`
+  );
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: 'init-1',
@@ -68,16 +85,68 @@ export const AiAssistantPage: React.FC = () => {
     setMessages((prev) => [...prev, userMsg]);
     setInputPrompt('');
     setIsTyping(true);
+    const assistantId = `ast-${typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : Date.now()}`;
 
     try {
-      const res = await analyticsService.askAssistant(trimmed, persona, activeEntity);
-      const replyMsg: ChatMessage = {
-        id: `ast-${Date.now() + 1}`,
-        sender: 'assistant',
-        text: res.answer,
-        timestamp: 'Just now',
-      };
-      setMessages((prev) => [...prev, replyMsg]);
+      const res = await analyticsService.askAssistantStream(
+        trimmed,
+        persona,
+        activeEntity,
+        conversationId,
+        (token) => {
+          setMessages((prev) => {
+            const found = prev.some((message) => message.id === assistantId);
+            return found
+              ? prev.map((message) =>
+                  message.id === assistantId
+                    ? { ...message, text: message.text + token }
+                    : message
+                )
+              : [
+                  ...prev,
+                  {
+                    id: assistantId,
+                    sender: 'assistant',
+                    text: token,
+                    timestamp: 'Just now',
+                  },
+                ];
+          });
+        },
+      );
+      setMessages((prev) => {
+        const found = prev.some((message) => message.id === assistantId);
+        return found
+          ? prev.map((message) =>
+              message.id === assistantId
+                ? {
+                    ...message,
+                    text: res.answer,
+                    citations: res.citations,
+                    downloads: res.downloads,
+                    artifacts: res.artifacts,
+                    runReferences: res.runReferences,
+                    charts: res.charts,
+                  }
+                : message
+            )
+          : [
+              ...prev,
+              {
+                id: assistantId,
+                sender: 'assistant',
+                text: res.answer,
+                timestamp: 'Just now',
+                citations: res.citations,
+                downloads: res.downloads,
+                artifacts: res.artifacts,
+                runReferences: res.runReferences,
+                charts: res.charts,
+              },
+            ];
+      });
     } catch (err) {
       const replyMsg: ChatMessage = {
         id: `ast-${Date.now() + 1}`,
@@ -87,7 +156,10 @@ export const AiAssistantPage: React.FC = () => {
         } Please try again when the backend is available.`,
         timestamp: 'Just now',
       };
-      setMessages((prev) => [...prev, replyMsg]);
+      setMessages((prev) => [
+        ...prev.filter((message) => message.id !== assistantId),
+        replyMsg,
+      ]);
     } finally {
       setIsTyping(false);
     }
@@ -226,6 +298,104 @@ export const AiAssistantPage: React.FC = () => {
               }}
             >
               {m.text}
+              {m.runReferences && m.runReferences.length > 0 && (
+                <div style={{ marginTop: '0.55rem', fontSize: '0.75rem' }}>
+                  Saved run: {m.runReferences.join(', ')}
+                </div>
+              )}
+              {m.charts?.map((chart) => (
+                <div key={chart.title} style={{ marginTop: '0.75rem', padding: '0.75rem', background: '#fff', borderRadius: 8 }}>
+                  <strong>{chart.title}</strong>
+                  {chart.kind === 'map' ? (
+                    chart.points?.length ? (() => {
+                      const lats = chart.points!.map((point) => point.latitude);
+                      const lons = chart.points!.map((point) => point.longitude);
+                      const minLat = Math.min(...lats), maxLat = Math.max(...lats);
+                      const minLon = Math.min(...lons), maxLon = Math.max(...lons);
+                      const latSpan = maxLat - minLat || 0.001;
+                      const lonSpan = maxLon - minLon || 0.001;
+                      return (
+                        <svg role="img" aria-label="Saved event cluster map" viewBox="0 0 480 280" style={{ width: '100%', maxWidth: 560, marginTop: '0.5rem', background: '#f1f5f9', borderRadius: 6 }}>
+                          {chart.points!.map((point) => {
+                            const x = 24 + ((point.longitude - minLon) / lonSpan) * 432;
+                            const y = 24 + ((maxLat - point.latitude) / latSpan) * 232;
+                            return <g key={point.id}><title>{`${point.id}: ${point.scope}, severity ${point.severity.toFixed(3)}`}</title><circle cx={x} cy={y} r={5 + Math.max(0, Math.min(1, point.severity)) * 5} fill="#0f766e" fillOpacity="0.78" stroke="#134e4a" /><text x={x + 7} y={y - 5} fontSize="9" fill="#0f172a">{point.id}</text></g>;
+                          })}
+                        </svg>
+                      );
+                    })() : <div style={{ marginTop: '0.5rem', fontSize: '0.8rem' }}>No saved events had usable coordinates for the map.</div>
+                  ) : (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', marginTop: '0.5rem' }}>
+                    {(chart.series || []).map((series) => {
+                      const entries = Object.entries(series.items);
+                      const max = Math.max(1, ...entries.map(([, value]) => value));
+                      const rowHeight = 25;
+                      return (
+                        <div key={series.label} style={{ flex: '1 1 260px' }}>
+                          <div style={{ fontSize: '0.75rem', fontWeight: 600 }}>{series.label}</div>
+                          <svg role="img" aria-label={`${series.label} breakdown`} viewBox={`0 0 360 ${Math.max(30, entries.length * rowHeight)}`} style={{ width: '100%', maxWidth: 420 }}>
+                            {entries.map(([label, value], index) => {
+                              const y = index * rowHeight;
+                              const barWidth = Math.max(2, (value / max) * 205);
+                              return (
+                                <g key={label}>
+                                  <text x="0" y={y + 16} fontSize="11" fill="#334155">{label.slice(0, 22)}</text>
+                                  <rect x="145" y={y + 4} width={barWidth} height="15" rx="3" fill="#0f766e" />
+                                  <text x={153 + barWidth} y={y + 16} fontSize="11" fill="#0f172a">{value}</text>
+                                </g>
+                              );
+                            })}
+                          </svg>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  )}
+                </div>
+              ))}
+              {m.citations && m.citations.length > 0 && (
+                <div style={{ marginTop: '0.55rem', fontSize: '0.75rem' }}>
+                  <strong>Sources</strong>
+                  <ul style={{ margin: '0.25rem 0 0', paddingLeft: '1.2rem' }}>
+                    {m.citations.map((citation, index) => (
+                      <li key={`${citation.title}-${index}`}>
+                        {citation.sourceUrl ? (
+                          <a href={citation.sourceUrl} target="_blank" rel="noreferrer">
+                            {citation.title}
+                          </a>
+                        ) : citation.title}
+                        {citation.page ? `, p. ${citation.page}` : ''}
+                        {citation.publisher ? ` — ${citation.publisher}` : ''}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {m.downloads && m.downloads.length > 0 && (
+                <div style={{ marginTop: '0.55rem', display: 'flex', gap: '0.8rem', flexWrap: 'wrap' }}>
+                  {m.downloads.map((download) => (
+                    <a
+                      key={download.url}
+                      href={new URL(download.url, analyticsService.getApiBaseUrl()).toString()}
+                      download
+                    >
+                      {download.label} ({download.format})
+                    </a>
+                  ))}
+                </div>
+              )}
+              {m.artifacts?.map((artifact) => artifact.format === 'png' && (
+                <figure key={artifact.url} style={{ margin: '0.75rem 0 0', maxWidth: 720 }}>
+                  <a href={new URL(artifact.url, analyticsService.getApiBaseUrl()).toString()} target="_blank" rel="noreferrer">
+                    <img
+                      src={new URL(artifact.url, analyticsService.getApiBaseUrl()).toString()}
+                      alt={artifact.label}
+                      style={{ display: 'block', width: '100%', height: 'auto', borderRadius: 8, border: '1px solid var(--gv-border-subtle)' }}
+                    />
+                  </a>
+                  <figcaption style={{ marginTop: '0.3rem', fontSize: '0.75rem', color: 'var(--gv-text-secondary)' }}>{artifact.label}</figcaption>
+                </figure>
+              ))}
             </div>
 
             {m.sender === 'user' && (
@@ -284,7 +454,9 @@ export const AiAssistantPage: React.FC = () => {
           type="text"
           value={inputPrompt}
           onChange={(e) => setInputPrompt(e.target.value)}
-          placeholder={`Ask about ${persona} energy consumption, forecasts, or billing equations...`}
+          placeholder={persona === 'government'
+            ? 'Ask about anomalies, government-grid demand, or redistribution plans...'
+            : `Ask about ${persona} energy consumption, forecasts, or billing equations...`}
           style={{
             flex: 1,
             padding: '0.85rem 1.15rem',
@@ -319,7 +491,7 @@ export const AiAssistantPage: React.FC = () => {
 
       {/* Prototype Disclosure Footnote */}
       <div style={{ textAlign: 'center', fontSize: '0.72rem', color: 'var(--gv-text-muted)' }}>
-        AI Assistant answers are generated from local deterministic models and historical benchmark fixtures.
+        Government questions are routed by Ollama to the anomaly or government-grid assistant. Generated redistribution charts and data appear with the answer.
       </div>
     </div>
   );

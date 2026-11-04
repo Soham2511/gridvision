@@ -1,0 +1,82 @@
+TITLE: Privacy Policy | Department of Public Service
+SOURCE_URL: https://dps.ny.gov/privacy-policy
+
+Privacy Policy
+Department Privacy Policy
+Thank you for visiting the website of the New York State Department of Public Service and Public Service Commission (collectively, the Department). This website is designed to make it easier for you to find helpful information. Like all online resources, the Department recognizes that visitors to this website are concerned about their privacy. We are committed to preserving your privacy when visiting this website and using the online services we offer.
+This policy describes the Department's privacy practices regarding information collected from visitors to this web site The policy describes what data is collected and how that information is used, consistent with the provisions of the Internet Security and Privacy Act, the Freedom of Information Law (FOIL), and the Personal Privacy Protection Law.
+For purposes of this policy, “
+personal information
+” means any information concerning a natural person which, because of name, number, symbol, mark or other identifier, can be used to identify that natural person.
+Information Collected And How It Is Used
+The information that we collect from your visit to this website depends upon what sections of the website you visit and what actions you take during your visit.
+We do not collect any personal information (e.g., name, address or phone number) during your visit to this website unless you voluntarily choose to provide it.
+The Department does not collect any information for commercial marketing purposes, and does not sell or otherwise market your email address or other personal information for commercial purposes.
+The Department does not knowingly collect personal information from children or create profiles of children through this website. Users are cautioned, however, that the collection of personal information submitted in an email will be treated as though it was submitted by an adult, and may, unless exempted from access by Federal or State law, be subject to public access. The Department strongly encourages parents and teachers to be involved in children's Internet activities and to provide guidance whenever children are asked to provide personal information online.
+Browsing and Downloading Information
+If you browse or download information from our website, the Department automatically collects and stores the following information about your visit:
+The Internet Protocol Address and Domain Name is stored, but not the email address. The Internet Protocol Address is a numerical identifier assigned either to your Internet Service Provider or your computer.
+The type of browser and the operating system you use.
+The date and time you visited this website
+The web pages or documents you accessed at this website
+The website you visited prior to coming to this website
+The website you visit as you leave this website
+If you download a document, the document that was downloaded.
+The information we collect is used to improve the content of our website and to help us understand how people are using our site. This information does not identify you personally and is used solely for statistical analysis to improve the value of the information available.
+The Department's Comments and Complaints Forms
+Information you submit to us on our Comments Form will be transmitted through secure lines to our Office of Consumer Education and Advocacy. Information you submit to us on our Complaint Form will be transmitted through secure lines to our Office of Consumer Services.
+Personal information from this website will only be made available to others (e.g., employees or companies subject to PSC jurisdiction) as necessary to handle your comment or complaint, and will be used only for the purposes for which it was provided.
+Information you provide may be retained with other consumers' information to be used for statistical reporting and/or investigative actions. For example, we may need to retain information that becomes part of an enforcement action or consumer complaint case for a period of time after the closing date of the case.
+If you provide us with information regarding an issue that does not fall within our regulatory jurisdiction, we will not forward that information to any other source. We will, however, notify you that we were unable to assist you with that issue or provide you with the appropriate agency to contact.
+Emails and Surveys
+If you identify yourself by sending an email, your email address and the contents of your email may be retained. We may retain and/or use the information to process and/or respond to your request, address issues you identify, further improve our web site, or as provided by law. Personal information will only be made available to others as necessary to handle your email, and will be used only for the purposes for which it was provided. If an issue does not fall within our regulatory jurisdiction, we will not forward that information to any other source. We will, however, notify you that we were unable to assist you with that issue or provide you with the appropriate agency to contact.
+Your email address is not collected for commercial purposes and the Department is not authorized to sell or otherwise disclose your email address for commercial purposes.
+If you respond to an online survey, the only information that will be collected is the information volunteered in your response.
+Cookies
+Cookies are simple text files stored on your web browser to provide a means of distinguishing among users of this website. The use of cookies is a standard practice among Internet websites. To better serve you, we occasionally use “session cookies” to enhance or customize your visit to this web site. Session cookies can be created automatically on the device you use to access this web site, do not contain personal information and do not compromise your privacy or security. We may use the cookie feature to store a randomly generated identifying tag on the device you use to access this website. A session cookie is erased during operation of your browser or when your browser is closed.
+The software and hardware you use to access the website allows you to refuse new cookies or delete existing cookies. Refusing or deleting these cookies may limit your ability to take advantage of some features of this website.
+Links to Other Sites
+We have linked our web site to other sites you might find useful. When you link to another site, you are no longer on our site and are subject to the privacy policy of the new site. We do not endorse any content, viewpoints, products, or services linked from this site, and shall not be held liable for any losses caused by reliance on the accuracy, reliability or timeliness of such information. Any person or entity that relies on any information obtained from a linked site does so at their own risk.
+Disclosure of Information Collected Through this Website
+If not protected by Federal or State law, personal information collected through this website may be subject to disclosure pursuant to law, such as the Freedom of Information Law (FOIL) or court order. In addition, the Department may disclose personal information to Federal or State law enforcement authorities to enforce its rights against any attempt to access this website for other than its intended purpose.
+Security
+This website is provided as a public service by the Department. This system is monitored to ensure proper operation, to verify the functioning of applicable security features, and for statistical purposes. Anyone using this website expressly consents to such monitoring. Any unauthorized attempt to modify any information stored on this system, to defeat or circumvent security features, or to utilize this system for other than its intended purposes is prohibited and may result in criminal prosecution.
+Retention of Information
+The information collected through this website is retained by the Department in accordance with the records retention and disposition requirements of the New York State Arts & Cultural Affairs Law. Information on the requirements of the Arts & Cultural Affairs Law may be found at:
+https://www.archives.nysed.gov.
+Information, including personal information, that you submit in an email or when you complete a survey, complaint or comment form, or registration form is retained in accordance with the records retention and disposition schedule established for the records of the program unit to which you submitted the information. Information concerning these records retention and disposition schedules may be obtained through the Internet privacy policy contact listed in this policy.
+Access to and Correction of Personal Information Collected Through this Website
+Any user may submit a request to the Department privacy compliance officer to determine whether personal information pertaining to that user has been collected through this website. Any such request shall be made in writing and must be accompanied by reasonable proof of identity of the user. Reasonable proof of identity may include verification of a signature, inclusion of an identifier generally known only to the user, or similar appropriate identification. The address of the privacy compliance officer is:
+Jessica Vigars
+Privacy Compliance Officer
+New York State Department of Public Service
+3 Empire State Plaza Albany, New York 12223
+Phone: 518-486-2661
+Fax: 518-486-5710
+The privacy compliance officer shall, within five (5) business days of the receipt of a proper request, provide access to the personal information; deny access in writing, explaining the reasons therefore; or acknowledge the receipt of the request in writing, stating the approximate date when the request will be granted or denied, which date shall not be more than thirty (30) days from the date of the acknowledgment.
+In the event that the Department has collected personal information pertaining to a user through the state agency web site and that information is to be provided to the user pursuant to the user's request, the privacy compliance officer shall inform the user of their right to request that the personal information be amended or corrected under the procedures set forth in section 95 of the Public Officers Law.
+Confidentiality and Integrity of Personal Information Collected Through this Website
+The Department is strongly committed to protecting personal information collected through this website against unauthorized access, use or disclosure. Consequently, the Department limits employee access to personal information collected through this website to only those employees who need access to the information in the performance of their official duties. Employees who have access to this information follow appropriate procedures in connection with any disclosures of personal information.
+In addition, the Department has implemented procedures to safeguard the integrity of its information technology assets, including, but not limited to, authentication, monitoring, auditing, and encryption. These security procedures have been integrated into the design, implementation, and day-to-day operations of this website as part of our continuing commitment to the security of electronic content as well as the electronic transmission of information.
+For website security purposes and to maintain the availability of the website for all users, the Department employs software to monitor traffic to identify unauthorized attempts to upload or change information or otherwise damage this website.
+Limitation of Liability
+We attempt to maintain the highest accuracy of content on this website. Any errors or omissions should be reported to the Department Webmaster at:
+[email protected]
+for investigation.
+The Department makes no claims, promises, or guarantees about the absolute accuracy, completeness, or adequacy of the contents of this website and expressly disclaims liability for errors and omissions in the content. No warranty of any kind -- implied, expressed, or statutory, (including but not limited to the warranties of non-infringement of third party rights, title, merchantability, fitness for a particular purpose, and freedom from computer virus) -- is given with respect to the contents of this website or its links to other internet resources.
+Reference in this website to any specific commercial products, processes, or services, or the use of any trade, firm or corporation name is for the information and convenience of the public, and does not constitute endorsement, recommendation, or favoring by the Department or its employees or agents.
+The information provided in this privacy policy should not be construed as giving business, legal, or other advice, or warranting as fail proof, the security of information provided through this website.
+External Links
+We provide many links to external websites. These links are provided for your convenience and do not in any way constitute an endorsement of the software or companies, as noted in our disclaimer. Sometimes external page links provided are moved or removed creating a broken link. If you think you have discovered a broken link on our website please notify us at
+[email protected]
+.
+Website Disclaimer
+Thank you for visiting the NYS Department of Public Service website. We hope your visit was helpful and informative. NYS Department of Public Service provides links to other governmental agencies in the State and federal government. We also provide links to websites of other organizations to provide visitors with certain information. If you click on the links on these pages, you will be leaving NYS Department of Public Service. Our provision of these links does not imply approval of the listed destinations, warrant the accuracy of any information in those destinations, constitute endorsement of the entities to whose sites the links are made, or endorse any of the opinions expressed on any of these outside websites. These websites operate under the auspices and at the direction of their respective owners. If you have a question or comment about any of these sites, please contact them directly on their site.
+Contact Information
+For questions regarding this Internet privacy policy, please contact:
+[email protected]
+via email, or regular mail at:
+Public Affairs Office
+NYS Department of Public Service
+3 Empire State Plaza
+Albany, NY 12223

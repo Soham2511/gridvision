@@ -46,3 +46,4 @@ class AssistantChatRequestModel(BaseModel):
     prompt: str = Field(..., min_length=1, max_length=2000)
     persona: Literal["household", "commercial", "government"] = "household"
     entity_id: str | None = None
+    conversation_id: str | None = Field(default=None, min_length=1, max_length=100)

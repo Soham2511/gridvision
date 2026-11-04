@@ -135,28 +135,34 @@ class InferenceService:
             end_exclusive + pd.Timedelta(hours=POST_EVENT_HOURS),
             source_end_exclusive,
         )
-        expected_rows = len(selected_ids) * int(
+        rows_per_customer = int(
             (read_end - history_start) / pd.Timedelta(hours=1)
         )
-        if expected_rows > MAX_ANALYSIS_ROWS:
-            raise ValueError(
-                f"Analysis requires about {expected_rows:,} hourly rows including "
-                f"feature history; the per-run limit is {MAX_ANALYSIS_ROWS:,}. "
-                "Choose fewer customers or a shorter date range."
-            )
-
-        data = self._read_selected_rows(
-            selected_ids, history_start, read_end
+        customer_batch_size = max(1, MAX_ANALYSIS_ROWS // rows_per_customer)
+        requested_parts: list[pd.DataFrame] = []
+        input_rows_scored = 0
+        batch_count = 0
+        for offset in range(0, len(selected_ids), customer_batch_size):
+            batch_ids = selected_ids[offset : offset + customer_batch_size]
+            data = self._read_selected_rows(batch_ids, history_start, read_end)
+            input_rows_scored += len(data)
+            batch_count += 1
+            event_windows = predict_anomaly_events_from_bundle(data, self.bundle)
+            if not event_windows.empty:
+                requested_parts.append(
+                    event_windows.loc[
+                        (pd.to_datetime(event_windows["start_time"]) < end_exclusive)
+                        & (pd.to_datetime(event_windows["end_time"]) > start)
+                    ].copy()
+                )
+        requested_windows = (
+            pd.concat(requested_parts, ignore_index=True)
+            if requested_parts
+            else pd.DataFrame()
         )
-        event_windows = predict_anomaly_events_from_bundle(data, self.bundle)
-        if event_windows.empty:
-            requested_windows = event_windows
-        else:
-            requested_windows = event_windows.loc[
-                (pd.to_datetime(event_windows["start_time"]) < end_exclusive)
-                & (pd.to_datetime(event_windows["end_time"]) > start)
-            ].copy()
         anomaly_records = prepare_anomaly_records(requested_windows)
+        # Localize after combining batch outputs so events spanning customer batches
+        # are grouped using the same spatial/temporal rules as a single-pass run.
         localized_records, _ = form_events(anomaly_records, localization)
         event_summary = generate_event_summary(
             localized_records,
@@ -206,7 +212,9 @@ class InferenceService:
                 "history_start": history_start.isoformat(),
                 "read_end_exclusive": read_end.isoformat(),
                 "selected_customer_count": len(selected_ids),
-                "input_rows_scored": len(data),
+                "input_rows_scored": input_rows_scored,
+                "customer_batch_count": batch_count,
+                "customer_batch_size": customer_batch_size,
                 "detector_threshold": float(self.bundle["detector_threshold"]),
                 "point_feature_count": len(self.bundle["point_features"]),
                 "localization": asdict(localization),
@@ -216,7 +224,7 @@ class InferenceService:
                 ),
             },
             "metrics": {
-                "input_rows_scored": len(data),
+                "input_rows_scored": input_rows_scored,
                 "selected_customer_count": len(selected_ids),
                 "anomaly_window_count": len(localized_records),
                 "localized_event_count": len(event_summary),

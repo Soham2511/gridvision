@@ -1,0 +1,39 @@
+TITLE: How to Post Comments and Receive Updates on PSC Cases | Department of Public Service
+SOURCE_URL: https://dps.ny.gov/how-post-comments-and-receive-updates-psc-cases
+
+How to Post Comments and Receive Updates on PSC Cases
+Learn how to post comments and receive updates using the Department of Public Service Document and Matter Management (DMM) system.
+Post Comments
+Members of the public can post comments on each case before the Public Service Commission within the Document and Matter Management system (DMM).
+Visit the
+case search page
+- enter the case number or a key word to find the case you would like to comment on.
+Once on the case files page, click on the "Post Comments" button in the upper right hand corner (below the navigation).
+You must fill in your name, address and email address to post your comment.
+You have the option to add an attachment with your comment.
+Receive Updates on Cases
+Members of the public can be notified and receive emails about cases and matters before the Public Service Commission by signing up to receive updates. You can sign up with your email address, or by using Subscription management within DMM.
+Using Email to Subscribe to the Service List
+Complete the
+Service List Request Form
+as directed
+Email form to
+[email protected]
+Please allow at least 2 – 3 business days for processing
+Using Subscription Management in DMM
+While on a case page, click on "Subscribe to Service List," in the upper right of the page, then in the next window scroll to the bottom and choose "Subscribe to Service List"
+If you have a NY.Gov ID account
+Enter your username and password and sign in
+If you do not have a NY.Gov ID account, visit the
+DMM Login help page
+for instructions
+Once your account is created, navigate to
+https://documents.dps.ny.gov/custom/?APP=nyappdpsdmm
+Enter your username and password and sign in
+Choose "Manage Subscription" then "Add Service List Subscription"
+Enter Matter or Case number and click on GO
+Complete form information and choose "Subscribe"
+Review Service List grid for service list subscription information
+Find more information about
+Participating in or Monitoring PSC Proceedings
+.

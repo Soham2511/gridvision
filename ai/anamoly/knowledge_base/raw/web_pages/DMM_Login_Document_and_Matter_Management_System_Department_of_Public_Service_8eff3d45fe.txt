@@ -1,0 +1,72 @@
+TITLE: DMM Login (Document and Matter Management System) | Department of Public Service
+SOURCE_URL: https://dps.ny.gov/dmm-login-document-and-matter-management-system
+
+DMM Login (Document and Matter Management System)
+DMM Login (Document and Matter Management System)
+Log In or Create your NYS DPS Account
+Log in with your NYS DPS Account through NY.GOV ID
+I forgot my username
+Recover/Reset your password
+NY.gov ID is an online service that enables citizens, state and local government employees, businesses, and others to access NY.gov ID participating government online services.
+Should you require technical assistance, please contact the New York State Office of Information Technology (ITS) Service Desk directly through
+ITSM Service Now
+, or at
+[email protected]
+.
+If you don't have a NYS DPS Account,
+Create an Account Now
+.
+Why become a Registered User of DMM?
+Manage Subscriptions
+New Cases – By subscribing to New Cases, an email notification will be sent to your email address when new cases that meet your criteria are started by the Commission.
+Service Lists –By subscribing to a service list for a case, an email notification will be sent to you when a filing and/or issuance is entered in the case. Subscribers can request to receive “Commission Issuances Only” or “Filings and Commissions Issuances”.
+Party List - Generally, parties commit to contribute to the development of a complete record in a proceeding by conducting discovery, submitting testimony, briefs, or other formal written comments, and/or participating in evidentiary hearings, procedural conferences and other formal events conducted in the case.
+Manage Favorite Searches
+Set up and save your favorite search criteria. Once saved, you can re-use the search so that you can quickly and easily find cases or documents in our files.
+Comment on Cases
+Conveniently post your opinions regarding cases before the Commission. Visit
+How to Post Comments and Receive Updates on PSC Cases
+for more information.
+Update Contact Information
+Update your contact information such as address, email, etc.
+E-File
+To be authorized for E-Filing, users are asked to complete and submit a Contact Form to NYS DPS. The form and instructions can be found at our
+Electronic Filing Registration Instructions
+page. After receipt and review of the document, we will entitle you to submit electronic filings to us and send you a confirming email.
+ESCO or Utility required to file rates
+Energy Service Companies (ESCOs) must register in order to enter rates for offers. To be authorized to enter ESCO rates, ESCO rate filers are asked to complete and submit a Contact Form to NYS DPS. The form and instructions can be found at our
+Electronic Filing Registration Instructions
+page. After receipt and review of the document, we will entitle you to electronically submit rates to us and send you a confirming email.
+DMM Help Page
+How to Register
+DPS is using the statewide My NY.gov ID Directory Services which allows users to create one account to access multiple systems within New York State Government. It also provides certain functions, such as password changes and resets, as well as delegated administration of accounts. Visit the
+My NY.gov ID FAQs
+for more information.
+Create My NY.Gov ID Account
+(Skip to next step if you already have an NY.Gov ID account)
+Open
+https://my.ny.gov/SelfRegV3/selfreg.xhtml
+Complete all steps for Self-Registration form
+Complete Verification steps by logging into your email and completing the steps outlined in the emails from MY Ny.gov ID
+Complete the Activation process by selecting three Secret Questions and Answers and click Continue
+Click on Continue to navigate to the Password Setting screen
+Enter a new password and click on set password
+Click on Continue once the password has been confirmed
+DMM Account Registration
+Once you have completed the My NY.gov ID account creation and verification,
+Log in with your NYS DPS Account through NY.GOV ID
+If prompted, enter your username and password
+Once you have logged in to the system, enter your Email Address and click on Confirm. The system will send you an email to complete your DMM Registration process.
+Complete Verification step by logging into your email and completing the steps outlined in the DPS Email Verification notification from
+[email protected]
+.
+After clicking on the link, you may be prompted for your username and password. Enter your credentials and complete the User Registration.
+Existing Contact Record: If you have previously interacted with DPS and we have a contact record for you in the system, you will be presented with the record to associate your account. Click on confirm or click to register if none of the information matches your contact information.
+New Contact Record: If we do not have a record of your email address you will not see a listing of contact records.
+click on Click here to Register
+complete all User Registration Form required fields
+click on Register
+Once you have completed the user registration form you will be directed to the Document and Matter Management – Registered User homepage which allows you to Manage Subscriptions and Favorite Searches, Comment on Cases, update Contact information and Submit the E-Filing Registration Request form.
+Note: Additional options will become available once your request for E-Filing rights have been processed. View
+help with E-Filing registration
+.

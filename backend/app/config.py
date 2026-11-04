@@ -10,6 +10,7 @@ class BaseConfig:
     """Base application configuration."""
 
     PROJECT_ROOT = Path(__file__).resolve().parents[2]
+    ASSISTANT_ALLOW_UNAUTHENTICATED_GOVERNMENT = False
     SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-key-gridvision-2026")
     API_PREFIX = "/api/v1"
     CORS_ORIGINS = [
@@ -123,6 +124,12 @@ class DevelopmentConfig(BaseConfig):
 
     DEBUG = True
     TESTING = False
+    ASSISTANT_ALLOW_UNAUTHENTICATED_GOVERNMENT = (
+        os.getenv("GRIDVISION_ALLOW_UNAUTHENTICATED_GOVERNMENT_ASSISTANT", "")
+        .strip()
+        .lower()
+        in {"1", "true", "yes", "on"}
+    )
 
 
 class TestingConfig(BaseConfig):

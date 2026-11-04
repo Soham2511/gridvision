@@ -1,0 +1,29 @@
+GridVision Anomaly Assistant - Demo Queries
+==========================================
+
+Use the assistant API or the React AI Assistant page to submit these prompts.
+Replace YYYY-MM-DD with a date inside the anomaly dataset's reported date range.
+Run analysis prompts cover one day and may require trusted authentication.
+
+1. What safety precautions should a household take when reporting an electrical outage?
+2. Explain common causes of a voltage sag and what information an operator should collect.
+3. What does a flatline anomaly mean in an energy time series?
+4. What safety guidance is available for investigating a transformer outage?
+5. What anomalies were found on YYYY-MM-DD?
+6. Show anomaly events between YYYY-MM-DD and YYYY-MM-DD.
+7. Were any spike anomalies detected on YYYY-MM-DD?
+8. Run anomaly analysis for YYYY-MM-DD.
+9. Analyze YYYY-MM-DD and YYYY-MM-DD for anomaly events.
+10. Show today's anomalies.
+11. What happened yesterday?
+12. What regulations or current safety guidance apply to electrical grid outages?
+13. Explain the likely causes and recommended investigation steps for a voltage anomaly on YYYY-MM-DD.
+14. Find saved analysis runs covering YYYY-MM-DD.
+15. Export events from run ID <32-hex-run-id> as CSV.
+
+Notes:
+- Date queries use actual supported dataset dates; the assistant does not infer dates
+  for "today" or "yesterday".
+- Analysis requests are limited to seven inclusive days and require explicit dates.
+- Saved run, customer, event, and export data require trusted backend authentication.
+- The export example needs a real run ID returned by a completed analysis.

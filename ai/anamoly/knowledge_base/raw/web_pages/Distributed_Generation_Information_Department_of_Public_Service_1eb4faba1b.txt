@@ -1,0 +1,158 @@
+TITLE: Distributed Generation Information | Department of Public Service
+SOURCE_URL: https://dps.ny.gov/distributed-generation-information
+
+Electric
+Distributed Generation Information
+Distributed Generation Information
+NYS Standardized Interconnection Requirements (SIR)
+In 1999, the Commission established Standardized Interconnection Requirements
+and Application Process for New Distributed Generators and/or Energy Storage Systems 5 MW or Less Connected in Parallel with Utility Distribution Systems (SIR)
+to allow such Distributed Energy Resources (DER) to interconnect to the electric system and help meet the State’s renewable energy goals.
+DPS administers two stakeholder groups, the Interconnection Technical and Interconnection Policy working groups, that develop recommendations for improving the SIR interconnection process through industry and electric utility collaboration. Below you will find links to the working groups and other interconnection resources.
+Staff Contacts:
+Andrew Lidington (Interconnection Ombudsman & ITWG/IPWG Co-Chair):
+[email protected]
+518-473-4613
+Sandra Sweet (Rates and Tariff assistance):
+[email protected]
+518-473-7952
+NYS Standardized Interconnection Requirements - Effective October 1, 2026
+Download
+SIR - October 1, 2026 Redline
+Download
+24-E-0621 Order on Interconnection Costs and Study Timeline August 17. 2026
+Download
+Staff Interpretation of Memo #2
+Download
+SIR Appendix M - Staff Interpretation of Line Upgrade Treatment
+Download
+Joint Utilities Smart Inverter FAQ
+Download
+Utility Smart Inverter Settings - (Required as of 1/1/2023)
+Download
+UL 1741 SB Certified Equipment
+Download
+Interconnection Technical Working Group Governance (January 2021)
+Download
+Auxiliary Metering Guidelines (June 2020)
+Download
+Material Modifications Guidelines (December 2019)
+Download
+Interim PV+ESS Guidelines (December 2018)
+Download
+Equipment Certified Since 2011
+Download
+Equipment Certified Prior to 2011
+Download
+JU - Technical Guidance Matrix Including Hosting Capacity Reserves Updated (May 2026)
+Download
+JU - NY Upgrade Cost Matrix Combined (Updated) (May 2026)
+Download
+Other Miscellaneous Reports
+New York State standardized interconnection requirements reports from external groups.
+EPRI Report - Harmonizing Distributed Generation Practices (October 2017)
+Download
+EPRI Report – Interconnection of DG in NY State (September 2015)
+Download
+IOAP Report and Functional Specification (September 2016)
+Download
+VDER Phase One CDG Tranches
+Download
+SIR Inventory Information
+Utility Interconnection Queue Data (August 2026)
+NYISO Interconnection Website
+Con Edison Interconnection Queue Data - Part 1
+Download
+Con Edison Interconnection Queue Data - Part 2
+Download
+National Grid Interconnection Queue Data
+Download
+Central Hudson Interconnection Queue Data
+Download
+Orange and Rockland Interconnection Queue Data
+Download
+NYSEG and RG&E Interconnection Queue Data
+Download
+PSEG LI Interconnection Queue Data - Part 1
+Download
+PSEG LI Interconnection Queue Data - Part 2
+Download
+Hosting Capacity Maps
+National Grid
+Con Edison
+Central Hudson
+Orange and Rockland
+NYSEG
+RG&E
+NY Solar Map
+Interconnection Resources
+ITWG - Interconnection Technical Working Group Information
+IPWG - Interconnection Policy Working Group Information
+Interconnection Ombuds Information
+Electric Standby Service Rates
+Central Hudson SC 14
+Con Edison (
+PSC 10 Standby Service Rates - General Rule 20
+,
+PSC 12 - Rates III & IV
+)
+New York State Electric & Gas SC 11 (
+PSC 119
+PSC 120
+)
+Niagara Mohawk Power Corporation SC 7 (
+PSC 214
+PSC 220
+)
+Orange & Rockland SC 25 -
+Rochester Gas & Electric SC 14 - [External Link] (
+PSC 18 or 19
+)
+Staff Contact:
+Rob Cully -
+[email protected]
+, 518-473-6747
+Gas Service for Distributed Generation
+Brooklyn Union Gas
+: SC 1B-DG, SC 17 Rate CTS-21, SC 21
+Central Hudson
+: SC 15 and SC 16
+Con Edison
+: Rider H and Rider J
+Corning
+: PSC 4: SC 19 and SC 20
+PSC 5: SC 9
+KeySpan
+LI
+: SC 1-DG, SC 5, SC 15, SC 17
+NFG
+: SC 23 and SC 24
+NYSEG
+:
+PSC 87: SC 10 and SC 11
+,
+PSC 88: SC 16 and SC 19
+NMPC
+: SC 12 and SC 13
+Orange & Rockland
+: Rider B and Rider C
+RG&E
+: SC 6, SC 7, SC 8, SC 9
+St. Lawrence
+: SC 10, SC 11
+Staff Contact:
+Aric Rider -
+[email protected]
+, 518-486-2466
+Links to General Information
+Net Metering Statutes (PSL
+66-j
+and
+66-l
+)
+American Clean Power
+Interstate Renewable Energy Council
+New York Solar Energy Industries Association
+New York State Energy Research and Development Authority
+NY ISO Planning
+US Department of Energy

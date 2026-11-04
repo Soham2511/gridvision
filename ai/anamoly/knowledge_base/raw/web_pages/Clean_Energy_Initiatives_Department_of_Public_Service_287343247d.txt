@@ -1,0 +1,331 @@
+TITLE: Clean Energy Initiatives | Department of Public Service
+SOURCE_URL: https://dps.ny.gov/clean-energy-initiatives
+
+Clean Energy Initiatives
+Clean Energy Initiatives
+Overview
+Building a clean, resilient, reliable, and affordable energy system for all New Yorkers.
+The Public Service Commission (PSC), supported by the Department of Public Service, seeks to stimulate effective competitive Clean Energy Markets with strategic investments, innovations in energy products and services to achieve New York’s clean energy targets as outlined in the Climate Leadership and Community Protection Act (CLCPA).
+To meet the state's energy goals, the CLCPA directs the establishment of programs for the procurement of specific technologies, including the deployment of 6 GW of photovoltaic solar generation by 2025, 3 GW of energy storage resources by 2030, and at least 9 GW of offshore wind by 2035.
+To advance the State’s goals also requires everyday New Yorkers to consider how they use energy in their homes and businesses and take steps to make that energy use more efficient and reliant on renewable clean energy.  The Commission has authorized several programs that assist New Yorkers in identifying what steps they can take and to provide financial incentive of other market development activities to support these activities saving New Yorker’s energy and reducing their energy costs while contributing to the State’s overall greenhouse gas emission goals.
+Please visit the
+Climate Act Dashboard
+for information on New York State's progress toward meeting it's energy goals.
+Clean Energy Standard
+The Clean Energy Standard (CES) was established by the Commission in 2016 and consists of a Renewable Energy Standard (RES) and a Zero-Emission Credit (ZEC) requirement with each component explained in greater detail below.
+For more information on the Proceeding on Motion of the Commission to Implement a Large-Scale Renewable Program and a Clean Energy Standard, visit DMM
+Case 15-E-0302
+.
+Renewable Energy Standard
+Tier 1 Program – Large Scale
+: Supports new/incremental renewable resources including solar land-based wind within the large-scale renewable (LSR) section. The LSR program is managed by NYSERDA under an auction format and obligates each Load Serving Entity (LSE) to serve its retail customers by supporting procurement of Renewable Energy Certificates (RECs) from NYSERDA or other sources.
+Tier 1 Eligibility Guidelines -
+RES Tier 1 Eligibility - NYSERDA
+For information on Tier 1 LSR section, visit DMM
+Case 15-E-0302
+.
+For information on Tier 1 Smaller Scale Through the Value of Distributed Energy Resources (VDER)
+mechanism, visit DMM
+Case 15-E-0751
+.
+Maintenance Tier
+Tier 2 Program
+:
+Provides support for existing renewable generating facilities that require financial support to remain operational, as part of the Renewable Energy Standard component of the Clean Energy Standard.
+For more information on the Maintenance Tier, visit DMM
+Case 15-E-0302
+.
+Maintenance Tier Application
+Maintenance Tier Application (May 2026)
+SAMPLE Maintenance Tier Application (May 2026)
+For information on Maintenance Tier Applications, visit DDM
+Case 17-E-0603
+.
+For questions on Maintenance Tier applications contact:
+Peter Sheehan
+or
+Carlene Pacholczak
+Offshore Wind
+As part of the “all options” approach of the Clean Energy Standard, the NYS Public Service Commission recognized the potential for offshore wind production as a renewable energy resource that is secure, reliable, and cost-effective. The CLCPA calls for the development of 9,000 megawatts of offshore wind energy by 2035.
+Relevant Commission Orders (including but not limited to):
+Case 18-E-0071, Order Approving Offshore Wind Implementation Plan (issued February 13, 2026)
+.
+For more information on the proceeding in the Matter of Offshore Wind Energy, visit DMM
+Case 18-E-0071
+.
+Tier 4
+Tier 4 provides support for renewable energy projects that deliver energy into the New York State Independent System Operator, Inc. (NYISO) Zone J, which encompasses New York City. The intent of the new Tier 4 is to reduce New York City’s reliance on fossil-fuel fired generation and is an important component in achieving the State’s clean energy goals.
+Relevant Commission Orders (including but not limited to):
+Case 15-E-0302, supra, Order Approving Tier 4 Implementation Plan (Issued May 16, 2025)
+: The Commission approves NYSERDA’s proposed Tier 4 Implementation Plan including the Tier 4 compliance obligation calculations, process and structure of REC sales, and the Tier 4 standard purchase agreement.
+For more information on Tier 4, visit DMM
+Case 15-E-0302
+.
+Zero Emissions Credit
+Since 2016, the Zero-Emissions Credit (ZEC) program has served as a cornerstone of the Commission’s clean energy and climate policy by providing the operators of New York’s upstate nuclear generation facilities with fair and adequate compensation for the environmental attributes associated with their carbon-free nuclear generation, while simultaneously ensuring that the facilities receive adequate revenues to remain financially viable and prevent their closures, which would negatively impact New Yorkers.
+Relevant Commission Orders (including but not limited to):
+Case 15-E-0302, supra, Order Extending Zero-Emissions Credit Program (issued January 22, 2026)
+: The Commission approved the ZEC 2.0 Program with modifications. Notably,
+in order to qualify to participate in the ZEC 2.0 Program, a nuclear facility must: (1) have an in-service date of January 1, 2015, or earlier; (2) be operating pursuant to a U.S. Nuclear Regulatory Commission operating license as of April 1, 2029; (3) have demonstrated the need for financial assistance to operate the facility beyond 2029; and (4) be in compliance with any other federal and state authorizations.
+For more information on the ZEC program, visit DMM
+Case 15-E-0302
+.
+CES Biennial Review
+The CES Biennial Review serves to inform the Commission’s review, as it summarizes the progress made toward the renewable energy and zero emission goals set by the CLCPA since the establishment of New York State’s CES, assesses what remains to be done to achieve those goals, presents policy options and proposals, and invites comments from stakeholders and the public on these matters.
+Relevant Commission Orders (including but not limited to):
+Case 22-M-0149, Proceeding on Motion of the Commission Assessing Implementation of and Compliance with the Requirements and Targets of the Climate Leadership and Community Protection Act, Order on Implementation of the Climate Leadership and Community Protection Act (Issued 05/12/2022)
+: The Climate Leadership and Community Protection Act (CLCPA) of 2019 requires that the Public Service Commission (Commission) issue a review for notice and comment that considers “(a) progress in meeting the overall targets for deployment of renewable energy systems and zero emission sources, including factors that will or are likely to frustrate progress toward the targets; (b) distribution of systems by size and load zone; and (c) annual funding commitments and expenditures.”
+Case 15-E-0302, supra, CES Biennial Review (With Corrections) (Issued July 8, 2024)
+: The first iteration of the CES Biennial Review, focusing in particular on New York’s goal to obtain 70% of New York’s electricity from renewable sources by 2030 (the 70% goal) and the related goal of 9 gigawatts (GW) of offshore wind by 2035.
+Case 15-E-0302, supra, Order Adopting Clean Energy Standard Biennial Review as Final and Making Other Findings (Issued May 15, 2025)
+: The Commission adopted several proposed modifications to the CES to reflect current market conditions and maintain progress on building renewable generation to achieve the CLCPA targets of having 70% of electricity generated by renewable energy systems by 2030, and having the electricity sector be zero-emissions by 2040.
+Legacy Programs
+Renewable Portfolio Standard
+On September 24, 2004, following an extensive stakeholder process, the Commission issued an Order adopting an RPS with a goal of increasing the proportion of renewable energy used by New York State consumers from 19.3% then (considered the baseline resources) to at least 25% by the end of 2013. As part of the September 24, 2004 Order, the Commission designated NYSERDA as the central procurement administrator for the RPS program. In doing so, the Commission noted an expectation that voluntary renewable purchases by retail customers (the “Voluntary Market”) would contribute at least 1% toward the 25% goal. That would leave baseline resources, State agencies’ purchases under Executive Order 111 and NYSERDA procurements to realize the remaining 24%. The Public Service Commission first enacted its RPS in 2004 with the goal of increasing the amount of renewable electricity used by consumers.
+In an April 2, 2010 Order, the Commission established NYSERDA Main Tier and Customer-Sited Tier program targets for supporting the production of approximately 10.4 million megawatt-hours (MWh) of renewable energy annually by 2015.
+Relevant Commission Orders (including but not limited to):
+Case 03-E-0188, Proceeding on Motion of the Commission Regarding a Retail Renewable Portfolio Standard, Order Regarding Retail Renewable Portfolio Standard (Issued September 24, 2004)
+: The Commission adopted the RPS with the goal of increasing the proportion of renewable energy New York used from 19.3 percent to at least 25 percent by the end of 2013 (using 2004 as the baseline year).
+Value of Distributed Energy Resources
+This proceeding addresses the mechanism to compensate energy generated by distributed energy resources such as solar photovoltaic, energy storage, combined heat and power, anaerobic digesters, wind turbines and small hydro and fuel cells.
+Encompasses the Value Stack, Rate Design, CDG, Standby Rates, Technology-Neutral Optional Rate, Net Metering, MCOS
+For more information, view DMM
+Case 15-E-0751
+.
+Value Stack
+The Value Stack is a financial compensation mechanism for qualifying Distributed Energy Resources which closely matches the value of electricity discharged to a utility’s distribution system with the payments made by the utility to participants.
+The Value Stack is made up of four components –Generation Capacity, Energy, Demand Reduction Value or Location Specific Relief Value, and Environmental - however, eligibility for some components may vary by technology and values of each component may vary within and among utility service territories.
+The Value Stack is the primary compensation mechanism for Community Distributed Generation projects, but is also available as an alternative to Net Energy Metering.
+For more information, view DMM
+Case 15-E-0751
+.
+Rate Design
+The Value of Distributed Energy Resources Proceeding also seeks to develop the distribution service rates which best reflect the way that utility grid costs are caused.
+These most cost-reflective rates are known as Standby Rates, and are designed to ensure that customers pay for both the costs that are incurred to serve them while using electricity from the grid and also those costs which are incurred to maintain a connection to the grid even if no electricity is used.
+Standby Rates are also the basis for Buyback Service rates - which are charged to certain customers with Distributed Energy Resources to ensure that those customers pay their fair share of grid costs for maintaining a connection over which electricity flows back from the customer to the grid -and as the basis for the Mass Market Optional Demand Rate.
+For more information, view DMM
+Case 15-E-0751
+and
+Case 19-E-0079
+.
+Community Distributed Generation (CDG)
+Community Distributed Generation (CDG) is a program that enables customers for whom rooftop solar is not a viable option to directly participate in a renewable energy program. In a CDG program, a CDG Sponsor develops an eligible generation project, usually a solar photovoltaic (PV) system, connected to a utility distribution network, and enrolls a group of customers served by that utility as subscribers.
+The CDG project generates electricity and injects that electricity into the utility system, and the utility compensates the injections by crediting the bills of the subscribers to that CDG project. The subscribers pay the CDG Sponsor a monthly subscription charge, which may be fixed or variable, in return for the benefit of credits they receive. Typically, the CDG Sponsor bills the customer directly for the subscription charges, while the utility bills the customer for electric service reflecting the credits received from the CDG project. As an alternative, CDG Sponsors have the option to switch to the Net Crediting model, described further below, which provides for consolidated utility billing of CDG credits and subscription fees.
+For more information, view DMM
+Case 15-E-0082
+,
+15-E-0751
+,
+19-M-0463
+, and
+21-E-0629
+.
+Marginal Cost of Service
+The Marginal Cost of Service (MCOS) proceeding was implemented to inform multiple programs within the Department of Public Service (DPS), mainly the Demand Reduction Value (DRV) and Locational System Relief Value (LSRV) components of the Value of Distributed Energy Resources (VDER) Value Stack. MCOS is intended to be representative of the electric delivery system costs that can be avoided by the introduction of VDER-eligible distributed generators. MCOS studies are to be updated on a two-year cadence, to accurately inform the design of DPS programs.
+For more information, view DMM
+Case 19-E-0283
+.
+Energy Storage Deployment Program
+This proceeding encourages energy storage deployment and addresses New York’s energy storage target of 6 GW by 2030. New York’s ambitious storage target is accompanied by Market reforms and cost-effective procurement mechanisms including incentives for private customers to install storage.
+Encompasses Utility Requests for Proposals, and NYSERDA’s Retail, Residential, and Wholesale Programs.
+For more information, view DMM
+Case 18-E-0130
+.
+Utility Requests for Proposals
+The Utility Dispatch Rights piece of the energy storage program requires Investor Owned Utilities to issue Requests for Proposals (UFP) for scheduling and dispatch rights for distribution and transmission connected energy storage systems that can achieve commercial operation by the end of 2030. This is intended to give IOUs experience in dispatching energy storage for the benefit of its customers in exchange for a fixed revenue stream to the developer.
+For utility RFP information, please see:
+Central Hudson
+Con Edison/O&R
+National Grid
+NYSEG/RG&E
+NYSERDA's Retail and Wholesale Programs
+NYSERDA’s bulk energy storage program utilizes the Index Storage Credit (ISC) which is a market-based incentive mechanism to give energy storage developers greater revenue certainty to try and stimulate and encourage bulk energy storage development in New York State. NYSERDA is aiming to procure 3GW of new bulk energy storage projects through the ISC mechanism.
+NYSERDA also administers the Residential and Retail energy storage programs, which utilize a fixed-rate incentive based on the size of the energy storage system’s capacity. The incentives are available on a first come, first serve basis and inventive levels may vary in terms of incentive amount and capacity requested based on geographic location. Once the funding block runs out, NYSERDA may offer a new funding block at a different and oftentimes lower incentive level.
+For more ISC program information, please visit
+NYSERDA's Energy Storage Program web page for Developers and Contractors
+.
+Electric Vehicles
+This section includes information on EV Infrastructure Make Ready and Managed Charging Programs, Barriers to Medium- and Heavy-Duty Electric Vehicle Charging Infrastructure, and Commercial EV Rate Design.
+EV Supply Equipment and Infrastructure
+Proceeding on Motion of the Commission Regarding Electric Vehicle Supply Equipment and Infrastructure. This proceeding addresses clean and reliable transportation in NYS.
+Encompasses the EV Infrastructure Make Ready and Managed Charging Programs
+For more information, view DMM
+Case 18-E-0138
+.
+Related:
+Electric Vehicle Infrastructure and Interconnection Working Group
+Medium - and Heavy-Duty Electric Vehicle Charging Infrastructure
+Proceeding on Motion of the Commission to Address Barriers to Medium- and Heavy-Duty Electric Vehicle Charging Infrastructure.
+For more information, view DMM
+Case 23-E-0070
+.
+Commercial EV Rate Design
+Staff proposed an alternative to traditional demand-based rates (Managed charging and a demand charge phase-in rate).
+For more information, view DMM
+Case 22-E-0236
+.
+Residential EVE Charging Tariff
+Time-of-use rates, with one-year bill guarantee. For more information, view DMM
+Case 18-E-0206
+.
+Energy Efficiency and Building Electrification
+Energy Efficiency and Building Electrification (EE/BE) initiatives aim to increase access to energy efficiency and clean energy solutions across New York’s buildings sector, including low-to-moderate income (LMI) households and affordable multifamily buildings.
+Utility-Administered Non-Low- to Moderate-Income Energy Efficiency & Building Electrification (Non-LMI EE/BE)
+The Commission authorized annual budgets equal to $657 million, totaling approximately $3.28 billion for 2026 through 2030, to be administered by the State’s large investor-owned electric and gas utilities to support Energy Efficiency and Building Electrification Programs.
+These programs aim to help New Yorkers reduce energy consumption, lowering participants’ utility bills and decreasing greenhouse gas emissions, and promote building electrification through electrifying customers’ space and water heating needs in their homes and businesses.
+Information on each of the utilities’ program offerings can be found at the Company’s websites linked below:
+Central Hudson
+Consolidated Edison
+National Fuel Gas
+National Grid (Niagara Mohawk)
+National Grid (KeySpan NY)
+National Grid (KeySpan Long Island)
+New York State Electric & Gas (NYSEG)
+Orange & Rockland
+Rochester Gas & Electric
+Each utility’s Non-LMI EE/BE Implementation Plan detailing these activities are filed, and ultimately approved by Staff, in DMM
+Case 25-M-0248
+.
+NYS Clean Heat Program
+The NYS Clean Heat Program offers incentives to support the adoption of heat pumps for space and water heating and cooling, including air source heat pump (“ASHP”), air-to-water heat pump (“AWHP"), heat pump water heater (“HPWH”), and ground source heat pump (“GSHP”) systems.
+The NYS Clean Heat Program also offers training and qualification for Participating Contractors, inspection and oversight processes to drive quality installations, and marketing and education to attract customers.
+The NYS Clean Heat Program addresses building electrification, including heat pumps, in market rate residential one- to four-family homes.
+Those in the multifamily and commercial sectors may receive incentives for heat pumps and other building electrification technologies through the Utilities’ programs targeting those sectors.
+Program implementation details can be found in the NYS Clean Heat Implementation Plan and Program Manual documents filed in
+Case 25-M-0248
+.
+For further information, please visit the
+NYS Clean Heat
+web page.
+Regional Residential Weatherization
+The Commission directed the State’s investor-owned electric and gas utilities to implement an Upstate Regional Residential Weatherization Program covering the Central Hudson, Niagara Mohawk, National Fuel Gas, NYSEG, RG&E and Orange and Rockland service territories and a Downstate Regional Residential Weatherization Program covering the Con Edison, KeySpan NY and KeySpan Long Island service territories.
+These regional programs will provide incentives for weatherization (e.g., insulation and air-sealing) for market-rate, one- to four-family residential homes upstate and market rate one-to four-family homes and market rate multi-family buildings downstate.
+The Upstate and Downstate Regional Weatherization Program proposals can be found in DMM
+Case 25-M-0248
+.
+NYSERDA-Administered Non-Low- to Moderate-Income Energy Efficiency & Building Electrification (Non-LMI EE/BE)
+Non-LMI Energy Efficiency & Building Electrification
+The Commission authorized a budget of $500 million for 2026 through 2030 to be administered by NYSERDA to support initiatives targeting the non-low- to moderate-income customer sector.
+NYSERDA’s activities in this area are focused on: Technical Assistance, Purposeful Demonstrations, Codes & Standards, Workforce Development and General Awareness & Outreach.
+For more information please see:
+NYSERDA’s Non-LMI Implementation Plan detailing these initiatives in DMM
+Case 25-M-0248
+or visit
+www.nyserda.ny.gov
+.
+Low-to Moderate-Income EE/BE Portfolio
+With the May 15, 2025 Low-to Moderate-Income (LMI) EE/BE Order, the Commission authorized budgets totaling approximately $1.57 billion to fund energy efficiency and building electrification programs for the LMI market segment, including LMI households and affordable housing owners, for
+2026 through 2030.
+The LMI EE/BE programs are administered by NYSERDA and the downstate electric and gas utilities.
+In the Order, the Commission outlined objectives for the LMI EE/BE portfolio, which include:
+reducing energy consumption and cost for households that are experiencing the greatest energy burden;
+maximizing the impact of ratepayer funds through effective coordination, the leveraging of other funding sources, and administrative efficiencies;
+simplifying participation and administrative burden for applicants and contractors;
+seeking and incorporating feedback from market participants in the design and implementation of programs;
+enhancing transparency in program and portfolio performance; and
+ensuring clarity and certainty on program guidelines, goals, and budgets to market participants, including the minimization of volatility in program budgets.
+Programs funded under the LMI EE/BE Portfolio include:
+EmPower+, which is administered by NYSERDA and provides incentives to offset the costs to weatherize and electrify 1-4 family homes.
+More information on EmPower+ can found here:
+The Affordable Multifamily Program Upstate (AMP Up), which is administered by NYSERDA and provides incentives to offset the costs to weatherize and electrify affordable multifamily buildings upstate.
+The Affordable Multifamily Energy Efficiency Program (AMEEP), which is administered by Con Edison and National Grid downstate and provides incentives to offset the costs to improve the energy efficiency and electrify affordable multifamily buildings in Con Edison and National Grid service territories.
+More information about the LMI EE/BE Portfolio, including links to implementation plans and other key documents, can be found at
+Low- to Moderate-Income EE/BE Portfolio Resources
+.
+EE/BE Guidance Documents
+To aid Program Administrators in the implementation of and reporting on the Commission’s EE/BE Portfolio, Staff has, at the direction of the Commission, developed and issued Guidance Documents that ensure consistent and transparent delivery of EE/BE programs.
+Clean Energy Guidance Documents
+Technical Resource Manual (TRM)
+The New York Standard Approach for Estimating Energy Savings from Energy Efficiency Programs - Residential, Multi-Family, and Commercial/Industrial, known as the Technical Resource Manual (TRM), provides a standardized, fair, and transparent approach for measuring program energy savings across New York State’s energy efficiency programs administered by the State’s investor-owned utilities and NYSERDA.
+Visit the
+Technical Resource Manual
+page for more information.
+Matter 15-01319 - In the Matter of the Technical Resource Manual
+. This matter has been established to facilitate the transparent and orderly conduct of activities related to the TRM, act as a repository for related documents and resources, and aid parties in tracking developments.
+Clean Energy Dashboard
+The Clean Energy Dashboard provides a central repository for the reporting of financial and energy savings metrics for the suite of ratepayer funded programs authorized by the Commission and administered by the State’s Investor-owned utilities and NYSER
+DA.
+Clean Energy Dashboard
+Legacy Programs
+New Efficiency:New York
+New Efficiency:New York set forth a goal for New York to achieve 185 TBtu (trillion British thermal units) of site energy savings by 2025 through a variety of actions including codes & standards, State Lead by Example, and end-use programs.
+The Commission authorized energy efficiency programs administered by the State’s investor-owned utilities and the New York State Energy Research and Development Authority (NYSERDA) are responsible for nearly 78% of the NENY goal.
+Encompassed the Utility Based Energy Efficiency, Utilities Roles, Planning, Investment, Electrification, and Heat Pumps. For history, view DMM
+Case 18-M-0084
+.
+Clean Energy Fund
+The Clean Energy Fund (CEF), administered by NYSERDA,
+was authorized by the Commission in 2016 for a ten year period (2016-2025).
+The CEF included four distinct portfolios, as listed below designed to work in tandem to advance New York’s climate objectives.
+Innovation and Research (I&R)
+: The I&R portfolio is designed to spur innovations through research and technology development that will drive clean-tech business growth and job creation while providing more energy choices to residential and business customers. Historic information on the I&R portfolio can be found in DMM
+Case 14-M-0094
+and in
+Matter 16-00681
+.
+Market Development:
+The Market Development portfolio
+offers a variety of activities to stimulate consumer demand for clean energy alternatives and energy efficiency while building clean energy supply chains to meet growing customer demand. NYSERDA’s Market Development portfolio contributes to the State’s New Efficiency:New York goals.
+Information on Market Development can be found in DMM
+Case 14-M-0094
+and in
+Matter 16-00681
+.
+NY Green Bank:
+The NY Green Bank accelerates the deployment of clean energy through a variety of financing tools targeted at alleviating financial market barriers and harnessing capital markets. The NY Green Bank leverages private sector investment, expands the availability of capital and increases confidence in lending for clean energy projects. More information on the NY Green Bank can be found in DMM
+Case 13-M-0412
+and
+Case 14-M-0094
+.
+NY-Sun:
+The NY-Sun Program is making solar energy more accessible to homes, businesses and communities throughout New York while on track to meet the Climate Leadership and Community Protection Act target of 6 gigawatts (GW) by 2025. More information on NY-Sun can be found in DMM
+Case 19-E-0735
+or on
+NYSERDA's Solar Projects web page
+.
+Reporting for these CEF portfolios will continue through 2030 based on commitments made through 2025.
+View NYSERDA's
+Clean Energy Dashboard
+for more detail.
+System Benefits Charge (SBC)
+The Commission has a long standing history of investments in clean energy programs providing benefits to New York ratepayers.
+Many of these programs are funded through the System Benefits Charge, a non-by passable charge assessed on customers electric and gas bills.
+For history on the SBC, please see
+System Benefits Charge
+.
+Innovation and Research
+The Commission has authorized $412.3 million over the 2026 – 2030 period to be administered by NYSERDA for the Innovation & Research (I&R) Portfolio. The I&R portfolio is designed to drive innovation by investing in cutting edge technologies and early-stage company support, demonstration of grid modernization solutions, as well as accelerating the commercialization of existing solutions on their path to mass market adoption. The I&R portfolio also provides objective information to help inform policy making and identify strategies to mitigate environmental impacts in support of the State’s climate objectives.
+The I&R portfolio includes seven specific focus areas for the 2026 – 2030 period, including grid modernization, advanced buildings and processes, clean transportation, power generation and storage, commercialization and ecosystems, fuels transition, and energy-related environmental research.
+Details on the activities, funding and outcomes associated with the I&R portfolio can be found in its Annual I&R Operating Plan filed in DMM
+Case 25-M-0421
+.
+Clean Energy Fund reporting for the I&R portfolio will continue through 2030 based on commitments made through 2025. Historic information can be found in DMM
+Case 14-M-0094
+and in
+Matter 16-00681
+.
+Additional information is available on
+NYSERDA's Innovation & Research
+web page.
+NY Green Bank
+The Commission has authorized the use of over $971 million in ratepayer funding to support New York Green Bank (NYGB), a division of the New York State Energy Research and Development Authority (NYSERDA). NYGB is a clean energy investment fund aimed at mobilizing private sector capital to support New York State’s clean energy transition and the development of a more cost-effective, resilient, and clean energy system.
+NYGB aims to accelerate the deployment of clean energy solutions through a variety of financing tools, such as credit enhancements, construction financing, warehousing and aggregation, preferred equity, and specialized term loans and investments. NYGB seeks to develop replicable transaction structures and methodologies that overcome barriers to investment in clean energy and energy efficiency by public and private financial institutions.
+Details on NYGB’s investments can be found in its Annual NYGB Business Plan filed in DMM
+Case 13-M-0412
+.
+Clean Energy Fund reporting for NY Green Bank will continue through 2030 based on commitments made through 2025. Historic information on the NY Green Bank can be found in DMM
+Case 13-M-0412
+and
+14-M-0094
+.
+Additional information can be found on the
+NY Green Bank
+website.
+NY-Sun
+The NY-Sun Program is making solar energy more accessible to homes, businesses and communities throughout New York while on track to meet the Climate Leadership and Community Protection Act target of 6 gigawatts (GW) by 2025.
+More information on NY-Sun can be found in DMM
+Case 19-E-0735
+or on
+NYSERDA's Solar Projects
+web page.
+Clean Energy Fund reporting for NY-Sun will continue through 2030 based on commitments made through 2025.

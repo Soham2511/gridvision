@@ -215,6 +215,31 @@ def _stage_wsl_build_context() -> tempfile.TemporaryDirectory[str] | None:
         root / "backend" / "app",
         ignore=ignored_python_cache,
     )
+    ai_root = root / "ai"
+    ai_root.mkdir()
+    shutil.copytree(
+        PROJECT_ROOT / "ai" / "anamoly",
+        ai_root / "anamoly",
+        ignore=shutil.ignore_patterns(
+            "__pycache__", "*.pyc", "Key", "storage"
+        ),
+    )
+    shutil.copytree(PROJECT_ROOT / "ai" / "govt", ai_root / "govt")
+    government_ai_source = PROJECT_ROOT / "ai" / "Govt_interpretion+redistribution_plan"
+    government_ai_target = ai_root / "Govt_interpretion+redistribution_plan"
+    government_ai_target.mkdir()
+    for filename in ("__init__.py", "paths.py", "redistribution.py"):
+        shutil.copy2(government_ai_source / filename, government_ai_target / filename)
+    government_assistant_source = government_ai_source / "assistant"
+    government_assistant_target = government_ai_target / "assistant"
+    government_assistant_target.mkdir()
+    for source_file in government_assistant_source.glob("*.py"):
+        shutil.copy2(source_file, government_assistant_target / source_file.name)
+    (government_ai_target / "docs").mkdir()
+    shutil.copy2(
+        government_ai_source / "docs" / "QUERY_EXAMPLES.md",
+        government_ai_target / "docs" / "QUERY_EXAMPLES.md",
+    )
     # The backend unpickles the commercial prediction pipeline from this package.
     # Stage just that inference package; the rest of training/ can be large and is
     # not needed by the serving image.
@@ -1369,6 +1394,7 @@ def main(argv: list[str] | None = None) -> int:
             required_modules = [
                 "duckdb",
                 "lightgbm",
+                "matplotlib",
                 "mlflow",
                 "pandas",
                 "pyarrow",
@@ -1382,10 +1408,11 @@ def main(argv: list[str] | None = None) -> int:
             ]
             if missing_modules:
                 install_hint = (
-                    "Install the model-serving group from requirements.txt; "
-                    "Airflow runs in Docker on macOS."
+                    "Install the model-serving and government-assistant groups "
+                    "from requirements.txt; Airflow runs in Docker on macOS."
                     if platform.system() == "Darwin"
-                    else "Install the airflow and model-serving groups from "
+                    else "Install the airflow, model-serving, and "
+                    "government-assistant groups from "
                     "requirements.txt using the Airflow constraints URL documented "
                     "in the README."
                 )

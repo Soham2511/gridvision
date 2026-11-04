@@ -1,0 +1,45 @@
+TITLE: Digital Accessibility Resources - MOPD
+SOURCE_URL: https://www.nyc.gov/site/mopd/initiatives/digital-accessibility.page
+
+Mayor's Office for People with Disabilities
+311
+Search all NYC.gov websites
+Menu
+Text-Size
+Search
+Search
+Search
+Digital Accessibility
+Select
+Accessibility Waivers
+Advocacy and Awareness
+ASL Direct
+Digital Accessibility
+Disability Etiquette and Awareness Training
+Employment
+Accessibility Waivers
+Advocacy and Awareness
+ASL Direct
+Digital Accessibility
+Disability Etiquette and Awareness Training
+Employment
+Share
+Print
+Requirements and Standards for City Agencies
+The City of New York is committed to ensuring that all our digital content can be accessed by New Yorkers with disabilities.
+All websites maintained by or on behalf of the City or a City Agency are required to adhere to the
+Web Content Accessibility Guidelines (WCAG) 2.2 Level AA standard
+, along with the five exceptions in the DOJ's final rule on Title II website accessibility. If you find an issue, please report it by filling out the
+Website Accessibility Feedback Form
+.
+All printed documents created by or on behalf of an agency that are distributed to the public—whether in print, on an agency's website, through a mobile app, via email, or any other means—are required to adhere to the
+Accessible Document Requirements
+. These Requirements extend to non-City entities engaged by New York City agencies to create printed documents on behalf of the agency or relating to the agency's programs or activities. Where practicable, any printed document an agency creates for public dissemination shall adhere to these requirements.
+Digital Accessibility Coordinator
+NYC's Digital Accessibility Coordinator based at the Mayor's Office for People with Disabilities works towards the City's commitment to digital accessibility by training agencies to audit websites and providing guidance to agencies on how to make their digital content accessible. Additionally, the Digital Accessibility Coordinator conducts trainings and organizes educational events for City employees and the public to learn more about creating accessible digital content. The Digital Accessibility Coordinator also leads the effort to write the Digital Accessibility Reports, available on our
+Reports and Publications
+page.
+Resources
+Guides on Digital Accessibility
+Digital Accessibility Reports
+Contact the Digital Accessibility Coordinator
