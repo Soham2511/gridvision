@@ -202,6 +202,69 @@ def _compose_command() -> list[str]:
     return [docker, "compose"]
 
 
+def _local_setting(
+    name: str,
+    default: str,
+    env: dict[str, str],
+) -> str:
+    """Read one non-secret Compose setting without exposing other .env values."""
+    if name in env:
+        return env[name]
+    env_file = PROJECT_ROOT / ".env"
+    if not env_file.is_file():
+        return default
+    for line in env_file.read_text(encoding="utf-8").splitlines():
+        candidate = line.strip()
+        if candidate.startswith("export "):
+            candidate = candidate[7:].lstrip()
+        key, separator, value = candidate.partition("=")
+        if separator and key.strip() == name:
+            value = value.strip()
+            if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+                value = value[1:-1]
+            return value
+    return default
+
+
+def _verify_ollama_models(
+    base_url: str,
+    required_models: tuple[str, ...],
+) -> dict[str, Any]:
+    """Require the configured local Ollama models before expensive automation."""
+    try:
+        with urllib.request.urlopen(
+            f"{base_url.rstrip('/')}/api/tags",
+            timeout=5,
+        ) as response:
+            payload = json.loads(response.read(1_048_576))
+    except (OSError, TimeoutError, json.JSONDecodeError) as exc:
+        raise RuntimeError(
+            "Ollama is not reachable at "
+            f"{base_url}. Start Ollama and verify its local API is available. "
+            "Then run `ollama pull qwen3:8b` and `ollama pull gemma3:4b`."
+        ) from exc
+
+    models = payload.get("models") if isinstance(payload, dict) else None
+    if not isinstance(models, list):
+        raise RuntimeError("Ollama returned an invalid /api/tags response.")
+    installed = {
+        model.get("name")
+        for model in models
+        if isinstance(model, dict) and isinstance(model.get("name"), str)
+    }
+    missing = [model for model in required_models if model not in installed]
+    if missing:
+        commands = " && ".join(f"ollama pull {model}" for model in missing)
+        raise RuntimeError(
+            "Required Ollama models are not installed: "
+            f"{', '.join(missing)}. Install them once with: {commands}"
+        )
+    return {
+        "base_url": base_url,
+        "models": list(required_models),
+    }
+
+
 def _stage_wsl_build_context() -> tempfile.TemporaryDirectory[str] | None:
     """Stage only Docker build inputs off DrvFS, where BuildKit xattrs can fail."""
     if platform.system() != "Linux" or not PROJECT_ROOT.as_posix().startswith("/mnt/"):
@@ -221,6 +284,15 @@ def _stage_wsl_build_context() -> tempfile.TemporaryDirectory[str] | None:
         PROJECT_ROOT / "backend" / "app",
         root / "backend" / "app",
         ignore=ignored_python_cache,
+    )
+    shutil.copytree(
+        PROJECT_ROOT / "ai",
+        root / "ai",
+        ignore=ignored_python_cache,
+    )
+    shutil.copytree(
+        PROJECT_ROOT / "docs" / "ai_commercial",
+        root / "docs" / "ai_commercial",
     )
     # The backend unpickles the commercial prediction pipeline from this package.
     # Stage just that inference package; the rest of training/ can be large and is
@@ -274,29 +346,54 @@ def _stage_wsl_build_context() -> tempfile.TemporaryDirectory[str] | None:
 
 
 def _compose(compose: list[str], arguments: list[str], env: dict[str, str]) -> None:
-    command = compose + arguments
+    command = compose.copy()
+    if compose[-1:] == ["compose"]:
+        command.append("--progress=plain")
+    command.extend(arguments)
+    print(f"[COMMAND] {' '.join(command)}", flush=True)
+    compose_env = env.copy()
+    compose_env["COMPOSE_PROGRESS"] = "plain"
     result = subprocess.run(
         command,
         cwd=PROJECT_ROOT,
-        env=env,
+        env=compose_env,
         check=False,
-        capture_output=True,
         text=True,
     )
-    if result.stdout:
-        print(result.stdout.rstrip(), flush=True)
-    if result.stderr:
-        print(result.stderr.rstrip(), file=sys.stderr, flush=True)
     if result.returncode:
-        details = "\n".join(
-            output.strip()
-            for output in (result.stdout, result.stderr)
-            if output.strip()
-        ) or "Docker Compose returned no diagnostic output."
         raise RuntimeError(
             f"Docker Compose command failed (exit {result.returncode}): "
-            f"{' '.join(command)}\n{details}"
+            f"{' '.join(command)}. See streamed command output above."
         )
+
+
+def _run_streaming_command(
+    command: list[str],
+    env: dict[str, str],
+) -> subprocess.CompletedProcess[str]:
+    """Run a child command with merged output streamed to the terminal."""
+    command_env = env.copy()
+    command_env["PYTHONUNBUFFERED"] = "1"
+    process = subprocess.Popen(
+        command,
+        cwd=PROJECT_ROOT,
+        env=command_env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+    )
+    output: list[str] = []
+    assert process.stdout is not None
+    for line in process.stdout:
+        print(line, end="", flush=True)
+        output.append(line)
+    return subprocess.CompletedProcess(
+        command,
+        returncode=process.wait(),
+        stdout="".join(output),
+        stderr="",
+    )
 
 
 def _compose_service_url(
@@ -668,6 +765,35 @@ def _existing_dag_outputs_are_reusable(
                     )
                     .expanduser()
                     .resolve(),
+                    feature_path=Path(
+                        env.get(
+                            "SEGMENTATION_FEATURE_PATH",
+                            Path(env.get("GRIDVISION_DATA_DIR", DATA_ROOT))
+                            / "gold"
+                            / "customer_segmentation_features.parquet",
+                        )
+                    )
+                    .expanduser()
+                    .resolve(),
+                    model_dir=Path(
+                        env.get(
+                            "SEGMENTATION_MODEL_DIR",
+                            PROJECT_ROOT / "models" / "segmentation",
+                        )
+                    )
+                    .expanduser()
+                    .resolve(),
+                    reports_dir=Path(
+                        env.get(
+                            "SEGMENTATION_REPORTS_DIR",
+                            PROJECT_ROOT
+                            / "docs"
+                            / "customer_segmentation"
+                            / "reports",
+                        )
+                    )
+                    .expanduser()
+                    .resolve(),
                 )
             )
         except (FileNotFoundError, ValueError, KeyError, json.JSONDecodeError):
@@ -939,14 +1065,14 @@ def _run_commercial_workflow(
             env,
             force=force_airflow,
         )
-    training = subprocess.run(
-        [sys.executable, str(PROJECT_ROOT / "mlflow" / "commercial" / "train_and_log.py")],
-        cwd=PROJECT_ROOT, env=env, check=False, capture_output=True, text=True,
+    command = [
+        sys.executable,
+        str(PROJECT_ROOT / "mlflow" / "commercial" / "train_and_log.py"),
+    ]
+    training = _run_streaming_command(
+        command,
+        env,
     )
-    if training.stdout:
-        print(training.stdout.rstrip(), flush=True)
-    if training.stderr:
-        print(training.stderr.rstrip(), file=sys.stderr, flush=True)
     if training.returncode:
         # Exit code 2 means the run was evaluated and failed its promotion gate.
         # The MLflow run and local reports remain recorded; no model is promoted.
@@ -1009,13 +1135,7 @@ def _run_anomaly_training(env: dict[str, str]) -> dict[str, Any]:
         sys.executable,
         str(PROJECT_ROOT / "training" / "anomaly_prediction" / "train.py"),
     ]
-    result = subprocess.run(
-        command, cwd=PROJECT_ROOT, env=env, check=False, capture_output=True, text=True
-    )
-    if result.stdout:
-        print(result.stdout.rstrip(), flush=True)
-    if result.stderr:
-        print(result.stderr.rstrip(), file=sys.stderr, flush=True)
+    result = _run_streaming_command(command, env)
     if result.returncode:
         raise RuntimeError(
             "Anomaly preparation/training/MLflow tracking failed "
@@ -1104,9 +1224,16 @@ def _http_healthy(url: str, timeout: float = 2.0) -> bool:
 
 def _wait_for_http(url: str, label: str, timeout: float = 180.0) -> str:
     deadline = time.monotonic() + timeout
+    next_update = time.monotonic() + 10
+    print(f"[WAITING] {label} health check: {url}", flush=True)
     while time.monotonic() < deadline:
         if _http_healthy(url):
+            print(f"[READY] {label} is healthy.", flush=True)
             return url
+        now = time.monotonic()
+        if now >= next_update:
+            print(f"[WAITING] {label} is still starting...", flush=True)
+            next_update = now + 10
         time.sleep(2)
     raise TimeoutError(
         f"{label} did not become healthy within {timeout:.0f} seconds: {url}"
@@ -1424,14 +1551,43 @@ def main(argv: list[str] | None = None) -> int:
                     "Required Python modules are missing: "
                     f"{', '.join(missing_modules)}. {install_hint}"
                 )
+            llm_provider = _local_setting(
+                "COMMERCIAL_LLM_PROVIDER",
+                "ollama",
+                env,
+            ).lower()
+            if llm_provider in {"auto", "groq"}:
+                llm_provider = "ollama"
+            ollama = None
+            if llm_provider == "ollama":
+                ollama_host = _local_setting(
+                    "OLLAMA_HOST_BASE_URL",
+                    "http://127.0.0.1:11434",
+                    env,
+                )
+                primary_model = _local_setting(
+                    "COMMERCIAL_OLLAMA_PRIMARY_MODEL",
+                    "qwen3:8b",
+                    env,
+                )
+                fallback_model = _local_setting(
+                    "COMMERCIAL_OLLAMA_FALLBACK_MODEL",
+                    "gemma3:4b",
+                    env,
+                )
+                ollama = _verify_ollama_models(
+                    ollama_host,
+                    (primary_model, fallback_model),
+                )
             return {
                 "airflow": airflow,
                 "docker_compose": compose,
                 "source": str(SOURCE_PATH) if SOURCE_PATH.is_file() else None,
+                "ollama": ollama,
             }
 
         prerequisites = run_step(
-            "Check source data, Python dependencies, and Docker Compose",
+            "Check source data, Python dependencies, Docker Compose, and Ollama",
             check_prerequisites,
         )
         compose = prerequisites["docker_compose"]

@@ -266,6 +266,7 @@ def get_forecast_model_entities(model_id: str):
                     code="INVALID_INPUT",
                     status_code=422,
                 )
+
             query = request.args.get("query", "")
             if len(query) > 100:
                 raise AppError(
@@ -287,6 +288,47 @@ def get_forecast_model_entities(model_id: str):
         except AnomalyPredictionError as exc:
             raise AppError(str(exc), code="MODEL_UNAVAILABLE", status_code=503) from exc
     raise ResourceNotFoundError(f"Forecast model '{model_id}' was not found.")
+
+
+@bp.route("/models/commercial-building-forecast/status", methods=["GET"])
+def get_commercial_building_forecast_status():
+    """Report readiness of the trained Commercial building forecast and data."""
+    provider = current_app.extensions["model_provider"]
+    model = provider.get_forecast_model_info("commercial")
+    dataset_path = current_app.config["COMMERCIAL_FORECAST_DATA_PATH"]
+    dataset_available = (
+        dataset_path.is_file()
+        and model.get("data_available") is not False
+    )
+    is_demo = model.get("is_demo") is not False
+    model_version = model.get("model_version")
+    ready = (
+        not is_demo
+        and dataset_available
+        and isinstance(model_version, str)
+        and model_version not in {"", "unknown", "not_deployed"}
+    )
+    error = None
+    if not dataset_available:
+        error = "Commercial forecast dataset is unavailable."
+    elif not ready:
+        error = "A trained Commercial forecast model is not configured."
+    return success_response(
+        {
+            "status": "ready" if ready else "unavailable",
+            "model_name": model.get("model_name"),
+            "model_version": model_version,
+            "model_alias": model.get("model_alias"),
+            "provider": model.get("provider"),
+            "is_demo": is_demo,
+            "evaluation_status": model.get("evaluation_status"),
+            "dataset": {
+                "name": dataset_path.name,
+                "available": dataset_available,
+            },
+            "error": error,
+        }
+    )
 
 
 @bp.route("/models/<model_id>/predict", methods=["POST"])

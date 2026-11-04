@@ -20,6 +20,7 @@ from app.api.v1.segmentation import bp as segmentation_bp
 from app.api.v1.ai_layer import bp as ai_layer_bp
 from data_retrieval_agent.api import bp as data_retrieval_agent_bp
 from report_generator.api.routes import bp as report_generator_bp
+from app.api.v1.commercial_workflow import bp as commercial_workflow_bp
 
 api_v1_bp = Blueprint("api_v1", __name__)
 
@@ -39,3 +40,4 @@ api_v1_bp.register_blueprint(segmentation_bp)
 api_v1_bp.register_blueprint(ai_layer_bp)
 api_v1_bp.register_blueprint(data_retrieval_agent_bp, url_prefix="/data-retrieval-agent")
 api_v1_bp.register_blueprint(report_generator_bp, url_prefix="/report-generator")
+api_v1_bp.register_blueprint(commercial_workflow_bp)

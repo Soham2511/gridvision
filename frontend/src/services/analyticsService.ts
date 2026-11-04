@@ -4,7 +4,7 @@
  * Uses centralized apiClient driven by VITE_API_BASE_URL.
  */
 
-import { apiClient } from './apiClient';
+import { apiClient, type ApiCredentials } from './apiClient';
 import {
   CommercialBuilding,
   ResidentialMeter,
@@ -45,6 +45,64 @@ export interface CurtailmentResult {
   dispatchConfirmed: boolean;
   dispatchTimestamp: string;
   message: string;
+}
+
+export interface CommercialEvidenceReference {
+  source_id: string;
+  source_type: string;
+  locator?: string | null;
+  excerpt?: string | null;
+  synthetic: boolean;
+}
+
+export interface CommercialSpecialistResult {
+  status: string;
+  findings: string[];
+  evidence_refs: CommercialEvidenceReference[];
+  assumptions: string[];
+  conflicts: string[];
+  data: Record<string, unknown>;
+  error?: { code: string; message: string } | null;
+}
+
+export interface CommercialScheduleProposal {
+  proposal_id: string;
+  status: string;
+  schedule: Array<Record<string, unknown>>;
+  calculated_cost_inr?: number | null;
+  calculated_savings_inr?: number | null;
+  battery_dispatch?: unknown;
+  approval_required_before_use: boolean;
+  equipment_controlled: false;
+}
+
+export interface CommercialWorkflowResponse {
+  request_id: string;
+  factory_id: string;
+  status: 'passed' | 'incomplete' | 'needs_rework' | 'escalated';
+  summary: string;
+  findings: string[];
+  evidence_refs: CommercialEvidenceReference[];
+  assumptions: string[];
+  conflicts: string[];
+  errors: string[];
+  validation: { status: string; issues: string[]; evidence_count: number };
+  specialist_results: Record<string, CommercialSpecialistResult>;
+  execution_trace: CommercialExecutionTraceEvent[];
+  schedule_proposal?: CommercialScheduleProposal;
+}
+
+export interface CommercialExecutionTraceEvent {
+  node_id: string;
+  status: 'completed' | 'warning' | 'error';
+  duration_ms: number;
+  message?: string;
+}
+
+export interface UploadedRagDocument {
+  source_id: string;
+  size_bytes: number;
+  page_count: number;
 }
 
 class AnalyticsService {
@@ -246,6 +304,66 @@ class AnalyticsService {
         persona,
         entity_id: entityId,
       }
+    );
+  }
+
+  async validateCommercialSession(
+    credentials: ApiCredentials,
+  ): Promise<{ user_id: string; factory_id: string; scope: string }> {
+    return apiClient.postAuthenticated('/commercial/session', {}, credentials);
+  }
+
+  async askCommercialAssistant(
+    userGoal: string,
+    credentials: ApiCredentials,
+    optimizationInputs?: Record<string, unknown>,
+  ): Promise<CommercialWorkflowResponse> {
+    return apiClient.postLongAuthenticated<CommercialWorkflowResponse>(
+      '/commercial/workflow',
+      {
+        user_goal: userGoal,
+        factory_id: 'automotive-parts-demo',
+        ...(optimizationInputs ? { optimization_inputs: optimizationInputs } : {}),
+      },
+      credentials,
+    );
+  }
+
+  async uploadCommercialRagDocument(
+    file: File,
+    credentials: ApiCredentials,
+  ): Promise<{
+    source_id: string;
+    size_bytes: number;
+    page_count?: number;
+    chunk_count?: number;
+    status: string;
+  }> {
+    return apiClient.uploadAuthenticated(
+      '/commercial/rag/documents',
+      file,
+      credentials,
+    );
+  }
+
+  async getCommercialRagDocuments(
+    credentials: ApiCredentials,
+  ): Promise<{
+    documents: UploadedRagDocument[];
+    index_counts: Record<string, number>;
+  }> {
+    return apiClient.getAuthenticated('/commercial/rag/documents', credentials);
+  }
+
+  async decideScheduleProposal(
+    proposalId: string,
+    decision: 'approved' | 'rejected',
+    credentials: ApiCredentials,
+  ): Promise<{ proposal_id: string; status: string; equipment_controlled: false }> {
+    return apiClient.postAuthenticated(
+      `/commercial/schedules/${encodeURIComponent(proposalId)}/approval`,
+      { decision },
+      credentials,
     );
   }
 }

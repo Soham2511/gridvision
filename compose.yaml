@@ -180,6 +180,7 @@ services:
       GOVERNMENT_MLFLOW_MODEL_NAME: ${GOVERNMENT_MLFLOW_MODEL_NAME:-gridvision-government-load-forecast}
       GOVERNMENT_MLFLOW_MODEL_ALIAS: ${GOVERNMENT_MLFLOW_MODEL_ALIAS:-${MLFLOW_MODEL_ALIAS:-champion}}
       CUSTOMER_TARIFF_INR_PER_KWH: ${CUSTOMER_TARIFF_INR_PER_KWH:-10.0}
+      TAVILY_API_KEY_FILE: /run/secrets/tavily_api_key
       CUSTOMER_GOLD_DATASET_PATH: /data/gold/customer_gold.parquet
       CUSTOMER_MODEL_METADATA_PATH: /models/customer_bill_prediction.metadata.json
       COMMERCIAL_FORECAST_DATA_PATH: /data/gold/commercial_gold.parquet
@@ -195,6 +196,14 @@ services:
       ANOMALY_MODEL_PATH: /models/anomaly_prediction/gridvision_anomaly_model.joblib
       ANOMALY_RUNS_PATH: /reports/anomaly_prediction/application_runs
       CORS_ORIGINS: http://localhost:8082,http://127.0.0.1:8082
+      DEMO_USER_ID: ${DEMO_USER_ID:?Set DEMO_USER_ID in your local .env}
+      DEMO_PASSWORD: ${DEMO_PASSWORD:?Set DEMO_PASSWORD in your local .env}
+      COMMERCIAL_LLM_PROVIDER: ${COMMERCIAL_LLM_PROVIDER:-ollama}
+      COMMERCIAL_OLLAMA_BASE_URL: ${COMMERCIAL_OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      COMMERCIAL_OLLAMA_PRIMARY_MODEL: ${COMMERCIAL_OLLAMA_PRIMARY_MODEL:-qwen3:8b}
+      COMMERCIAL_OLLAMA_FALLBACK_MODEL: ${COMMERCIAL_OLLAMA_FALLBACK_MODEL:-gemma3:4b}
+      COMMERCIAL_OLLAMA_TIMEOUT_SECONDS: ${COMMERCIAL_OLLAMA_TIMEOUT_SECONDS:-180}
+      COMMERCIAL_RAG_UPLOAD_ROOT: /app/data/commercial/rag/uploads
     volumes:
       - ${GRIDVISION_DATA_DIR:?Set GRIDVISION_DATA_DIR}/mlflow:/mlflow:ro
       - ${GRIDVISION_DATA_DIR:?Set GRIDVISION_DATA_DIR}/gold:/data/gold:ro
@@ -210,9 +219,12 @@ services:
       - ./models/anomaly_prediction:/models/anomaly_prediction:ro
       - ./reports/anomaly_prediction:/reports/anomaly_prediction
       - ./docs/customer_segmentation/reports:/docs/customer_segmentation/reports:ro
+      - ./docs/ai_commercial:/app/docs/ai_commercial:ro
+      - ${GRIDVISION_DATA_DIR:?Set GRIDVISION_DATA_DIR}/commercial/rag:/app/data/commercial/rag
       - ./models/segmentation:/models/segmentation:ro
       - ./models/commercial:/models/commercial:ro
       - ./models/customer_bill_prediction.metadata.json:/models/customer_bill_prediction.metadata.json:ro
+      - ./key_vault/tavily/api.key:/run/secrets/tavily_api_key:ro
       - ${GRIDVISION_LOG_DIR:-./logs}:/logs
     ports:
       - "127.0.0.1:${GRIDVISION_BACKEND_HOST_PORT:-5000}:5000"

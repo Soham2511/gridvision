@@ -16,7 +16,7 @@ mlflow==2.22.0
 lightgbm>=4.3,<5
 joblib>=1.4,<2
 dill>=0.3.1.1
-numpy>=1.26,<3
+numpy==1.26.4
 pandas==2.1.4
 scikit-learn==1.6.1
 pyarrow==16.1.0
@@ -29,7 +29,33 @@ jupyter
 # group: tests
 pytest>=8.0.0
 pytest-cov>=5.0.0
-Flask-Cors
+
+# group: commercial-agent
+langgraph>=1.0,<2.0
+pypdf>=5,<7
+
+# group: commercial-mcp
+mcp>=1.28,<2
+
+# group: commercial-rag-ocr
+pypdfium2>=4.30,<6
+pytesseract>=0.3.13,<1
+Pillow>=10,<12
+
+# group: commercial-rag-docling
+docling>=2,<3
+
+# group: commercial-rag-vector
+fastembed>=0.7,<1
+
+# group: commercial-rag-neo4j
+neo4j>=5,<7
+
+# group: commercial-optimizer
+ortools>=9.10,<10
+
+# group: commercial-tracing
+langsmith>=0.3,<1
 
 # group: agent
 langgraph==1.2.19
@@ -38,3 +64,4 @@ langchain-huggingface>=1.0,<2.0
 
 # group: report-generator
 reportlab>=4.2,<5
+

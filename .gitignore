@@ -79,6 +79,7 @@ frontend/dist/
 key_vault/**/*.key
 frontend/.env
 *.local
+/key_vault/
 
 # IDE & OS files
 .vscode/

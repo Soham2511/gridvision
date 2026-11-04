@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import logging
+import os
 import time
 import uuid
+from pathlib import Path
 
 from flask import Flask, Response, g, jsonify, request
 from flask_cors import CORS
@@ -40,6 +42,10 @@ from data_retrieval_agent.config import AgentSettings
 from report_generator.services.llm_provider import provider_from_environment
 from report_generator.services.report_generator import JSONReportGenerator
 from report_generator.storage.report_storage import ReportRepository
+from ai.commercial.graph import build_commercial_graph
+from ai.commercial.approvals import ScheduleApprovalStore
+from ai.commercial.config.settings import CommercialSettings
+from ai.commercial.tools.document_rag_tools import DocumentRAGCommercialTools
 
 
 def create_app(config_class: type[BaseConfig] | None = None) -> Flask:
@@ -77,6 +83,7 @@ def create_app(config_class: type[BaseConfig] | None = None) -> Flask:
 
     # Initialize logging
     setup_logging()
+    app.config.setdefault("MAX_CONTENT_LENGTH", 26 * 1024 * 1024)
 
     @app.before_request
     def start_request_log() -> None:
@@ -107,6 +114,7 @@ def create_app(config_class: type[BaseConfig] | None = None) -> Flask:
         app,
         resources={r"/api/*": {"origins": app.config.get("CORS_ORIGINS", "*")}},
         supports_credentials=True,
+        expose_headers=["X-Request-ID"],
     )
 
     # Select providers explicitly. Test fixtures are never runtime fallbacks.
@@ -224,6 +232,29 @@ def create_app(config_class: type[BaseConfig] | None = None) -> Flask:
         project_root=app.config["PROJECT_ROOT"],
         runs_path=app.config["ANOMALY_RUNS_PATH"],
     )
+    commercial_settings = CommercialSettings.from_env()
+    commercial_tools = DocumentRAGCommercialTools(
+        commercial_settings.rag_documents,
+        settings=commercial_settings,
+    )
+    commercial_workflow = build_commercial_graph(
+        tools=commercial_tools,
+        settings=commercial_settings,
+    )
+    commercial_schedule_approvals = ScheduleApprovalStore(
+        Path(
+            os.getenv(
+                "COMMERCIAL_APPROVAL_DB_PATH",
+                str(
+                    app.config["PROJECT_ROOT"]
+                    / "data"
+                    / "commercial"
+                    / "rag"
+                    / "schedule_approvals.sqlite3"
+                ),
+            )
+        ).expanduser()
+    )
 
     # Attach to app extensions
     app.extensions["data_provider"] = data_provider
@@ -257,6 +288,41 @@ def create_app(config_class: type[BaseConfig] | None = None) -> Flask:
     app.extensions["commercial_silver_history_service"] = commercial_silver_history_svc
     app.extensions["government_segmentation_service"] = government_segmentation_svc
     app.extensions["anomaly_prediction_service"] = anomaly_prediction_svc
+    app.extensions["commercial_workflow"] = commercial_workflow
+    app.extensions["commercial_rag_retriever"] = commercial_tools.retriever
+    app.extensions["commercial_schedule_approvals"] = (
+        commercial_schedule_approvals
+    )
+
+    retrieval_settings = AgentSettings.from_env()
+    app.extensions["data_retrieval_agent"] = DataRetrievalAgent(
+        settings=retrieval_settings,
+        services={
+            "customer_bill_prediction_service": customer_bill_prediction_svc,
+            "customer_silver_history_service": customer_silver_history_svc,
+            "commercial_silver_history_service": commercial_silver_history_svc,
+            "commercial_history_provider": commercial_history_provider,
+            "model_provider": model_provider,
+            "government_segmentation_service": government_segmentation_svc,
+            "anomaly_prediction_service": anomaly_prediction_svc,
+            "customer_gold_path": app.config["CUSTOMER_GOLD_DATASET_PATH"],
+            "customer_silver_path": app.config["CUSTOMER_SILVER_DATASET_PATH"],
+            "customer_silver_metadata_path": app.config["CUSTOMER_SILVER_METADATA_PATH"],
+            "commercial_silver_path": app.config["COMMERCIAL_SILVER_DATASET_PATH"],
+            "commercial_silver_metadata_path": app.config["COMMERCIAL_SILVER_METADATA_PATH"],
+            "customer_metadata_path": app.config["CUSTOMER_MODEL_METADATA_PATH"],
+            "commercial_gold_path": app.config["COMMERCIAL_FORECAST_DATA_PATH"],
+            "commercial_metadata_path": app.config["COMMERCIAL_GOLD_METADATA_PATH"],
+            "government_data_path": app.config["GOVERNMENT_FORECAST_DATA_PATH"],
+            "segmentation_output_dir": app.config["SEGMENTATION_OUTPUT_DIR"],
+            "anomaly_dataset_path": app.config["ANOMALY_DATASET_PATH"],
+            "anomaly_model_path": app.config["ANOMALY_MODEL_PATH"],
+        },
+        approved_sources=set(app.config.get("APPROVED_DATA_SOURCES", ())),
+    )
+    retrieval_identity_resolver = app.config.get("DATA_RETRIEVAL_IDENTITY_RESOLVER")
+    if callable(retrieval_identity_resolver):
+        app.extensions["data_retrieval_identity_resolver"] = retrieval_identity_resolver
 
     retrieval_settings = AgentSettings.from_env()
     app.extensions["data_retrieval_agent"] = DataRetrievalAgent(
@@ -312,6 +378,11 @@ def create_app(config_class: type[BaseConfig] | None = None) -> Flask:
                 "anomalies": f"{app.config.get('API_PREFIX')}/anomalies",
                 "customers": f"{app.config.get('API_PREFIX')}/customers/segmentation-matrix",
                 "insights": f"{app.config.get('API_PREFIX')}/energy-insights",
+                "commercial_workflow": f"{app.config.get('API_PREFIX')}/commercial/workflow",
+                "commercial_schedule_approval": (
+                    f"{app.config.get('API_PREFIX')}/commercial/schedules/"
+                    "<proposal_id>/approval"
+                ),
                 "government_segmentation": f"{app.config.get('API_PREFIX')}/government/segmentation/overview",
             },
         })

@@ -8,15 +8,17 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends libgomp1 \
+    && apt-get install -y --no-install-recommends libgomp1 tesseract-ocr \
     && rm -rf /var/lib/apt/lists/*
 COPY requirements.txt ./requirements.txt
 COPY scripts/filter_requirements.py ./scripts/filter_requirements.py
-RUN python scripts/filter_requirements.py requirements.txt /tmp/backend-requirements.txt --groups backend model-serving agent report-generator \
+RUN python scripts/filter_requirements.py requirements.txt /tmp/backend-requirements.txt --groups backend model-serving agent report-generator commercial-agent commercial-optimizer commercial-rag-ocr commercial-rag-docling commercial-rag-neo4j \
     && pip install --no-cache-dir -r /tmp/backend-requirements.txt
 COPY backend/app ./app
 COPY backend/report_generator ./report_generator
 COPY data_retrieval_agent ./data_retrieval_agent
+COPY ai ./ai
+COPY docs/ai_commercial ./docs/ai_commercial
 COPY training ./training
 COPY backend/run.py ./run.py
 
