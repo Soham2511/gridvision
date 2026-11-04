@@ -73,6 +73,7 @@ frontend/dist/
 !**/.env.example
 frontend/.env
 *.local
+/key_vault/
 
 # IDE & OS files
 .vscode/

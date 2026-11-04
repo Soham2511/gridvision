@@ -14,17 +14,30 @@ export interface ApiResponse<T = unknown> {
   };
 }
 
+export interface ApiCredentials {
+  username: string;
+  password: string;
+}
+
 export class ApiClientError extends Error {
   public code: string;
   public status: number;
   public details?: unknown;
+  public requestId?: string;
 
-  constructor(message: string, code = 'API_ERROR', status = 500, details?: unknown) {
+  constructor(
+    message: string,
+    code = 'API_ERROR',
+    status = 500,
+    details?: unknown,
+    requestId?: string,
+  ) {
     super(message);
     this.name = 'ApiClientError';
     this.code = code;
     this.status = status;
     this.details = details;
+    this.requestId = requestId;
   }
 }
 
@@ -65,13 +78,23 @@ class ApiClient {
     options: RequestInit = {},
     params?: Record<string, string | number | boolean | undefined | null>,
     timeoutMs = 15000,
+    credentials?: ApiCredentials,
   ): Promise<T> {
     const fullUrl = this.buildUrl(path, params);
     const headers: Record<string, string> = {
       Accept: 'application/json',
-      'Content-Type': 'application/json',
       ...((options.headers as Record<string, string>) || {}),
     };
+    if (!(options.body instanceof FormData) && !headers['Content-Type']) {
+      headers['Content-Type'] = 'application/json';
+    }
+    if (credentials) {
+      const encoded = new TextEncoder().encode(
+        `${credentials.username}:${credentials.password}`,
+      );
+      const binary = Array.from(encoded, (byte) => String.fromCharCode(byte)).join('');
+      headers.Authorization = `Basic ${btoa(binary)}`;
+    }
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -94,7 +117,13 @@ class ApiClient {
           body?.error?.message ||
           `Request failed with status ${response.status} (${response.statusText})`;
         const errorCode = body?.error?.code || `HTTP_${response.status}`;
-        throw new ApiClientError(errorMsg, errorCode, response.status, body?.error?.details);
+        throw new ApiClientError(
+          errorMsg,
+          errorCode,
+          response.status,
+          body?.error?.details,
+          response.headers.get('X-Request-ID') || undefined,
+        );
       }
 
       if (body && typeof body === 'object' && 'data' in body) {
@@ -156,6 +185,65 @@ class ApiClient {
       },
       undefined,
       timeoutMs,
+    );
+  }
+
+  public async postAuthenticated<T>(
+    path: string,
+    body: unknown,
+    credentials: ApiCredentials,
+    timeoutMs = 15000,
+  ): Promise<T> {
+    return this.request<T>(
+      path,
+      { method: 'POST', body: JSON.stringify(body) },
+      undefined,
+      timeoutMs,
+      credentials,
+    );
+  }
+
+  public async postLongAuthenticated<T>(
+    path: string,
+    body: unknown,
+    credentials: ApiCredentials,
+    timeoutMs = 300000,
+  ): Promise<T> {
+    return this.request<T>(
+      path,
+      { method: 'POST', body: JSON.stringify(body) },
+      undefined,
+      timeoutMs,
+      credentials,
+    );
+  }
+
+  public async getAuthenticated<T>(
+    path: string,
+    credentials: ApiCredentials,
+  ): Promise<T> {
+    return this.request<T>(
+      path,
+      { method: 'GET' },
+      undefined,
+      15000,
+      credentials,
+    );
+  }
+
+  public async uploadAuthenticated<T>(
+    path: string,
+    file: File,
+    credentials: ApiCredentials,
+  ): Promise<T> {
+    const formData = new FormData();
+    formData.append('file', file);
+    return this.request<T>(
+      path,
+      { method: 'POST', body: formData },
+      undefined,
+      300000,
+      credentials,
     );
   }
 

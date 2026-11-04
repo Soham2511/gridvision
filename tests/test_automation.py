@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import json
 import io
 import subprocess
-import json
 from datetime import datetime
+from pathlib import Path
 
 import pytest
 import pyarrow as pa
@@ -49,6 +50,237 @@ def test_compose_command_includes_stdout_when_compose_is_unavailable(
     assert "docker compose version" in message
     assert "exit code: 1" in message
     assert "Enable Docker Desktop WSL integration for this distro." in message
+
+
+def test_compose_streams_plain_progress_and_output_to_terminal(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    calls: list[tuple[list[str], dict[str, object]]] = []
+
+    def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess:
+        calls.append((command, kwargs))
+        print("Build step 1/3: installing dependencies")
+        return subprocess.CompletedProcess(command, returncode=0)
+
+    monkeypatch.setattr(automation.subprocess, "run", fake_run)
+
+    automation._compose(
+        ["docker", "compose"],
+        ["up", "--build", "-d", "mlflow"],
+        {"EXISTING_SETTING": "preserved"},
+    )
+
+    command, options = calls[0]
+    assert command == [
+        "docker",
+        "compose",
+        "--progress=plain",
+        "up",
+        "--build",
+        "-d",
+        "mlflow",
+    ]
+    assert "capture_output" not in options
+    assert options["env"]["COMPOSE_PROGRESS"] == "plain"
+    assert options["env"]["EXISTING_SETTING"] == "preserved"
+    output = capsys.readouterr().out
+    assert "[COMMAND] docker compose --progress=plain up --build -d mlflow" in output
+    assert "Build step 1/3: installing dependencies" in output
+
+
+def test_compose_failure_points_to_streamed_output(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        automation.subprocess,
+        "run",
+        lambda command, **kwargs: subprocess.CompletedProcess(
+            command, returncode=1
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="See streamed command output above"):
+        automation._compose(
+            ["docker", "compose"],
+            ["up", "--build", "-d", "mlflow"],
+            {},
+        )
+
+
+def test_ollama_preflight_requires_both_configured_models(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def read(self, _size: int) -> bytes:
+            return json.dumps(
+                {"models": [{"name": "qwen3:8b"}, {"name": "gemma3:4b"}]}
+            ).encode()
+
+    calls = []
+
+    def fake_urlopen(url: str, timeout: int):
+        calls.append((url, timeout))
+        return FakeResponse()
+
+    monkeypatch.setattr(automation.urllib.request, "urlopen", fake_urlopen)
+
+    result = automation._verify_ollama_models(
+        "http://127.0.0.1:11434/",
+        ("qwen3:8b", "gemma3:4b"),
+    )
+
+    assert result["models"] == ["qwen3:8b", "gemma3:4b"]
+    assert calls == [("http://127.0.0.1:11434/api/tags", 5)]
+
+
+def test_ollama_preflight_shows_commands_for_missing_models(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def read(self, _size: int) -> bytes:
+            return json.dumps({"models": [{"name": "qwen3:8b"}]}).encode()
+
+    monkeypatch.setattr(
+        automation.urllib.request,
+        "urlopen",
+        lambda *_args, **_kwargs: FakeResponse(),
+    )
+
+    with pytest.raises(RuntimeError, match="ollama pull gemma3:4b"):
+        automation._verify_ollama_models(
+            "http://127.0.0.1:11434",
+            ("qwen3:8b", "gemma3:4b"),
+        )
+
+
+def test_local_setting_prefers_process_environment(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    monkeypatch.setattr(automation, "PROJECT_ROOT", tmp_path)
+    (tmp_path / ".env").write_text(
+        "COMMERCIAL_OLLAMA_PRIMARY_MODEL=gemma3:4b\n",
+        encoding="utf-8",
+    )
+
+    assert automation._local_setting(
+        "COMMERCIAL_OLLAMA_PRIMARY_MODEL",
+        "qwen3:8b",
+        {"COMMERCIAL_OLLAMA_PRIMARY_MODEL": "qwen3:8b"},
+    ) == "qwen3:8b"
+    assert automation._local_setting(
+        "COMMERCIAL_OLLAMA_PRIMARY_MODEL",
+        "default",
+        {},
+    ) == "gemma3:4b"
+
+
+def test_streaming_command_prints_output_as_it_is_received(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    calls: list[dict[str, object]] = []
+
+    class FakeProcess:
+        stdout = iter(("model fit started\n", "model fit complete\n"))
+
+        def wait(self) -> int:
+            return 0
+
+    def fake_popen(command: list[str], **kwargs: object) -> FakeProcess:
+        calls.append(kwargs)
+        return FakeProcess()
+
+    monkeypatch.setattr(automation.subprocess, "Popen", fake_popen)
+
+    result = automation._run_streaming_command(["python", "train.py"], {"A": "B"})
+
+    assert result.returncode == 0
+    assert result.stdout == "model fit started\nmodel fit complete\n"
+    assert "model fit started\nmodel fit complete\n" == capsys.readouterr().out
+    assert calls[0]["env"]["PYTHONUNBUFFERED"] == "1"
+    assert calls[0]["stderr"] == subprocess.STDOUT
+
+
+def test_wsl_staged_build_context_includes_commercial_backend_inputs(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path,
+) -> None:
+    class WSLProjectRoot:
+        def __truediv__(self, path: str):
+            return tmp_path / path
+
+        def as_posix(self) -> str:
+            return "/mnt/d/GridVision"
+
+    monkeypatch.setattr(automation.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(automation, "PROJECT_ROOT", WSLProjectRoot())
+    for filename in (
+        "Dockerfile.backend",
+        "Dockerfile.airflow",
+        "Dockerfile.frontend",
+        "requirements.txt",
+        "scripts/filter_requirements.py",
+        "backend/run.py",
+        "training/__init__.py",
+        "frontend/package.json",
+        "frontend/package-lock.json",
+        "frontend/index.html",
+        "frontend/nginx.conf",
+        "frontend/vite.config.ts",
+        "frontend/tsconfig.json",
+        "frontend/tsconfig.app.json",
+        "frontend/tsconfig.node.json",
+        "ai/commercial/graph.py",
+        "docs/ai_commercial/demo.md",
+    ):
+        source = tmp_path / filename
+        source.parent.mkdir(parents=True, exist_ok=True)
+        source.write_text("test", encoding="utf-8")
+    for directory in (
+        "backend/app",
+        "training/commercial_forecast",
+        "training/government_load",
+        "training/anomaly_prediction",
+        "training/customer_segmentation",
+        "airflow",
+        "frontend/src",
+        "frontend/public",
+    ):
+        (tmp_path / directory).mkdir(parents=True, exist_ok=True)
+    (tmp_path / "ai" / "commercial" / "__pycache__").mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+    (tmp_path / "ai" / "commercial" / "__pycache__" / "graph.pyc").write_bytes(
+        b"cache"
+    )
+
+    staged = automation._stage_wsl_build_context()
+
+    assert staged is not None
+    try:
+        build_root = Path(staged.name)
+        assert (build_root / "ai" / "commercial" / "graph.py").is_file()
+        assert (build_root / "docs" / "ai_commercial" / "demo.md").is_file()
+        assert not (
+            build_root / "ai" / "commercial" / "__pycache__"
+        ).exists()
+    finally:
+        staged.cleanup()
 
 
 def test_segmentation_defaults_are_memory_constrained(
@@ -267,6 +499,7 @@ def test_main_keeps_complete_airflow_command_on_macos(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path,
 ) -> None:
+    monkeypatch.setenv("COMMERCIAL_LLM_PROVIDER", "mock")
     source_path = tmp_path / "training_sample.parquet"
     source_path.touch()
     monkeypatch.setattr(automation.platform, "system", lambda: "Darwin")
@@ -499,6 +732,11 @@ def test_segmentation_dag_paths_use_bronze_source_and_published_output_dir(
         "GRIDVISION_DATA_DIR": str(data_root),
         "SEGMENTATION_SOURCE_PATH": str(source),
         "SEGMENTATION_OUTPUT_DIR": str(output_dir),
+        "SEGMENTATION_FEATURE_PATH": str(
+            data_root / "gold" / "customer_segmentation_features.parquet"
+        ),
+        "SEGMENTATION_MODEL_DIR": str(tmp_path / "models"),
+        "SEGMENTATION_REPORTS_DIR": str(tmp_path / "reports"),
     }
 
     inputs, outputs = automation._dag_dataset_paths(
@@ -507,7 +745,12 @@ def test_segmentation_dag_paths_use_bronze_source_and_published_output_dir(
 
     assert inputs == [source.resolve()]
     assert output_dir / "consumer_assignments.parquet" in outputs
-    assert output_dir / "reports" / "geospatial_summary.json" in outputs
+    assert (
+        data_root / "gold" / "customer_segmentation_features.parquet"
+    ).resolve() in outputs
+    assert (tmp_path / "models" / "residential_model.joblib").resolve() not in outputs
+    assert (tmp_path / "reports" / "geospatial_summary.json").resolve() in outputs
+    assert output_dir / "building_features.parquet" not in outputs
 
 
 def test_segmentation_dag_runs_when_published_outputs_are_missing(
@@ -521,6 +764,11 @@ def test_segmentation_dag_runs_when_published_outputs_are_missing(
         "GRIDVISION_DATA_DIR": str(data_root),
         "SEGMENTATION_SOURCE_PATH": str(source),
         "SEGMENTATION_OUTPUT_DIR": str(data_root / "segmentation"),
+        "SEGMENTATION_FEATURE_PATH": str(
+            data_root / "gold" / "customer_segmentation_features.parquet"
+        ),
+        "SEGMENTATION_MODEL_DIR": str(tmp_path / "models"),
+        "SEGMENTATION_REPORTS_DIR": str(tmp_path / "reports"),
     }
     calls: list[str] = []
 
@@ -555,8 +803,11 @@ def test_segmentation_dag_adopts_complete_current_outputs_without_running(
     source.parent.mkdir(parents=True)
     source.write_bytes(b"bronze source")
     output_dir = data_root / "segmentation"
-    reports = output_dir / "reports"
+    reports = tmp_path / "reports"
     reports.mkdir(parents=True)
+    feature_path = data_root / "gold" / "customer_segmentation_features.parquet"
+    model_dir = tmp_path / "models"
+    output_dir.mkdir(parents=True)
     source_stat = source.stat()
     (reports / "source_profile.json").write_text(
         json.dumps(
@@ -579,6 +830,9 @@ def test_segmentation_dag_adopts_complete_current_outputs_without_running(
             "GRIDVISION_DATA_DIR": str(data_root),
             "SEGMENTATION_SOURCE_PATH": str(source),
             "SEGMENTATION_OUTPUT_DIR": str(output_dir),
+            "SEGMENTATION_FEATURE_PATH": str(feature_path),
+            "SEGMENTATION_MODEL_DIR": str(model_dir),
+            "SEGMENTATION_REPORTS_DIR": str(reports),
         },
     )
     for output in outputs:
@@ -604,6 +858,9 @@ def test_segmentation_dag_adopts_complete_current_outputs_without_running(
         "GRIDVISION_DATA_DIR": str(data_root),
         "SEGMENTATION_SOURCE_PATH": str(source),
         "SEGMENTATION_OUTPUT_DIR": str(output_dir),
+        "SEGMENTATION_FEATURE_PATH": str(feature_path),
+        "SEGMENTATION_MODEL_DIR": str(model_dir),
+        "SEGMENTATION_REPORTS_DIR": str(reports),
     }
 
     result = automation._run_airflow_dag_if_dataset_changed(
@@ -829,13 +1086,13 @@ def test_commercial_workflow_runs_dag_before_training(monkeypatch, tmp_path) -> 
             output.write_bytes(b"generated")
         return {"dag_id": dag_id}
 
-    def fake_run(command, **kwargs):
+    def fake_run(command, env):
         calls.append("training")
         assert command[-1].endswith("mlflow\\commercial\\train_and_log.py") or command[-1].endswith("mlflow/commercial/train_and_log.py")
         return subprocess.CompletedProcess(command, 0, stdout='{"promotion_passed": true}', stderr="")
 
     monkeypatch.setattr(automation, "_run_airflow_dag_test", fake_dag)
-    monkeypatch.setattr(automation.subprocess, "run", fake_run)
+    monkeypatch.setattr(automation, "_run_streaming_command", fake_run)
     result = automation._run_commercial_workflow(["airflow"], {"GRIDVISION_DATA_DIR": str(tmp_path)})
     assert calls == [f"dag:{automation.COMMERCIAL_DAG_ID}", "training"]
     assert result["prepared_data"]["dag_id"] == automation.COMMERCIAL_DAG_ID
@@ -855,12 +1112,12 @@ def test_commercial_reuse_skips_dag_but_trains(monkeypatch, tmp_path) -> None:
     def unexpected_dag(*args, **kwargs):
         raise AssertionError("DAG should be skipped when reusing prepared data")
 
-    def fake_run(command, **kwargs):
+    def fake_run(command, env):
         calls.append("training")
         return subprocess.CompletedProcess(command, 0, stdout="trained", stderr="")
 
     monkeypatch.setattr(automation, "_run_airflow_dag_test", unexpected_dag)
-    monkeypatch.setattr(automation.subprocess, "run", fake_run)
+    monkeypatch.setattr(automation, "_run_streaming_command", fake_run)
     result = automation._run_commercial_workflow(["airflow"], env, skip_data_pipeline=True)
     assert calls == ["training"]
     assert result["prepared_data"]["gold"] == str(gold)

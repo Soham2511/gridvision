@@ -1,22 +1,22 @@
 {
-  "airflow_run_id": "manual__2026-11-01T19:08:16+00:00",
-  "completed_at_utc": "2026-11-01T19:18:52.155497+00:00",
+  "airflow_run_id": "manual__2026-11-03T00:00:00+00:00",
+  "completed_at_utc": "2026-11-03T11:34:48.222250+00:00",
   "dag_id": "government_customer_segmentation",
   "feature_generation": {
-    "eligible_buildings": 50000,
+    "eligible_buildings": 5034,
     "excluded_low_coverage_buildings": 0,
-    "feature_path": "/opt/gridvision/data/segmentation/building_features.parquet",
-    "feature_rows": 50000,
+    "feature_path": "/mnt/d/GridVision/data/gold/customer_segmentation_features.parquet",
+    "feature_rows": 5034,
     "minimum_observed_coverage": 0.9583333333333334,
     "observation_end_exclusive": "2019-01-01 00:00:00",
     "observation_start": "2018-01-01 00:00:00"
   },
   "geospatial": {
-    "coarse_region_segment_rows": 284,
-    "finer_region_segment_rows": 17335,
+    "coarse_region_segment_rows": 169,
+    "finer_region_segment_rows": 4272,
     "priority_limitations": "Priority is based on building-consumption features only; it does not indicate transformer overload, voltage instability, or network inadequacy.",
-    "survey_priority_regions": 53,
-    "survey_priority_rows": 129,
+    "survey_priority_regions": 49,
+    "survey_priority_rows": 109,
     "target_segments": [],
     "weights": {
       "consumption_variability": 0.3,
@@ -24,7 +24,7 @@
       "target_segment_concentration": 0.4
     }
   },
-  "logical_date": "2026-11-01 19:08:16+00:00",
+  "logical_date": "2026-11-03 00:00:00+00:00",
   "mlflow": {
     "experiment": "gridvision-government-customer-segmentation",
     "models": [
@@ -41,47 +41,46 @@
       {
         "model_category": "Residential",
         "registered_model_name": "gridvision-government-customer-segmentation-residential",
-        "version": "1"
+        "version": "2"
       },
       {
         "model_category": "SHARED_SMALL_CATEGORIES",
         "registered_model_name": "gridvision-government-customer-segmentation-shared_small_categories",
-        "version": "1"
+        "version": "2"
       }
     ],
-    "run_id": "5440210c946f44f7a605245ee2b57f22"
+    "run_id": "2ef4b798b2344f03add1efc697654b7d"
   },
   "models": {
-    "assignment_count": 50000,
+    "assignment_count": 5034,
     "model_count": 4,
-    "model_version": "segmentation-v1-20261101T191639Z",
+    "model_version": "segmentation-v1-20261103T112548Z",
     "models": [
       {
         "algorithm": "kmeans",
         "evaluation": {
           "algorithm": "kmeans",
-          "calinski_harabasz": 1403.2238190463804,
-          "cluster_count": 3,
+          "calinski_harabasz": 145.78207681485068,
+          "cluster_count": 2,
           "cluster_size_distribution": {
-            "0": 44,
-            "1": 1398,
-            "2": 143
+            "0": 150,
+            "1": 20
           },
-          "davies_bouldin": 0.4969216357381369,
-          "k": 3,
-          "largest_cluster_size": 1398,
-          "mean_selection_rank": 4.8,
+          "davies_bouldin": 0.8223281635180234,
+          "k": 2,
+          "largest_cluster_size": 150,
+          "mean_selection_rank": 1.0,
           "selection_rank_components": {
-            "calinski_harabasz": 14,
+            "calinski_harabasz": 1,
             "davies_bouldin": 1,
-            "silhouette": 3,
-            "smallest_cluster_share": 4,
-            "stability_ari": 2
+            "silhouette": 1,
+            "smallest_cluster_share": 1,
+            "stability_ari": 1
           },
-          "silhouette": 0.6483896115172101,
-          "silhouette_sample_size": 1585,
-          "smallest_cluster_share": 0.0277602523659306,
-          "smallest_cluster_size": 44,
+          "silhouette": 0.6812660055190142,
+          "silhouette_sample_size": 170,
+          "smallest_cluster_share": 0.11764705882352941,
+          "smallest_cluster_size": 20,
           "stability_ari": 1.0,
           "valid": true
         },
@@ -91,29 +90,27 @@
         "algorithm": "kmeans",
         "evaluation": {
           "algorithm": "kmeans",
-          "calinski_harabasz": 36570.727971497174,
-          "cluster_count": 4,
+          "calinski_harabasz": 4643.117610814386,
+          "cluster_count": 2,
           "cluster_size_distribution": {
-            "0": 124,
-            "1": 425,
-            "2": 170,
-            "3": 100
+            "0": 64,
+            "1": 13
           },
-          "davies_bouldin": 0.3292265934463334,
-          "k": 4,
-          "largest_cluster_size": 425,
-          "mean_selection_rank": 3.8,
+          "davies_bouldin": 0.053827641953944634,
+          "k": 2,
+          "largest_cluster_size": 64,
+          "mean_selection_rank": 2.0,
           "selection_rank_components": {
-            "calinski_harabasz": 4,
-            "davies_bouldin": 3,
-            "silhouette": 4,
-            "smallest_cluster_share": 5,
-            "stability_ari": 3
+            "calinski_harabasz": 6,
+            "davies_bouldin": 1,
+            "silhouette": 1,
+            "smallest_cluster_share": 1,
+            "stability_ari": 1
           },
-          "silhouette": 0.792919292255725,
-          "silhouette_sample_size": 819,
-          "smallest_cluster_share": 0.1221001221001221,
-          "smallest_cluster_size": 100,
+          "silhouette": 0.952769865237081,
+          "silhouette_sample_size": 77,
+          "smallest_cluster_share": 0.16883116883116883,
+          "smallest_cluster_size": 13,
           "stability_ari": 1.0,
           "valid": true
         },
@@ -123,15 +120,15 @@
         "algorithm": "kmeans",
         "evaluation": {
           "algorithm": "kmeans",
-          "calinski_harabasz": 54589.04492425245,
+          "calinski_harabasz": 5965.493858897981,
           "cluster_count": 2,
           "cluster_size_distribution": {
-            "0": 39426,
-            "1": 8142
+            "0": 3816,
+            "1": 943
           },
-          "davies_bouldin": 0.7251506187737096,
+          "davies_bouldin": 0.7376706558784488,
           "k": 2,
-          "largest_cluster_size": 39426,
+          "largest_cluster_size": 3816,
           "mean_selection_rank": 1.2,
           "selection_rank_components": {
             "calinski_harabasz": 1,
@@ -140,10 +137,10 @@
             "smallest_cluster_share": 2,
             "stability_ari": 1
           },
-          "silhouette": 0.6155229429216802,
-          "silhouette_sample_size": 5000,
-          "smallest_cluster_share": 0.17116548940464177,
-          "smallest_cluster_size": 8142,
+          "silhouette": 0.6093468650505975,
+          "silhouette_sample_size": 4759,
+          "smallest_cluster_share": 0.19815087203193948,
+          "smallest_cluster_size": 943,
           "stability_ari": 1.0,
           "valid": true
         },
@@ -153,13 +150,13 @@
         "algorithm": "kmeans",
         "evaluation": {
           "algorithm": "kmeans",
-          "calinski_harabasz": 45.94535751953945,
+          "calinski_harabasz": 45.94664169575778,
           "cluster_count": 2,
           "cluster_size_distribution": {
             "0": 7,
             "1": 21
           },
-          "davies_bouldin": 0.6538169070738088,
+          "davies_bouldin": 0.6538099555284315,
           "k": 2,
           "largest_cluster_size": 21,
           "mean_selection_rank": 1.4,
@@ -170,7 +167,7 @@
             "smallest_cluster_share": 1,
             "stability_ari": 1
           },
-          "silhouette": 0.6717123430504051,
+          "silhouette": 0.6717209900665395,
           "silhouette_sample_size": 28,
           "smallest_cluster_share": 0.25,
           "smallest_cluster_size": 7,
@@ -182,29 +179,31 @@
     ]
   },
   "output_validation": {
-    "assignment_count": 50000,
+    "assignment_count": 5034,
+    "feature_path": "/mnt/d/GridVision/data/gold/customer_segmentation_features.parquet",
     "model_categories": [
       "Commercial",
       "Industrial",
       "Residential",
       "SHARED_SMALL_CATEGORIES"
     ],
-    "model_version": "segmentation-v1-20261101T191639Z",
-    "output_dir": "/opt/gridvision/data/segmentation",
+    "model_dir": "/mnt/d/GridVision/models/segmentation",
+    "model_version": "segmentation-v1-20261103T112548Z",
+    "output_dir": "/mnt/d/GridVision/data/segmentation",
     "parquet_row_counts": {
-      "building_features.parquet": 50000,
-      "cluster_daily_profile.parquet": 84,
-      "cluster_hourly_profile.parquet": 276,
-      "cluster_monthly_profile.parquet": 144,
-      "cluster_profiles.parquet": 11,
-      "consumer_assignments.parquet": 50000,
-      "region_summary_coarse.parquet": 284,
-      "region_summary_finer.parquet": 17335,
-      "segment_distribution.parquet": 12,
-      "survey_priority.parquet": 129
+      "cluster_daily_profile.parquet": 63,
+      "cluster_hourly_profile.parquet": 207,
+      "cluster_monthly_profile.parquet": 108,
+      "cluster_profiles.parquet": 8,
+      "consumer_assignments.parquet": 5034,
+      "customer_segmentation_features.parquet": 5034,
+      "region_summary_coarse.parquet": 169,
+      "region_summary_finer.parquet": 4272,
+      "segment_distribution.parquet": 9,
+      "survey_priority.parquet": 109
     },
+    "reports_dir": "/mnt/d/GridVision/docs/customer_segmentation/reports",
     "required_outputs": [
-      "building_features.parquet",
       "consumer_assignments.parquet",
       "cluster_profiles.parquet",
       "segment_distribution.parquet",
@@ -214,22 +213,17 @@
       "cluster_hourly_profile.parquet",
       "cluster_daily_profile.parquet",
       "cluster_monthly_profile.parquet",
-      "model_metadata.json",
-      "model_selection_report.json",
-      "feature_diagnostics.json",
-      "reports/source_profile.json",
-      "reports/feature_generation.json",
-      "reports/geospatial_summary.json"
+      "model_metadata.json"
     ],
     "status": "complete",
     "unassigned_feature_buildings": 0
   },
   "source_profile": {
-    "distinct_buildings": 50000,
+    "distinct_buildings": 5034,
     "distinct_timestamps": 8395,
     "duplicate_building_timestamp_rows": 0,
-    "profile_path": "/opt/gridvision/data/segmentation/reports/source_profile.json",
-    "row_count": 419750000,
+    "profile_path": "/mnt/d/GridVision/docs/customer_segmentation/reports/source_profile.json",
+    "row_count": 42260430,
     "timestamp_max": "2018-12-31 23:00:00",
     "timestamp_min": "2018-01-01 01:00:00"
   },

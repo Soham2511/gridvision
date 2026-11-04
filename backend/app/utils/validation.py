@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
+from ai.commercial.schemas.optimization import ScheduleInput
 
 
 class PredictionRequestModel(BaseModel):
@@ -46,3 +47,27 @@ class AssistantChatRequestModel(BaseModel):
     prompt: str = Field(..., min_length=1, max_length=2000)
     persona: Literal["household", "commercial", "government"] = "household"
     entity_id: str | None = None
+
+
+class CommercialWorkflowRequestModel(BaseModel):
+    """Public request contract for the Commercial multi-agent workflow."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    request_id: str | None = Field(default=None, min_length=1, max_length=128)
+    factory_id: str | None = Field(default=None, min_length=1, max_length=128)
+    building_id: str | None = Field(
+        default=None,
+        pattern=r"^[1-9][0-9]{0,15}$",
+    )
+    user_goal: str = Field(min_length=1, max_length=2000)
+    optimization_inputs: ScheduleInput | None = None
+
+
+class ScheduleApprovalRequestModel(BaseModel):
+    """Demo-user decision for an immutable optimized schedule proposal."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    decision: Literal["approved", "rejected"]
+    note: str | None = Field(default=None, max_length=1000)

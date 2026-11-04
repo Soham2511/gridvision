@@ -1,6 +1,6 @@
 {
   "building_coverage_and_mapping": {
-    "building_groups_including_null_id": 50000,
+    "building_groups_including_null_id": 5034,
     "buildings_with_inconsistent_categories": 0,
     "buildings_with_multiple_coarse_grids": 0,
     "buildings_with_multiple_finer_grids": 0,
@@ -11,21 +11,22 @@
     "median_rows_per_building_approx": 8395,
     "minimum_rows_per_building": 8395
   },
+  "building_sample_fraction": 0.1,
   "category_values": {
     "GeneralUseType": [
       {
-        "buildings": 47568,
-        "rows": 399333360,
+        "buildings": 4759,
+        "rows": 39951805,
         "value": "Residential"
       },
       {
-        "buildings": 1585,
-        "rows": 13306075,
+        "buildings": 170,
+        "rows": 1427150,
         "value": "Commercial"
       },
       {
-        "buildings": 819,
-        "rows": 6875505,
+        "buildings": 77,
+        "rows": 646415,
         "value": "Industrial"
       },
       {
@@ -41,104 +42,54 @@
     ],
     "SpecificUseType": [
       {
-        "buildings": 40562,
-        "rows": 340517990,
+        "buildings": 4018,
+        "rows": 33731110,
         "value": "Single Family Residence"
       },
       {
-        "buildings": 3004,
-        "rows": 25218580,
+        "buildings": 310,
+        "rows": 2602450,
         "value": "Double, Duplex, or Two Units"
       },
       {
-        "buildings": 1907,
-        "rows": 16009265,
+        "buildings": 223,
+        "rows": 1872085,
         "value": "Five or More Units or Apartments (Any Combination)"
       },
       {
-        "buildings": 1053,
-        "rows": 8839935,
+        "buildings": 106,
+        "rows": 889870,
         "value": "Three Units (Any Combination)"
       },
       {
-        "buildings": 1022,
-        "rows": 8579690,
+        "buildings": 102,
+        "rows": 856290,
         "value": "Four Units  (Any Combination)"
       },
       {
-        "buildings": 499,
-        "rows": 4189105,
-        "value": "Light Manufacturing"
-      },
-      {
-        "buildings": 484,
-        "rows": 4063180,
+        "buildings": 48,
+        "rows": 402960,
         "value": "Store"
       },
       {
-        "buildings": 328,
-        "rows": 2753560,
-        "value": "Store Combination"
-      },
-      {
-        "buildings": 292,
-        "rows": 2451340,
-        "value": "Warehousing, Distribution, Storage"
-      },
-      {
-        "buildings": 229,
-        "rows": 1922455,
-        "value": "Office Building"
-      },
-      {
-        "buildings": 159,
-        "rows": 1334805,
-        "value": "Auto, Recreation Equipment, Construction Equipment Sales and Service"
-      },
-      {
-        "buildings": 113,
-        "rows": 948635,
-        "value": "Restaurant, Cocktail Lounge"
-      },
-      {
-        "buildings": 92,
-        "rows": 772340,
-        "value": "Professional Building"
-      },
-      {
-        "buildings": 43,
-        "rows": 360985,
-        "value": "Hotel and Motel"
+        "buildings": 47,
+        "rows": 394565,
+        "value": "Light Manufacturing"
       },
       {
         "buildings": 36,
         "rows": 302220,
-        "value": "Shopping Center (Neighborhood, Community)"
+        "value": "Store Combination"
       },
       {
-        "buildings": 32,
-        "rows": 268640,
-        "value": "Service Station"
+        "buildings": 29,
+        "rows": 243455,
+        "value": "Office Building"
       },
       {
         "buildings": 26,
         "rows": 218270,
-        "value": "Heavy Manufacturing"
-      },
-      {
-        "buildings": 23,
-        "rows": 193085,
-        "value": "Bank, Savings and Loan"
-      },
-      {
-        "buildings": 21,
-        "rows": 176295,
-        "value": "Supermarket"
-      },
-      {
-        "buildings": 20,
-        "rows": 167900,
-        "value": "Rooming/Boarding House"
+        "value": "Warehousing, Distribution, Storage"
       },
       {
         "buildings": 16,
@@ -146,14 +97,34 @@
         "value": "Church"
       },
       {
-        "buildings": 16,
-        "rows": 134320,
-        "value": "Shopping Center (Regional)"
+        "buildings": 15,
+        "rows": 125925,
+        "value": "Professional Building"
       },
       {
-        "buildings": 9,
-        "rows": 75555,
-        "value": "Department Store"
+        "buildings": 14,
+        "rows": 117530,
+        "value": "Restaurant, Cocktail Lounge"
+      },
+      {
+        "buildings": 10,
+        "rows": 83950,
+        "value": "Auto, Recreation Equipment, Construction Equipment Sales and Service"
+      },
+      {
+        "buildings": 5,
+        "rows": 41975,
+        "value": "Bank, Savings and Loan"
+      },
+      {
+        "buildings": 4,
+        "rows": 33580,
+        "value": "Heavy Manufacturing"
+      },
+      {
+        "buildings": 4,
+        "rows": 33580,
+        "value": "Hotel and Motel"
       },
       {
         "buildings": 4,
@@ -163,12 +134,17 @@
       {
         "buildings": 4,
         "rows": 33580,
+        "value": "Service Station"
+      },
+      {
+        "buildings": 4,
+        "rows": 33580,
         "value": "School (Private)"
       },
       {
         "buildings": 2,
         "rows": 16790,
-        "value": "Open Storage"
+        "value": "Supermarket"
       },
       {
         "buildings": 2,
@@ -178,7 +154,22 @@
       {
         "buildings": 1,
         "rows": 8395,
+        "value": "Shopping Center (Regional)"
+      },
+      {
+        "buildings": 1,
+        "rows": 8395,
+        "value": "Shopping Center (Neighborhood, Community)"
+      },
+      {
+        "buildings": 1,
+        "rows": 8395,
         "value": "Club, Lodge Hall, Fraternal Organization"
+      },
+      {
+        "buildings": 1,
+        "rows": 8395,
+        "value": "Department Store"
       },
       {
         "buildings": 1,
@@ -188,69 +179,54 @@
     ],
     "building.type": [
       {
-        "buildings": 40562,
-        "rows": 340517990,
+        "buildings": 4018,
+        "rows": 33731110,
         "value": "single-family"
       },
       {
-        "buildings": 6986,
-        "rows": 58647470,
+        "buildings": 741,
+        "rows": 6220695,
         "value": "multi-family"
       },
       {
-        "buildings": 873,
-        "rows": 7328835,
+        "buildings": 87,
+        "rows": 730365,
         "value": "retail"
       },
       {
-        "buildings": 499,
-        "rows": 4189105,
+        "buildings": 47,
+        "rows": 394565,
         "value": "light manufacturing"
       },
       {
-        "buildings": 485,
-        "rows": 4071575,
-        "value": "warehouse"
-      },
-      {
-        "buildings": 301,
-        "rows": 2526895,
+        "buildings": 43,
+        "rows": 360985,
         "value": "small office"
       },
       {
-        "buildings": 113,
-        "rows": 948635,
-        "value": "full service restaurant"
-      },
-      {
-        "buildings": 62,
-        "rows": 520490,
-        "value": "small hotel"
-      },
-      {
-        "buildings": 26,
-        "rows": 218270,
-        "value": "heavy manufacturing"
-      },
-      {
-        "buildings": 23,
-        "rows": 193085,
-        "value": "medium office"
-      },
-      {
-        "buildings": 21,
-        "rows": 176295,
-        "value": "supermarket"
-      },
-      {
-        "buildings": 20,
-        "rows": 167900,
-        "value": "large office"
+        "buildings": 40,
+        "rows": 335800,
+        "value": "warehouse"
       },
       {
         "buildings": 16,
         "rows": 134320,
         "value": "religious"
+      },
+      {
+        "buildings": 14,
+        "rows": 117530,
+        "value": "full service restaurant"
+      },
+      {
+        "buildings": 4,
+        "rows": 33580,
+        "value": "heavy manufacturing"
+      },
+      {
+        "buildings": 4,
+        "rows": 33580,
+        "value": "small hotel"
       },
       {
         "buildings": 4,
@@ -261,6 +237,21 @@
         "buildings": 4,
         "rows": 33580,
         "value": "primary school"
+      },
+      {
+        "buildings": 4,
+        "rows": 33580,
+        "value": "medium office"
+      },
+      {
+        "buildings": 2,
+        "rows": 16790,
+        "value": "supermarket"
+      },
+      {
+        "buildings": 2,
+        "rows": 16790,
+        "value": "large office"
       },
       {
         "buildings": 2,
@@ -275,44 +266,39 @@
       {
         "buildings": 1,
         "rows": 8395,
-        "value": "large hotel"
-      },
-      {
-        "buildings": 1,
-        "rows": 8395,
         "value": "college"
       }
     ],
     "usetype": [
       {
-        "buildings": 40562,
-        "rows": 340517990,
+        "buildings": 4018,
+        "rows": 33731110,
         "value": "single_family"
       },
       {
-        "buildings": 6986,
-        "rows": 58647470,
+        "buildings": 741,
+        "rows": 6220695,
         "value": "multi_family"
       },
       {
-        "buildings": 1586,
-        "rows": 13314470,
+        "buildings": 171,
+        "rows": 1435545,
         "value": "commercial"
       },
       {
-        "buildings": 819,
-        "rows": 6875505,
+        "buildings": 77,
+        "rows": 646415,
         "value": "industrial"
-      },
-      {
-        "buildings": 24,
-        "rows": 201480,
-        "value": "residential_other"
       },
       {
         "buildings": 23,
         "rows": 193085,
         "value": "institutional"
+      },
+      {
+        "buildings": 4,
+        "rows": 33580,
+        "value": "residential_other"
       }
     ]
   },
@@ -389,24 +375,24 @@
   "coordinate_bounds": {
     "invalid_latitude_rows": 0,
     "invalid_longitude_rows": 0,
-    "latitude_max": 34.62236912557854,
-    "latitude_min": 33.339493157811255,
-    "longitude_max": -117.6557757839122,
-    "longitude_min": -118.84633487891422
+    "latitude_max": 34.61490478894458,
+    "latitude_min": 33.341142149319445,
+    "longitude_max": -117.66052601472371,
+    "longitude_min": -118.8187115610705
   },
-  "distinct_buildings": 50000,
-  "distinct_coarse_grids": 53,
-  "distinct_finer_grids": 12556,
+  "distinct_buildings": 5034,
+  "distinct_coarse_grids": 49,
+  "distinct_finer_grids": 4032,
   "distinct_timestamps": 8395,
-  "distinct_tracts": 2248,
+  "distinct_tracts": 1794,
   "duplicate_building_timestamp_rows": 0,
   "energy_semantics": "unverified; source values are validated, not reinterpreted",
   "energy_summary": {
-    "maximum": 16579.54911619474,
-    "mean": 3.3396432944916334,
-    "median_approx": 0.7080395594452293,
-    "minimum": 0.025133295488449666,
-    "p95_approx": 5.7188632192552635,
+    "maximum": 1987.2514439557085,
+    "mean": 3.0939382178272608,
+    "median_approx": 0.7242106074501063,
+    "minimum": 0.06601361880316427,
+    "p95_approx": 6.335909251314032,
     "zero_reading_rows": 0
   },
   "invalid_energy_rows": 0,
@@ -423,7 +409,7 @@
     "building.area.m2": 0,
     "building.type": 0,
     "id.grid.coarse": 0,
-    "id.grid.finer": 1309620,
+    "id.grid.finer": 100740,
     "id.tract": 0,
     "idf.kw": 0,
     "latitude": 0,
@@ -433,11 +419,14 @@
     "usetype": 0,
     "vintage": 0
   },
-  "profiled_at_utc": "2026-11-01 17:38:19.469000+00:00",
-  "row_count": 419750000,
+  "processed_source_path": "/mnt/d/GridVision/data/segmentation/source_sample.parquet",
+  "profiled_at_utc": "2026-11-03 16:52:12.211000+05:30",
+  "row_count": 42260430,
+  "sampled_buildings": 5034,
+  "sampled_rows": 42260430,
   "source_bytes": 3601102310,
-  "source_mtime_ns": 1793335452152021109,
-  "source_path": "/opt/gridvision/data/bronze/training_sample_50000.parquet",
+  "source_mtime_ns": 1792582040739564300,
+  "source_path": "/mnt/d/GridVision/data/bronze/training_sample_50000.parquet",
   "timestamp_max": "2018-12-31 23:00:00",
   "timestamp_min": "2018-01-01 01:00:00"
 }

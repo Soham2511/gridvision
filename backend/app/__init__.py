@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import logging
+import os
 import time
 import uuid
+from pathlib import Path
 
 from flask import Flask, Response, g, jsonify, request
 from flask_cors import CORS
@@ -28,6 +30,10 @@ from app.services.assistant_service import AssistantService
 from app.models.customer_bill_prediction import CustomerBillPredictionService
 from app.services.segmentation_service import SegmentationService
 from app.models.anomaly_prediction import AnomalyPredictionService
+from ai.commercial.graph import build_commercial_graph
+from ai.commercial.approvals import ScheduleApprovalStore
+from ai.commercial.config.settings import CommercialSettings
+from ai.commercial.tools.document_rag_tools import DocumentRAGCommercialTools
 
 
 def create_app(config_class: type[BaseConfig] | None = None) -> Flask:
@@ -40,6 +46,7 @@ def create_app(config_class: type[BaseConfig] | None = None) -> Flask:
 
     # Initialize logging
     setup_logging()
+    app.config.setdefault("MAX_CONTENT_LENGTH", 26 * 1024 * 1024)
 
     @app.before_request
     def start_request_log() -> None:
@@ -70,6 +77,7 @@ def create_app(config_class: type[BaseConfig] | None = None) -> Flask:
         app,
         resources={r"/api/*": {"origins": app.config.get("CORS_ORIGINS", "*")}},
         supports_credentials=True,
+        expose_headers=["X-Request-ID"],
     )
 
     # Instantiate providers based on configuration
@@ -132,6 +140,29 @@ def create_app(config_class: type[BaseConfig] | None = None) -> Flask:
         project_root=app.config["PROJECT_ROOT"],
         runs_path=app.config["ANOMALY_RUNS_PATH"],
     )
+    commercial_settings = CommercialSettings.from_env()
+    commercial_tools = DocumentRAGCommercialTools(
+        commercial_settings.rag_documents,
+        settings=commercial_settings,
+    )
+    commercial_workflow = build_commercial_graph(
+        tools=commercial_tools,
+        settings=commercial_settings,
+    )
+    commercial_schedule_approvals = ScheduleApprovalStore(
+        Path(
+            os.getenv(
+                "COMMERCIAL_APPROVAL_DB_PATH",
+                str(
+                    app.config["PROJECT_ROOT"]
+                    / "data"
+                    / "commercial"
+                    / "rag"
+                    / "schedule_approvals.sqlite3"
+                ),
+            )
+        ).expanduser()
+    )
 
     # Attach to app extensions
     app.extensions["data_provider"] = data_provider
@@ -149,6 +180,11 @@ def create_app(config_class: type[BaseConfig] | None = None) -> Flask:
     )
     app.extensions["government_segmentation_service"] = government_segmentation_svc
     app.extensions["anomaly_prediction_service"] = anomaly_prediction_svc
+    app.extensions["commercial_workflow"] = commercial_workflow
+    app.extensions["commercial_rag_retriever"] = commercial_tools.retriever
+    app.extensions["commercial_schedule_approvals"] = (
+        commercial_schedule_approvals
+    )
 
     # Register error handlers
     register_error_handlers(app)
@@ -174,6 +210,11 @@ def create_app(config_class: type[BaseConfig] | None = None) -> Flask:
                 "anomalies": f"{app.config.get('API_PREFIX')}/anomalies",
                 "customers": f"{app.config.get('API_PREFIX')}/customers/segmentation-matrix",
                 "insights": f"{app.config.get('API_PREFIX')}/energy-insights",
+                "commercial_workflow": f"{app.config.get('API_PREFIX')}/commercial/workflow",
+                "commercial_schedule_approval": (
+                    f"{app.config.get('API_PREFIX')}/commercial/schedules/"
+                    "<proposal_id>/approval"
+                ),
                 "government_segmentation": f"{app.config.get('API_PREFIX')}/government/segmentation/overview",
             },
         })

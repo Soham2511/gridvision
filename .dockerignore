@@ -14,6 +14,7 @@ data
 models
 mlruns
 logs
+/key_vault/
 /~/
 /D/
 frontend/dist

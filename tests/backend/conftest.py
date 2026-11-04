@@ -11,8 +11,9 @@ from app.config import TestingConfig
 
 
 @pytest.fixture
-def app() -> Flask:
+def app(monkeypatch: pytest.MonkeyPatch) -> Flask:
     """Create an application instance configured for testing."""
+    monkeypatch.setenv("COMMERCIAL_LLM_PROVIDER", "mock")
     app = create_app(config_class=TestingConfig)
     return app
 

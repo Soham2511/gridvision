@@ -28,3 +28,30 @@ jupyter
 # group: tests
 pytest>=8.0.0
 pytest-cov>=5.0.0
+
+# group: commercial-agent
+langgraph>=1.0,<2.0
+pypdf>=5,<7
+
+# group: commercial-mcp
+mcp>=1.28,<2
+
+# group: commercial-rag-ocr
+pypdfium2>=4.30,<6
+pytesseract>=0.3.13,<1
+Pillow>=10,<12
+
+# group: commercial-rag-docling
+docling>=2,<3
+
+# group: commercial-rag-vector
+fastembed>=0.7,<1
+
+# group: commercial-rag-neo4j
+neo4j>=5,<7
+
+# group: commercial-optimizer
+ortools>=9.10,<10
+
+# group: commercial-tracing
+langsmith>=0.3,<1

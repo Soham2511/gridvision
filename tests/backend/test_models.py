@@ -157,6 +157,87 @@ def test_model_catalog_uses_forecast_provider_status(
     assert models["government-load-forecast"]["modelVersion"] == "20"
 
 
+def test_commercial_forecast_status_rejects_development_model(
+    client: FlaskClient,
+):
+    response = client.get(
+        "/api/v1/models/commercial-building-forecast/status"
+    )
+
+    assert response.status_code == 200
+    status = response.get_json()["data"]
+    assert status["status"] == "unavailable"
+    assert status["is_demo"] is True
+    assert status["dataset"]["name"] == "commercial_gold.parquet"
+
+
+def test_commercial_forecast_status_reports_trained_model_and_dataset(
+    client: FlaskClient,
+    monkeypatch,
+    tmp_path,
+):
+    dataset_path = tmp_path / "commercial_gold.parquet"
+    dataset_path.touch()
+    client.application.config["COMMERCIAL_FORECAST_DATA_PATH"] = dataset_path
+    monkeypatch.setattr(
+        client.application.extensions["model_provider"],
+        "get_forecast_model_info",
+        lambda sector: {
+            "model_name": "gridvision-commercial-building-forecast",
+            "model_version": "3",
+            "model_alias": "champion",
+            "provider": "mlflow_registered_alias",
+            "is_demo": False,
+            "data_available": True,
+            "evaluation_status": "historical_holdout_replay",
+        },
+    )
+
+    response = client.get(
+        "/api/v1/models/commercial-building-forecast/status"
+    )
+
+    assert response.status_code == 200
+    status = response.get_json()["data"]
+    assert status["status"] == "ready"
+    assert status["is_demo"] is False
+    assert status["model_version"] == "3"
+    assert status["dataset"] == {
+        "name": "commercial_gold.parquet",
+        "available": True,
+    }
+
+
+def test_commercial_forecast_status_requires_dataset_file(
+    client: FlaskClient,
+    monkeypatch,
+    tmp_path,
+):
+    client.application.config["COMMERCIAL_FORECAST_DATA_PATH"] = (
+        tmp_path / "missing.parquet"
+    )
+    monkeypatch.setattr(
+        client.application.extensions["model_provider"],
+        "get_forecast_model_info",
+        lambda sector: {
+            "model_name": "gridvision-commercial-building-forecast",
+            "model_version": "3",
+            "provider": "mlflow_registered_alias",
+            "is_demo": False,
+            "data_available": True,
+        },
+    )
+
+    response = client.get(
+        "/api/v1/models/commercial-building-forecast/status"
+    )
+
+    assert response.status_code == 200
+    status = response.get_json()["data"]
+    assert status["status"] == "unavailable"
+    assert status["dataset"]["available"] is False
+
+
 def test_customer_bill_model_replays_gold_record(client: FlaskClient):
     records_response = client.get(
         "/api/v1/models/customer-bill-prediction/records?limit=1"

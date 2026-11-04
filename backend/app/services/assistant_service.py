@@ -5,13 +5,24 @@ from __future__ import annotations
 from typing import Any
 
 from app.providers.data_provider import BaseDataProvider
+from ai.commercial.config.settings import CommercialSettings
+from ai.commercial.tools.renewable_energy import RenewableEnergyTools
 
 
 class AssistantService:
     """Answers telemetry, tariff, peak shaving, and model evaluation inquiries."""
 
-    def __init__(self, data_provider: BaseDataProvider) -> None:
+    def __init__(
+        self,
+        data_provider: BaseDataProvider,
+        renewable_tools: RenewableEnergyTools | None = None,
+    ) -> None:
         self.data_provider = data_provider
+        settings = CommercialSettings.from_env()
+        self.renewable_tools = renewable_tools or RenewableEnergyTools(
+            api_key_file=settings.tavily_api_key_file,
+            timeout_seconds=settings.tavily_timeout_seconds,
+        )
 
     def answer_query(
         self,
@@ -22,7 +33,38 @@ class AssistantService:
         p = prompt.lower()
         active_entity = entity_id or ("METER-1000" if persona == "household" else ("Panther_office_1" if persona == "commercial" else "North Region"))
 
-        if any(w in p for w in ["bill", "tariff", "calculate", "rupee", "inr"]):
+        if any(
+            word in p
+            for word in ("solar", "renewable", "wind", "photovoltaic", "rooftop")
+        ):
+            observation = self.renewable_tools.get_renewable_scenarios(
+                active_entity,
+                prompt,
+            )
+            answer_parts = list(observation.findings)
+            answer_parts.extend(
+                f"Assumption: {assumption}"
+                for assumption in observation.assumptions
+            )
+            if observation.evidence_refs:
+                answer_parts.append(
+                    "Web sources:\n"
+                    + "\n".join(
+                        f"- {reference.locator}"
+                        for reference in observation.evidence_refs
+                        if reference.locator
+                    )
+                )
+            if any(w in p for w in ["peak", "demand", "load", "forecast"]):
+                peak_data = self.data_provider.get_peak_demand_analysis()
+                answer_parts.append(
+                    "**Grid peak context:** "
+                    f"expected system peak **{peak_data['expectedPeakMw']} MW** "
+                    f"at `{peak_data['expectedPeakTime']}` "
+                    f"({peak_data['riskLevel']} risk)."
+                )
+            answer = "\n\n".join(answer_parts)
+        elif any(w in p for w in ["bill", "tariff", "calculate", "rupee", "inr"]):
             answer = (
                 "**Billing Computation (Prototype Tariff Specification):**\n\n"
                 "Your month-end estimated invoice is computed using the baseline equation:\n\n"

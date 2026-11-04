@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from flask import Flask, Request
+from flask import Flask, Request, g
 from pydantic import ValidationError
 
 from app.utils.responses import error_response
@@ -83,11 +83,18 @@ def register_error_handlers(app: Flask) -> None:
 
     @app.errorhandler(ValidationError)
     def handle_pydantic_error(error: ValidationError):
-        logger.warning("Pydantic validation error: %s", error)
+        validation_issues = error.errors(
+            include_context=False,
+            include_input=False,
+        )
+        logger.warning(
+            "Pydantic validation error (%d issue(s))",
+            len(validation_issues),
+        )
         return error_response(
             message="Request body failed contract validation.",
             code="VALIDATION_ERROR",
-            details=error.errors(),
+            details=validation_issues,
             status_code=422,
         )
 
@@ -115,11 +122,28 @@ def register_error_handlers(app: Flask) -> None:
             status_code=405,
         )
 
+    @app.errorhandler(413)
+    def handle_413(error):
+        return error_response(
+            message="Request exceeds the configured upload size limit.",
+            code="UPLOAD_TOO_LARGE",
+            status_code=413,
+        )
+
     @app.errorhandler(Exception)
     def handle_unexpected_error(error: Exception):
-        logger.exception("Unhandled server exception: %s", error)
+        logger.exception(
+            "Unhandled server exception",
+            extra={
+                "event": {
+                    "request_id": getattr(g, "request_id", None),
+                    "error_type": type(error).__name__,
+                }
+            },
+        )
         return error_response(
             message="An unexpected internal server error occurred.",
             code="INTERNAL_ERROR",
+            details={"request_id": getattr(g, "request_id", None)},
             status_code=500,
         )
