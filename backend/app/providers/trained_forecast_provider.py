@@ -1223,6 +1223,42 @@ class TrainedForecastProvider(BaseModelProvider):
             ]
         return self._regional_entities
 
+    def _latest_origin(
+        self, path: Path, id_column: str, entity_id: str, horizon_count: int
+    ) -> pd.Timestamp:
+        rows = self._query(
+            path,
+            f"""SELECT forecast_origin_timestamp,
+                       count(DISTINCT CASE
+                           WHEN forecast_horizon_hours BETWEEN 1 AND {int(horizon_count)}
+                           THEN forecast_horizon_hours
+                       END) AS steps
+                FROM read_parquet({{path}})
+                WHERE {id_column} = {int(entity_id)}
+                  AND target_timestamp >= TIMESTAMP '2018-12-01'
+                GROUP BY forecast_origin_timestamp
+                HAVING steps > 0
+                ORDER BY steps DESC, forecast_origin_timestamp DESC LIMIT 1""",
+        )
+        if rows.empty:
+            raise ResourceNotFoundError(
+                f"No commercial forecast data is available for entity {entity_id}."
+            )
+        return pd.Timestamp(rows.iloc[0]["forecast_origin_timestamp"])
+
+    def _horizon_rows(
+        self, path: Path, id_column: str, entity_id: str, horizon_count: int
+    ) -> pd.DataFrame:
+        origin = self._latest_origin(path, id_column, entity_id, horizon_count)
+        return self._query(
+            path,
+            f"""SELECT * FROM read_parquet({{path}})
+                WHERE {id_column} = {int(entity_id)}
+                  AND forecast_origin_timestamp = TIMESTAMP '{origin:%Y-%m-%d %H:%M:%S}'
+                  AND forecast_horizon_hours BETWEEN 1 AND {int(horizon_count)}
+                ORDER BY forecast_horizon_hours LIMIT {int(horizon_count)}""",
+        )
+
     def _load_commercial_bundle(self) -> dict[str, Any]:
         if self._commercial_bundle is None:
             if not self.commercial_model_path.is_file():

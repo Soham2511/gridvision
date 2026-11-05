@@ -94,7 +94,12 @@ class BaseConfig:
         staticmethod(_default_report_identity) if AI_DEMO_MODE else None
     )
 
-    # LLM Assistant Settings (Ollama Active Runtime)
+    # Residential assistant provider selection.
+    RESIDENTIAL_ASSISTANT_PROVIDER = os.getenv(
+        "RESIDENTIAL_ASSISTANT_PROVIDER", "groq"
+    ).strip().lower()
+
+    # Ollama remains available as an explicit residential assistant option.
     OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL") or (
         "http://ollama:11434"
         if os.getenv("CONTAINERIZED", "false").lower() == "true" or os.path.exists("/.dockerenv")
@@ -106,6 +111,9 @@ class BaseConfig:
     GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
     GROQ_BASE_URL = os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1")
     GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
+    RESIDENTIAL_GROQ_MODEL = os.getenv(
+        "RESIDENTIAL_GROQ_MODEL", "openai/gpt-oss-20b"
+    )
     ASSISTANT_TEMPERATURE = float(os.getenv("ASSISTANT_TEMPERATURE", "0.2"))
     ASSISTANT_MAX_TOKENS = int(os.getenv("ASSISTANT_MAX_TOKENS", "800"))
     ASSISTANT_TIMEOUT_SECONDS = float(os.getenv("ASSISTANT_TIMEOUT_SECONDS", "60.0"))

@@ -8,8 +8,17 @@ import time
 import uuid
 from pathlib import Path
 
-_RESIDENTIAL_APP_ROOT = (
-    Path(__file__).resolve().parents[2] / "ai" / "residential" / "backend" / "app"
+_RESIDENTIAL_APP_ROOT = next(
+    (
+        parent / "ai" / "residential" / "backend" / "app"
+        for parent in Path(__file__).resolve().parents
+        if (parent / "ai" / "residential" / "backend" / "app").is_dir()
+    ),
+    Path(__file__).resolve().parents[2]
+    / "ai"
+    / "residential"
+    / "backend"
+    / "app",
 )
 if _RESIDENTIAL_APP_ROOT.is_dir():
     __path__.append(str(_RESIDENTIAL_APP_ROOT))
@@ -229,11 +238,29 @@ def create_app(config_class: type[BaseConfig] | None = None) -> Flask:
             commercial_metadata=app.config["COMMERCIAL_GOLD_METADATA_PATH"],
         )
 
-    # Instantiate LLM provider for conversational assistant (Ollama Active Runtime)
-    llm_provider = OllamaLLMAdapter(
-        base_url=app.config.get("OLLAMA_BASE_URL", "http://localhost:11434"),
-        model=app.config.get("OLLAMA_MODEL", "qwen3:8b"),
-    )
+    # This provider is injected into the residential assistant service only.
+    assistant_provider = app.config.get(
+        "RESIDENTIAL_ASSISTANT_PROVIDER", "groq"
+    ).strip().lower()
+    if assistant_provider == "groq":
+        llm_provider = GroqLLMAdapter(
+            api_key=app.config.get("GROQ_API_KEY", ""),
+            base_url=app.config.get("GROQ_BASE_URL"),
+            model=app.config.get(
+                "RESIDENTIAL_GROQ_MODEL", "openai/gpt-oss-20b"
+            ),
+            timeout=app.config.get("ASSISTANT_COMPLEX_TIMEOUT_SECONDS", 75.0),
+            max_retries=app.config.get("ASSISTANT_MAX_RETRIES", 0),
+        )
+    elif assistant_provider == "ollama":
+        llm_provider = OllamaLLMAdapter(
+            base_url=app.config.get("OLLAMA_BASE_URL", "http://localhost:11434"),
+            model=app.config.get("OLLAMA_MODEL", "qwen3:8b"),
+        )
+    else:
+        raise ValueError(
+            "RESIDENTIAL_ASSISTANT_PROVIDER must be 'groq' or 'ollama'."
+        )
 
     # Instantiate business services
     health_svc = HealthService(data_provider, model_provider)

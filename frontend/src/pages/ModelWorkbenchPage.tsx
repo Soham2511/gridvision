@@ -22,6 +22,7 @@ export const ModelWorkbenchPage: React.FC = () => {
   const [entities, setEntities] = useState<ForecastEntity[]>([]);
   const [selectedEntity, setSelectedEntity] = useState('');
   const [points, setPoints] = useState<ForecastPoint[]>([]);
+  const [missingHorizonHours, setMissingHorizonHours] = useState<number[]>([]);
   const [modelInfo, setModelInfo] = useState<{ model_name: string; model_version: string; provider: string; evaluation_status: string } | null>(null);
   const [loading, setLoading] = useState(true);
   const [predicting, setPredicting] = useState(false);
@@ -48,6 +49,7 @@ export const ModelWorkbenchPage: React.FC = () => {
     setEntities([]);
     setSelectedEntity('');
     setPoints([]);
+    setMissingHorizonHours([]);
     if (!modelIds.has(selectedId)) return;
     modelService.getForecastModelEntities(selectedId).then(({ items }) => {
       if (!live) return;
@@ -61,10 +63,12 @@ export const ModelWorkbenchPage: React.FC = () => {
     if (!selectedEntity) return;
     setPredicting(true);
     setError(null);
+    setMissingHorizonHours([]);
     try {
       const result = await modelService.predictForecastModel(selectedId, selectedEntity);
       setModelInfo(result.model);
       setPoints(result.horizon);
+      setMissingHorizonHours(result.missing_horizon_hours ?? []);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Forecast inference failed.');
     } finally {
@@ -114,7 +118,7 @@ export const ModelWorkbenchPage: React.FC = () => {
           {selectedModel.features?.length ? <details><summary>Input feature schema ({selectedModel.features.length})</summary><p className="gv-text-muted">{selectedModel.features.join(', ')}</p></details> : null}
           <div style={{ display: 'flex', alignItems: 'end', flexWrap: 'wrap', gap: '0.75rem' }}>
             <label style={{ display: 'grid', gap: '0.4rem', fontWeight: 600 }}>Entity
-              <select value={selectedEntity} onChange={(event) => { setSelectedEntity(event.target.value); setPoints([]); }} disabled={!entities.length}>
+              <select value={selectedEntity} onChange={(event) => { setSelectedEntity(event.target.value); setPoints([]); setMissingHorizonHours([]); }} disabled={!entities.length}>
                 {entities.map((entity) => <option key={entityKey(selectedId, entity)} value={entityKey(selectedId, entity)}>{entityKey(selectedId, entity)} · {String(entity.name ?? entity.primarySpaceUsage ?? entity.region ?? '')}</option>)}
               </select>
             </label>
@@ -122,6 +126,7 @@ export const ModelWorkbenchPage: React.FC = () => {
             {modelInfo && <span className="gv-text-muted">Serving {modelInfo.model_name} v{modelInfo.model_version} from {modelInfo.provider}</span>}
           </div>
           {selectedEntityInfo && <p className="gv-text-muted">Selected entity: {selectedEntity}. This is a chronological held-out replay; actual values are shown alongside predictions for evaluation.</p>}
+          {missingHorizonHours.length > 0 && <div role="status" className="gv-card">Partial replay: commercial forecast data is missing hour(s) {missingHorizonHours.join(', ')}. The table shows available hourly predictions only.</div>}
           {points.length > 0 && <div style={{ overflowX: 'auto' }}><table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}><thead><tr><th>Horizon</th><th>Timestamp</th><th>Predicted demand (kWh)</th><th>Actual (kWh)</th></tr></thead><tbody>{points.map((point) => <tr key={`${point.timestamp}-${point.horizon_hours}`}><td>{point.horizon_hours}h</td><td>{new Date(point.timestamp).toLocaleString()}</td><td>{point.prediction.toFixed(2)}</td><td>{point.actual?.toFixed(2) ?? '—'}</td></tr>)}</tbody></table></div>}
         </section>
       )}

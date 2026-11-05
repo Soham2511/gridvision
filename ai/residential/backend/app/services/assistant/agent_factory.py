@@ -128,7 +128,7 @@ class _RequireToolExecutionMiddleware(AgentMiddleware):
 
 
 class ResidentialAgentFactory:
-    """Create the existing LangChain tool-calling workflow with Ollama as its model."""
+    """Create the residential LangChain tool-calling workflow with its configured model."""
 
     def __init__(
         self,
@@ -142,6 +142,14 @@ class ResidentialAgentFactory:
         custom_chat_model: BaseChatModel | None = None,
         api_key: str | None = None,
     ) -> None:
+        self.provider = (
+            os.getenv("RESIDENTIAL_ASSISTANT_PROVIDER")
+            or getattr(BaseConfig, "RESIDENTIAL_ASSISTANT_PROVIDER", "groq")
+        ).strip().lower()
+        if self.provider not in {"groq", "ollama"}:
+            raise ValueError(
+                "Residential assistant provider must be 'groq' or 'ollama'."
+            )
         self.ollama_base_url = normalize_ollama_base_url(
             base_url
             or os.getenv("OLLAMA_BASE_URL")
@@ -151,6 +159,14 @@ class ResidentialAgentFactory:
             model_name
             or os.getenv("OLLAMA_MODEL")
             or getattr(BaseConfig, "OLLAMA_MODEL", "qwen3:8b")
+        ).strip()
+        self.groq_base_url = (
+            os.getenv("GROQ_BASE_URL")
+            or getattr(BaseConfig, "GROQ_BASE_URL", "https://api.groq.com/openai/v1")
+        ).strip()
+        self.groq_model = (
+            os.getenv("RESIDENTIAL_GROQ_MODEL")
+            or getattr(BaseConfig, "RESIDENTIAL_GROQ_MODEL", "openai/gpt-oss-20b")
         ).strip()
         self.temperature = (
             temperature if temperature is not None else BaseConfig.ASSISTANT_TEMPERATURE
@@ -170,8 +186,9 @@ class ResidentialAgentFactory:
             max_retries if max_retries is not None else BaseConfig.ASSISTANT_MAX_RETRIES
         )
         self.custom_chat_model = custom_chat_model
-        # Retained only for configuration compatibility; runtime never calls Groq.
-        self.api_key = (api_key or BaseConfig.GROQ_API_KEY or "").strip()
+        self.api_key = (
+            api_key or os.getenv("GROQ_API_KEY") or BaseConfig.GROQ_API_KEY or ""
+        ).strip()
         self._agent_cache: dict[tuple[Any, ...], Any] = {}
 
     @staticmethod
@@ -209,11 +226,13 @@ class ResidentialAgentFactory:
             return False
 
     def is_available(self, force_live: bool = False) -> bool:
-        """Return availability of the injected model or active Ollama runtime."""
+        """Return availability of the injected model or selected provider."""
         if self.custom_chat_model is not None:
             return True
         if self._is_testing() and not force_live:
             return False
+        if self.provider == "groq":
+            return bool(self.api_key)
         return self.is_ollama_available()
 
     def build_chat_model(
@@ -222,18 +241,43 @@ class ResidentialAgentFactory:
         model_override: str | None = None,
         force_live: bool = False,
     ) -> BaseChatModel:
-        """Build ChatOllama for Qwen3, or the deterministic model in tests."""
+        """Build the selected provider's chat model, or a deterministic test model."""
         if self.custom_chat_model is not None:
             return self.custom_chat_model
 
-        effective_model = (model_override or self.model_name).strip()
+        default_model = self.groq_model if self.provider == "groq" else self.model_name
+        effective_model = (model_override or default_model).strip()
         if self._is_testing() and not force_live:
             return MockChatModel()
+        if self.provider == "groq":
+            if not self.api_key:
+                raise RuntimeError(
+                    "Groq is selected for the residential assistant, but "
+                    "GROQ_API_KEY is not configured."
+                )
+            try:
+                from langchain_groq import ChatGroq
+
+                return ChatGroq(
+                    model=effective_model,
+                    api_key=self.api_key,
+                    base_url=self.groq_base_url,
+                    temperature=self.temperature,
+                    max_tokens=self.max_tokens,
+                    timeout=timeout if timeout is not None else self.timeout,
+                    max_retries=self.max_retries,
+                )
+            except Exception as exc:
+                logger.exception("Failed to initialize Groq model '%s'", effective_model)
+                raise RuntimeError(
+                    f"Failed to initialize Groq chat model '{effective_model}': {exc}"
+                ) from exc
+
         if not self.is_ollama_available():
             raise RuntimeError(
                 f"Ollama server is unavailable at '{self.ollama_base_url}' or model "
                 f"'{effective_model}' is not reachable. Ensure Ollama is running and "
-                f"the model is pulled. Groq fallback is disabled."
+                "the model is pulled."
             )
 
         try:
