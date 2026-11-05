@@ -254,6 +254,7 @@ services:
       - ${GRIDVISION_DATA_DIR:?Set GRIDVISION_DATA_DIR}/segmentation:/data/segmentation:ro
       - ./instance:/instance
       - ./backend/app:/app/app:ro
+      - ./ai/commercial:/app/ai/commercial:ro
       - ./backend/report_generator:/app/report_generator:ro
       - ./data_retrieval_agent:/app/data_retrieval_agent:ro
       - ./models/anomaly_prediction:/models/anomaly_prediction:ro
