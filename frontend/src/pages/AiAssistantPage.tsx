@@ -685,6 +685,14 @@ interface LegacyChatMessage {
   charts?: AssistantChatResponse['charts'];
 }
 
+function assistantArtifactUrl(path: string): string {
+  const origin = typeof window !== 'undefined'
+    ? window.location.origin
+    : 'http://127.0.0.1:5000';
+  const apiBase = new URL(analyticsService.getApiBaseUrl(), origin);
+  return new URL(path, apiBase).toString();
+}
+
 const LegacyAssistantPage: React.FC = () => {
   const { currentPersona, activeEntity } = usePersona();
   const persona = currentPersona || 'household';
@@ -980,7 +988,7 @@ const LegacyAssistantPage: React.FC = () => {
                   {m.downloads.map((download) => (
                     <a
                       key={download.url}
-                      href={new URL(download.url, analyticsService.getApiBaseUrl()).toString()}
+                      href={assistantArtifactUrl(download.url)}
                       download
                     >
                       {download.label} ({download.format})
@@ -990,9 +998,9 @@ const LegacyAssistantPage: React.FC = () => {
               )}
               {m.artifacts?.map((artifact) => artifact.format === 'png' && (
                 <figure key={artifact.url} style={{ margin: '0.75rem 0 0', maxWidth: 720 }}>
-                  <a href={new URL(artifact.url, analyticsService.getApiBaseUrl()).toString()} target="_blank" rel="noreferrer">
+                  <a href={assistantArtifactUrl(artifact.url)} target="_blank" rel="noreferrer">
                     <img
-                      src={new URL(artifact.url, analyticsService.getApiBaseUrl()).toString()}
+                      src={assistantArtifactUrl(artifact.url)}
                       alt={artifact.label}
                       style={{ display: 'block', width: '100%', height: 'auto', borderRadius: 8, border: '1px solid var(--gv-border-subtle)' }}
                     />
