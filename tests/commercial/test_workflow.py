@@ -8,9 +8,12 @@ from pydantic import ValidationError
 from ai.commercial.config.settings import CommercialSettings
 from ai.commercial.graph import WorkflowExecutionError, build_commercial_graph
 from ai.commercial.schemas.communication import (
+    AgentResult,
     AgentError,
+    EvidenceRef,
     TaskAssignment,
     ToolObservation,
+    ValidationReport,
 )
 from ai.commercial.tools.mock_tools import MockCommercialTools, synthetic_fixture
 from ai.commercial.agents.operations import run_operations
@@ -46,6 +49,114 @@ def test_missing_document_evidence_does_not_invent_data_or_savings() -> None:
         "ZQX991 quantum chronometer unobtanium"
     )
     assert operation_result.data["query"]["topics"] == []
+
+
+def test_short_term_history_resolves_follow_up_for_specialist_and_retrieval() -> None:
+    class CapturingTools(MockCommercialTools):
+        def __init__(self) -> None:
+            super().__init__()
+            self.received_goal: str | None = None
+
+        def retrieve_operational_context(
+            self,
+            factory_id: str | None,
+            goal: str,
+        ) -> ToolObservation:
+            del factory_id
+            self.received_goal = goal
+            return self._observation("operations")
+
+    request = _request("What about those?")
+    request["conversation_history"] = [
+        {"role": "user", "content": "What maintenance constraints are documented?"},
+        {"role": "assistant", "content": "The handbook includes maintenance windows."},
+    ]
+
+    tools = CapturingTools()
+    result = build_commercial_graph(tools=tools).invoke(request)
+
+    assert {item.specialist for item in result["assignments"]} == {"operations"}
+    assert "maintenance constraints" in result["assignments"][0].goal
+    assert "Current request: What about those?" in result["assignments"][0].goal
+    assert tools.received_goal == result["assignments"][0].goal
+
+
+def test_assistant_greeting_does_not_pollute_retrieval_context() -> None:
+    from ai.commercial.agents.supervisor import _contextualize_goal
+    from ai.commercial.schemas.communication import CommercialConversationMessage
+
+    contextualized = _contextualize_goal(
+        "What makes up an industrial electricity bill?",
+        [
+            CommercialConversationMessage(role="user", content="Hello"),
+            CommercialConversationMessage(
+                role="assistant",
+                content=(
+                    "I can help with energy forecasts or schedule optimization."
+                ),
+            ),
+        ],
+    )
+
+    assert "Current request: What makes up an industrial electricity bill?" in (
+        contextualized
+    )
+    assert "schedule optimization" not in contextualized
+
+
+def test_finalizer_generates_grounded_answer_for_partial_tool_results() -> None:
+    from ai.commercial.agents.finalizer import finalize_response
+
+    reference = EvidenceRef(
+        source_id="energy-handbook.pdf",
+        source_type="uploaded_document",
+        locator="page:1",
+        excerpt="Energy is measured in kWh.",
+        synthetic=True,
+    )
+
+    class AnswerGenerator:
+        def synthesize_answer(self, **kwargs):
+            assert kwargs["status"] == "incomplete"
+            assert kwargs["evidence_refs"] == [reference]
+            return "The handbook defines energy in kWh [1].", [reference]
+
+    result = finalize_response(
+        {
+            "request_id": "partial-answer",
+            "user_goal": "How does the handbook define energy?",
+            "validation_status": ValidationReport(
+                status="incomplete",
+                issues=("A second specialist's data was unavailable.",),
+            ),
+            "specialist_results": {
+                "operations": AgentResult(
+                    task_id="partial-answer:operations",
+                    specialist="operations",
+                    status="completed",
+                    evidence_refs=(reference,),
+                )
+            },
+            "evidence_refs": [reference],
+        },
+        AnswerGenerator(),
+    )
+
+    assert result["final_response"]["summary"] == (
+        "The handbook defines energy in kWh [1]."
+    )
+    assert result["llm_call_count"] == 1
+
+
+def test_commercial_request_limits_short_term_history_to_eight_messages() -> None:
+    request = _request("Explain the last result.")
+    request["conversation_history"] = [
+        {"role": "user", "content": f"Question {index}"}
+        for index in range(9)
+    ]
+
+    with pytest.raises(ValidationError):
+        build_commercial_graph(tools=MockCommercialTools()).invoke(request)
 
 
 def test_greeting_returns_helpful_response_without_running_specialists() -> None:

@@ -1,10 +1,13 @@
 import React, { useState } from 'react';
 import { usePersona } from '../context';
-import { Bot, FileText, LogOut, Send, Sparkles, Upload, User } from 'lucide-react';
+import { Bot, FileText, LogOut, Send, Sparkles, Trash2, Upload, User } from 'lucide-react';
+import { AiAssistantPage as ResidentialAssistantPage } from '../../../ai/residential/frontend/src/pages/AiAssistantPage';
 import {
   analyticsService,
-  type CommercialExecutionTraceEvent,
+  type AssistantChatResponse,
+  type CommercialConversationMessage,
   type CommercialWorkflowResponse,
+  type CommercialWebSearchResponse,
   type UploadedRagDocument,
 } from '../services/analyticsService';
 import { ApiClientError, type ApiCredentials } from '../services/apiClient';
@@ -15,68 +18,10 @@ interface ChatMessage {
   text: string;
   timestamp: string;
   response?: CommercialWorkflowResponse;
-  executionTrace?: CommercialExecutionTraceEvent[];
-}
-
-function getErrorExecutionTrace(error: unknown): CommercialExecutionTraceEvent[] {
-  if (
-    !(error instanceof ApiClientError)
-    || typeof error.details !== 'object'
-    || error.details === null
-  ) {
-    return [];
-  }
-  const trace = (error.details as { execution_trace?: unknown }).execution_trace;
-  if (!Array.isArray(trace)) return [];
-  return trace.filter((event): event is CommercialExecutionTraceEvent => {
-    if (typeof event !== 'object' || event === null) return false;
-    const candidate = event as Partial<CommercialExecutionTraceEvent>;
-    return (
-      typeof candidate.node_id === 'string'
-      && ['completed', 'warning', 'error'].includes(candidate.status ?? '')
-      && typeof candidate.duration_ms === 'number'
-    );
-  });
-}
-
-function ExecutionTrace({
-  events,
-}: {
-  events: CommercialExecutionTraceEvent[];
-}) {
-  if (events.length === 0) return null;
-  const hasIssue = events.some((event) => event.status !== 'completed');
-  return (
-    <details
-      open={hasIssue}
-      style={{ borderTop: '1px solid var(--gv-border-subtle)', paddingTop: '0.55rem' }}
-    >
-      <summary style={{ cursor: 'pointer', fontWeight: 700 }}>
-        LangGraph orchestration · {events.length} steps{hasIssue ? ' · attention needed' : ''}
-      </summary>
-      <ol style={{ display: 'grid', gap: '0.4rem', paddingLeft: '1.4rem', marginBottom: 0 }}>
-        {events.map((event, index) => (
-          <li key={`${event.node_id}-${index}`}>
-            <strong>{event.node_id.replace(/_/g, ' ')}</strong>
-            {' — '}
-            {event.status}
-            {' · '}
-            {event.duration_ms.toFixed(1)} ms
-            {event.message && (
-              <p style={{
-                margin: '0.2rem 0 0',
-                color: event.status === 'completed'
-                  ? 'var(--gv-text-secondary)'
-                  : '#b42318',
-              }}>
-                {event.message}
-              </p>
-            )}
-          </li>
-        ))}
-      </ol>
-    </details>
-  );
+  webSearchQuery?: string;
+  webSearchOffer?: boolean;
+  webSearchError?: string;
+  webCitations?: CommercialWebSearchResponse['citations'];
 }
 
 const DEMO_SCHEDULE = JSON.stringify(
@@ -148,7 +93,11 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'An unexpected error occurred.';
 }
 
-const CommercialAssistantPage: React.FC = () => {
+function uploadedDocumentName(sourceId: string): string {
+  return sourceId.replace(/^[a-f\d]{32}_/i, '');
+}
+
+export const CommercialAssistantPage: React.FC = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [credentials, setCredentials] = useState<ApiCredentials | null>(null);
@@ -160,6 +109,8 @@ const CommercialAssistantPage: React.FC = () => {
   const [isTyping, setIsTyping] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadMessage, setUploadMessage] = useState('');
+  const [uploadError, setUploadError] = useState(false);
+  const [deletingDocument, setDeletingDocument] = useState('');
   const [uploadedDocuments, setUploadedDocuments] = useState<UploadedRagDocument[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
@@ -169,6 +120,9 @@ const CommercialAssistantPage: React.FC = () => {
       timestamp: 'Just now',
     },
   ]);
+  const [conversationHistory, setConversationHistory] = useState<
+    CommercialConversationMessage[]
+  >([]);
 
   const prompts = [
     'What production constraints and maintenance windows are in the demo knowledge base?',
@@ -194,6 +148,7 @@ const CommercialAssistantPage: React.FC = () => {
           timestamp: 'Just now',
         },
       ]);
+      setConversationHistory([]);
       try {
         const ragData = await analyticsService.getCommercialRagDocuments(newCredentials);
         setUploadedDocuments(ragData.documents);
@@ -212,6 +167,7 @@ const CommercialAssistantPage: React.FC = () => {
     setPassword('');
     setUsername('');
     setUploadedDocuments([]);
+    setConversationHistory([]);
     setUploadMessage('');
     setMessages([
       {
@@ -261,13 +217,8 @@ const CommercialAssistantPage: React.FC = () => {
         trimmed,
         credentials,
         optimizationInputs,
+        conversationHistory.slice(-8),
       );
-      if (response.execution_trace.length > 0) {
-        console.info('LangGraph execution trace', {
-          requestId: response.request_id,
-          steps: response.execution_trace,
-        });
-      }
       setMessages((previous) => [
         ...previous,
         {
@@ -276,22 +227,29 @@ const CommercialAssistantPage: React.FC = () => {
           text: response.summary,
           timestamp: 'Just now',
           response,
+          ...(response.web_search_offer ? {
+            webSearchQuery: trimmed,
+            webSearchOffer: true,
+          } : {}),
         },
       ]);
+      setConversationHistory((previous) => {
+        const nextHistory: CommercialConversationMessage[] = [
+          ...previous,
+          { role: 'user', content: trimmed },
+          { role: 'assistant', content: response.summary.slice(0, 2000) },
+        ];
+        return nextHistory.slice(-8);
+      });
       if (optimizationInputs) setScheduleJson('');
     } catch (error) {
-      const executionTrace = getErrorExecutionTrace(error);
-      if (executionTrace.length > 0) {
-        console.info('LangGraph execution trace', { steps: executionTrace });
-      }
       setMessages((previous) => [
         ...previous,
         {
           id: `ast-${Date.now()}`,
           sender: 'assistant',
-          text: `The master workflow could not complete this request: ${errorMessage(error)}`,
+          text: `I couldn't complete that request: ${errorMessage(error)}`,
           timestamp: 'Just now',
-          executionTrace,
         },
       ]);
     } finally {
@@ -299,37 +257,134 @@ const CommercialAssistantPage: React.FC = () => {
     }
   };
 
-  const handleUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.currentTarget.files?.[0];
-    event.currentTarget.value = '';
-    if (!file || !credentials) return;
-    setIsUploading(true);
-    setUploadMessage('');
+  const handleWebSearch = async (message: ChatMessage) => {
+    if (!message.webSearchQuery || !credentials || isTyping) return;
+    setIsTyping(true);
+    setMessages((previous) => previous.map((item) => (
+      item.id === message.id
+        ? { ...item, webSearchOffer: false, webSearchError: undefined }
+        : item
+    )));
     try {
-      const indexed = await analyticsService.uploadCommercialRagDocument(
-        file,
+      const result = await analyticsService.searchCommercialWeb(
+        message.webSearchQuery,
         credentials,
       );
-      setUploadMessage(`${file.name} uploaded and indexed for shared RAG retrieval.`);
       setMessages((previous) => [
         ...previous,
         {
-          id: `upload-${Date.now()}`,
+          id: `web-${Date.now()}`,
           sender: 'assistant',
-          text: `Document indexed successfully: ${indexed.source_id} (${indexed.chunk_count ?? 0} searchable passages).`,
+          text: `Answer from web sources:\n${result.answer}`,
           timestamp: 'Just now',
+          webCitations: result.citations,
         },
       ]);
+      setConversationHistory((previous) => {
+        const nextHistory: CommercialConversationMessage[] = [
+          ...previous,
+          { role: 'assistant', content: result.answer.slice(0, 2000) },
+        ];
+        return nextHistory.slice(-8);
+      });
+    } catch (error) {
+      const messageText = `Web search failed: ${errorMessage(error)}`;
+      setMessages((previous) => previous.map((item) => (
+        item.id === message.id
+          ? {
+            ...item,
+            webSearchOffer: true,
+            webSearchError: messageText,
+          }
+          : item
+      )));
+    } finally {
+      setIsTyping(false);
+    }
+  };
+
+  const handleSkipWebSearch = (messageId: string) => {
+    setMessages((previous) => previous.map((item) => (
+      item.id === messageId
+        ? { ...item, webSearchOffer: false, webSearchError: undefined }
+        : item
+    )));
+  };
+
+  const handleUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.currentTarget.files ?? []);
+    event.currentTarget.value = '';
+    if (files.length === 0 || !credentials) return;
+    setIsUploading(true);
+    setUploadMessage('');
+    setUploadError(false);
+    const failures: string[] = [];
+    let uploadedCount = 0;
+    try {
+      for (const [index, file] of files.entries()) {
+        setUploadMessage(`Uploading and indexing ${index + 1} of ${files.length}: ${file.name}`);
+        try {
+          const indexed = await analyticsService.uploadCommercialRagDocument(
+            file,
+            credentials,
+          );
+          uploadedCount += 1;
+          setMessages((previous) => [
+            ...previous,
+            {
+              id: `upload-${Date.now()}-${index}`,
+              sender: 'assistant',
+              text: `Document indexed successfully: ${file.name} (${indexed.chunk_count ?? 0} searchable passages).`,
+              timestamp: 'Just now',
+            },
+          ]);
+        } catch (error) {
+          failures.push(`${file.name}: ${errorMessage(error)}`);
+        }
+      }
+
+      const uploadSummary = uploadedCount > 0
+        ? `${uploadedCount} document${uploadedCount === 1 ? '' : 's'} uploaded and indexed.`
+        : 'No documents were uploaded.';
+      setUploadMessage(
+        failures.length > 0
+          ? `${uploadSummary} Failed: ${failures.join('; ')}`
+          : uploadSummary,
+      );
+      setUploadError(failures.length > 0);
       try {
         const ragData = await analyticsService.getCommercialRagDocuments(credentials);
         setUploadedDocuments(ragData.documents);
       } catch (error) {
-        setUploadMessage(`Document was indexed, but the list could not be refreshed: ${errorMessage(error)}`);
+        setUploadMessage(
+          `${uploadSummary}${failures.length > 0 ? ` Failed: ${failures.join('; ')}` : ''} The document list could not be refreshed: ${errorMessage(error)}`,
+        );
+        setUploadError(true);
       }
-    } catch (error) {
-      setUploadMessage(errorMessage(error));
     } finally {
       setIsUploading(false);
+    }
+  };
+
+  const handleRemoveDocument = async (document: UploadedRagDocument) => {
+    if (!credentials || deletingDocument) return;
+    setDeletingDocument(document.source_id);
+    setUploadMessage('');
+    setUploadError(false);
+    try {
+      await analyticsService.deleteCommercialRagDocument(
+        document.source_id,
+        credentials,
+      );
+      setUploadedDocuments((previous) => previous.filter(
+        (item) => item.source_id !== document.source_id,
+      ));
+      setUploadMessage(`${uploadedDocumentName(document.source_id)} removed from shared RAG documents.`);
+    } catch (error) {
+      setUploadMessage(`Could not remove ${uploadedDocumentName(document.source_id)}: ${errorMessage(error)}`);
+      setUploadError(true);
+    } finally {
+      setDeletingDocument('');
     }
   };
 
@@ -445,19 +500,29 @@ const CommercialAssistantPage: React.FC = () => {
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap' }}>
               <div>
                 <h3 style={{ margin: '0 0 0.25rem', fontSize: '0.95rem', color: 'var(--gv-text-primary)' }}>Shared RAG documents</h3>
-                <p style={{ margin: 0, fontSize: '0.76rem', color: 'var(--gv-text-muted)' }}>PDF, MD, TXT, DOCX, PPTX, XLSX, HTML, and CSV · max 25 MB per file</p>
+                <p style={{ margin: 0, fontSize: '0.76rem', color: 'var(--gv-text-muted)' }}>Select multiple PDF, MD, TXT, DOCX, PPTX, XLSX, HTML, CSV, PNG, JPG, TIFF, BMP, or WebP files · max 25 MB each. Images are read with local OCR.</p>
               </div>
-              <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.45rem', padding: '0.65rem 0.9rem', borderRadius: 'var(--gv-radius-md)', background: 'var(--gv-color-grid-blue)', color: '#fff', fontWeight: 700, fontSize: '0.82rem', cursor: isUploading ? 'wait' : 'pointer' }}>
-                <Upload size={15} /> {isUploading ? 'Uploading and indexing…' : 'Upload document'}
-                <input type="file" accept=".pdf,.md,.txt,.docx,.pptx,.xlsx,.html,.csv" disabled={isUploading} onChange={handleUpload} style={{ display: 'none' }} />
+              <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.45rem', padding: '0.65rem 0.9rem', borderRadius: 'var(--gv-radius-md)', background: 'var(--gv-color-grid-blue)', color: '#fff', fontWeight: 700, fontSize: '0.82rem', cursor: isUploading || deletingDocument ? 'wait' : 'pointer' }}>
+                <Upload size={15} /> {isUploading ? 'Uploading and indexing…' : 'Add documents'}
+                <input type="file" accept=".pdf,.md,.txt,.docx,.pptx,.xlsx,.html,.csv,.png,.jpg,.jpeg,.tif,.tiff,.bmp,.webp" multiple disabled={isUploading || deletingDocument !== ''} onChange={handleUpload} style={{ display: 'none' }} />
               </label>
             </div>
-            {uploadMessage && <p role="status" style={{ margin: 0, fontSize: '0.8rem', color: uploadMessage.includes('indexed') ? 'var(--gv-color-smart-teal)' : '#b42318' }}>{uploadMessage}</p>}
+            {uploadMessage && <p role={uploadError ? 'alert' : 'status'} style={{ margin: 0, fontSize: '0.8rem', color: uploadError ? '#b42318' : 'var(--gv-color-smart-teal)' }}>{uploadMessage}</p>}
             {uploadedDocuments.length > 0 ? (
               <ul style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', margin: 0, padding: 0, listStyle: 'none' }}>
                 {uploadedDocuments.map((document) => (
                   <li key={document.source_id} style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', padding: '0.4rem 0.65rem', borderRadius: '999px', background: 'var(--gv-bg-surface-subtle)', color: 'var(--gv-text-secondary)', fontSize: '0.75rem' }}>
-                    <FileText size={13} /> {document.source_id}
+                    <FileText size={13} /> {uploadedDocumentName(document.source_id)}
+                    <button
+                      type="button"
+                      aria-label={`Remove ${uploadedDocumentName(document.source_id)}`}
+                      title={`Remove ${uploadedDocumentName(document.source_id)}`}
+                      disabled={isUploading || deletingDocument !== ''}
+                      onClick={() => void handleRemoveDocument(document)}
+                      style={{ display: 'inline-flex', alignItems: 'center', padding: '0.1rem', border: 0, background: 'transparent', color: '#b42318', cursor: isUploading || deletingDocument ? 'wait' : 'pointer' }}
+                    >
+                      <Trash2 size={13} />
+                    </button>
                   </li>
                 ))}
               </ul>
@@ -485,36 +550,57 @@ const CommercialAssistantPage: React.FC = () => {
                 {message.sender === 'assistant' && <div style={{ width: 30, height: 30, borderRadius: '50%', background: 'var(--gv-color-smart-teal)', display: 'grid', placeItems: 'center', flexShrink: 0 }}><Bot size={17} color="#fff" /></div>}
                 <div style={{ minWidth: 0, background: message.sender === 'user' ? 'var(--gv-color-midnight-navy)' : 'var(--gv-bg-surface-subtle)', color: message.sender === 'user' ? '#fff' : 'var(--gv-text-primary)', padding: '0.8rem 1rem', borderRadius: 'var(--gv-radius-md)', fontSize: '0.83rem', lineHeight: 1.5, border: message.sender === 'user' ? 'none' : '1px solid var(--gv-border-subtle)', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
                   <p style={{ margin: 0 }}>{message.text}</p>
+                  {message.webCitations && message.webCitations.length > 0 && (
+                    <div style={{ marginTop: '0.65rem' }}>
+                      <strong>Web sources</strong>
+                      <ol style={{ margin: '0.35rem 0 0', paddingLeft: '1.2rem' }}>
+                        {message.webCitations.map((citation, index) => (
+                          <li key={`${citation.url}-${index}`}>
+                            <a href={citation.url} target="_blank" rel="noopener noreferrer">
+                              {citation.title}
+                            </a>
+                            {citation.excerpt && (
+                              <blockquote style={{ margin: '0.25rem 0', color: 'var(--gv-text-secondary)' }}>
+                                {citation.excerpt}
+                              </blockquote>
+                            )}
+                          </li>
+                        ))}
+                      </ol>
+                    </div>
+                  )}
                   {message.response && (
                     <div style={{ display: 'grid', gap: '0.7rem', marginTop: '0.75rem' }}>
-                      <strong>Workflow status: {message.response.status}</strong>
-                      <ExecutionTrace events={message.response.execution_trace} />
-                      {message.response.findings.length > 0 && (
-                        <div><strong>Findings</strong><ul>{message.response.findings.map((finding, index) => <li key={`${index}-${finding}`}>{finding}</li>)}</ul></div>
-                      )}
                       {message.response.evidence_refs.length > 0 && (
-                        <div>
-                          <strong>Evidence</strong>
-                          <ul>{message.response.evidence_refs.map((reference, index) => (
-                            <li key={`${reference.source_id}-${index}`}>
-                              {reference.source_id}{reference.locator ? ` (${reference.locator})` : ''}{reference.synthetic ? ' — synthetic demo source' : ''}
-                              {reference.excerpt && <blockquote style={{ margin: '0.25rem 0 0', color: 'var(--gv-text-secondary)' }}>{reference.excerpt}</blockquote>}
-                            </li>
-                          ))}</ul>
-                        </div>
+                        <details>
+                          <summary style={{ cursor: 'pointer', fontWeight: 700 }}>
+                            Sources ({message.response.evidence_refs.length})
+                          </summary>
+                          <ol style={{ paddingLeft: '1.2rem' }}>
+                            {message.response.evidence_refs.map((reference, index) => (
+                              <li key={`${reference.source_id}-${reference.locator}-${index}`}>
+                                <strong>
+                                  [{index + 1}] {uploadedDocumentName(reference.source_id)}
+                                  {reference.locator ? ` (${reference.locator})` : ''}
+                                </strong>
+                                {reference.synthetic && <span> — synthetic demo source</span>}
+                                {reference.excerpt && (
+                                  <blockquote style={{ margin: '0.25rem 0 0', color: 'var(--gv-text-secondary)' }}>
+                                    {reference.excerpt}
+                                  </blockquote>
+                                )}
+                              </li>
+                            ))}
+                          </ol>
+                        </details>
                       )}
                       {message.response.assumptions.length > 0 && <div><strong>Assumptions</strong><ul>{message.response.assumptions.map((item, index) => <li key={`${index}-${item}`}>{item}</li>)}</ul></div>}
                       {message.response.conflicts.length > 0 && <div><strong>Conflicts</strong><ul>{message.response.conflicts.map((item, index) => <li key={`${index}-${item}`}>{item}</li>)}</ul></div>}
-                      {message.response.validation.issues.length > 0 && <div><strong>Validation notes</strong><ul>{message.response.validation.issues.map((item, index) => <li key={`${index}-${item}`}>{item}</li>)}</ul></div>}
-                      {message.response.errors.length > 0 && <div><strong>Workflow errors</strong><ul>{message.response.errors.map((item, index) => <li key={`${index}-${item}`}>{item}</li>)}</ul></div>}
-                      {Object.entries(message.response.specialist_results).map(([name, result]) => (
-                        <details key={name}>
-                          <summary>{name.replace(/_/g, ' ')} — {result.status}</summary>
-                          {result.findings.length > 0 && <ul>{result.findings.map((finding, index) => <li key={`${index}-${finding}`}>{finding}</li>)}</ul>}
-                          {Object.keys(result.data).length > 0 && <pre style={{ maxWidth: '100%', overflow: 'auto', fontSize: '0.72rem' }}>{JSON.stringify(result.data, null, 2)}</pre>}
-                          {result.error && <p>{result.error.message}</p>}
-                        </details>
-                      ))}
+                      {message.response.errors.length > 0 && (
+                        <p role="alert" style={{ color: '#b42318', margin: 0 }}>
+                          This answer may be incomplete: {message.response.errors.join('; ')}
+                        </p>
+                      )}
                       {message.response.schedule_proposal && (
                         <div style={{ borderTop: '1px solid var(--gv-border-subtle)', paddingTop: '0.65rem' }}>
                           <strong>Schedule proposal — {message.response.schedule_proposal.status}</strong>
@@ -531,8 +617,30 @@ const CommercialAssistantPage: React.FC = () => {
                       )}
                     </div>
                   )}
-                  {message.executionTrace && (
-                    <ExecutionTrace events={message.executionTrace} />
+                  {message.webSearchOffer && message.webSearchQuery && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.75rem' }}>
+                      <button
+                        type="button"
+                        disabled={isTyping}
+                        onClick={() => void handleWebSearch(message)}
+                        style={{ padding: '0.45rem 0.7rem', border: 0, borderRadius: 'var(--gv-radius-md)', background: 'var(--gv-color-grid-blue)', color: '#fff', fontWeight: 700, cursor: isTyping ? 'wait' : 'pointer' }}
+                      >
+                        Search web sources
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isTyping}
+                        onClick={() => handleSkipWebSearch(message.id)}
+                        style={{ padding: '0.45rem 0.7rem', border: '1px solid var(--gv-border-subtle)', borderRadius: 'var(--gv-radius-md)', background: 'var(--gv-bg-surface)', color: 'var(--gv-text-primary)', cursor: isTyping ? 'wait' : 'pointer' }}
+                      >
+                        No, go back
+                      </button>
+                    </div>
+                  )}
+                  {message.webSearchError && (
+                    <p role="alert" style={{ margin: '0.5rem 0 0', color: '#b42318' }}>
+                      {message.webSearchError}
+                    </p>
                   )}
                   <small style={{ display: 'block', marginTop: '0.35rem', opacity: 0.7 }}>{message.timestamp}</small>
                 </div>
@@ -570,6 +678,11 @@ interface LegacyChatMessage {
   sender: 'user' | 'assistant';
   text: string;
   timestamp: string;
+  citations?: AssistantChatResponse['citations'];
+  runReferences?: string[];
+  downloads?: AssistantChatResponse['downloads'];
+  artifacts?: AssistantChatResponse['artifacts'];
+  charts?: AssistantChatResponse['charts'];
 }
 
 const LegacyAssistantPage: React.FC = () => {
@@ -584,6 +697,8 @@ const LegacyAssistantPage: React.FC = () => {
       'Estimate 5 kW rooftop solar generation, cost, payback, and peak-demand impact in Bengaluru.',
     ],
     government: [
+      'Show the redistribution plan for 2018-09-24.',
+      'Show the model-predicted government grid demand for 2018-09-25.',
       'Compare the available regions by observed demand.',
       'How has aggregate demand changed over the selected period?',
       'Are any regions currently missing from aggregate reporting?',
@@ -594,11 +709,16 @@ const LegacyAssistantPage: React.FC = () => {
   const suggestedPrompts =
     suggestedPromptsMap[persona] || suggestedPromptsMap.household;
   const [inputPrompt, setInputPrompt] = useState('');
+  const [conversationId] = useState(() =>
+    typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : `conversation-${Date.now()}`
+  );
   const [messages, setMessages] = useState<LegacyChatMessage[]>([
     {
       id: 'init-1',
       sender: 'assistant',
-      text: `Hello! I am GridVision Assistant, operating in **${persona.toUpperCase()}** scope for **${activeEntity}**. How can I help you analyze telemetry, forecast trends, or explain tariff calculations today?`,
+      text: `I can answer deterministically when an approved source is available for the selected ${persona} demo context. No approved telemetry source is currently configured, so I will not infer consumption, tariffs, forecasts, or anomaly causes.`,
       timestamp: 'Just now',
     },
   ]);
@@ -618,32 +738,80 @@ const LegacyAssistantPage: React.FC = () => {
     ]);
     setInputPrompt('');
     setIsTyping(true);
+    const assistantId = `ast-${typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : Date.now()}`;
+
     try {
-      const response = await analyticsService.askAssistant(
+      const res = await analyticsService.askAssistantStream(
         trimmed,
         persona,
         activeEntity,
+        conversationId,
+        (token) => {
+          setMessages((prev) => {
+            const found = prev.some((message) => message.id === assistantId);
+            return found
+              ? prev.map((message) =>
+                  message.id === assistantId
+                    ? { ...message, text: message.text + token }
+                    : message
+                )
+              : [
+                  ...prev,
+                  {
+                    id: assistantId,
+                    sender: 'assistant',
+                    text: token,
+                    timestamp: 'Just now',
+                  },
+                ];
+          });
+        },
       );
-      setMessages((previous) => [
-        ...previous,
-        {
-          id: `ast-${Date.now()}`,
-          sender: 'assistant',
-          text: response.answer,
-          timestamp: 'Just now',
-        },
-      ]);
-    } catch (error) {
-      setMessages((previous) => [
-        ...previous,
-        {
-          id: `ast-${Date.now()}`,
-          sender: 'assistant',
-          text: `The assistant service did not return an answer: ${
-            error instanceof Error ? error.message : 'Unknown service error.'
-          } Please try again when the backend is available.`,
-          timestamp: 'Just now',
-        },
+      setMessages((prev) => {
+        const found = prev.some((message) => message.id === assistantId);
+        return found
+          ? prev.map((message) =>
+              message.id === assistantId
+                ? {
+                    ...message,
+                    text: res.answer,
+                    citations: res.citations,
+                    downloads: res.downloads,
+                    artifacts: res.artifacts,
+                    runReferences: res.runReferences,
+                    charts: res.charts,
+                  }
+                : message
+            )
+          : [
+              ...prev,
+              {
+                id: assistantId,
+                sender: 'assistant',
+                text: res.answer,
+                timestamp: 'Just now',
+                citations: res.citations,
+                downloads: res.downloads,
+                artifacts: res.artifacts,
+                runReferences: res.runReferences,
+                charts: res.charts,
+              },
+            ];
+      });
+    } catch (err) {
+      const replyMsg: LegacyChatMessage = {
+        id: `ast-${Date.now() + 1}`,
+        sender: 'assistant',
+        text: `The assistant service did not return an answer: ${
+          err instanceof Error ? err.message : 'Unknown service error.'
+        } Please try again when the backend is available.`,
+        timestamp: 'Just now',
+      };
+      setMessages((prev) => [
+        ...prev.filter((message) => message.id !== assistantId),
+        replyMsg,
       ]);
     } finally {
       setIsTyping(false);
@@ -679,27 +847,220 @@ const LegacyAssistantPage: React.FC = () => {
         </div>
       </section>
 
-      <section aria-live="polite" style={{ background: 'var(--gv-bg-surface)', border: '1px solid var(--gv-border-subtle)', borderRadius: 'var(--gv-radius-lg)', padding: '1.5rem', minHeight: 400, maxHeight: 550, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-        {messages.map((message) => (
-          <div key={message.id} style={{ display: 'flex', gap: '0.75rem', alignSelf: message.sender === 'user' ? 'flex-end' : 'flex-start', maxWidth: '85%' }}>
-            {message.sender === 'assistant' && <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'var(--gv-color-smart-teal)', display: 'grid', placeItems: 'center', flexShrink: 0 }}><Bot size={18} color="#FFFFFF" /></div>}
-            <div style={{ background: message.sender === 'user' ? 'var(--gv-color-midnight-navy)' : 'var(--gv-bg-surface-subtle)', color: message.sender === 'user' ? '#FFFFFF' : 'var(--gv-text-primary)', padding: '0.85rem 1.15rem', borderRadius: 'var(--gv-radius-md)', fontSize: '0.85rem', lineHeight: 1.5, border: message.sender === 'user' ? 'none' : '1px solid var(--gv-border-subtle)', whiteSpace: 'pre-wrap' }}>
-              {message.text}
-              <small style={{ display: 'block', marginTop: '0.35rem', opacity: 0.7 }}>{message.timestamp}</small>
+      {/* Chat Messages Log */}
+      <div
+        style={{
+          background: 'var(--gv-bg-surface)',
+          border: '1px solid var(--gv-border-subtle)',
+          borderRadius: 'var(--gv-radius-lg)',
+          padding: '1.5rem',
+          minHeight: '400px',
+          maxHeight: '550px',
+          overflowY: 'auto',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '1.25rem',
+        }}
+      >
+        {messages.map((m) => (
+          <div
+            key={m.id}
+            style={{
+              display: 'flex',
+              gap: '0.75rem',
+              alignSelf: m.sender === 'user' ? 'flex-end' : 'flex-start',
+              maxWidth: '85%',
+            }}
+          >
+            {m.sender === 'assistant' && (
+              <div
+                style={{
+                  width: '32px',
+                  height: '32px',
+                  borderRadius: '50%',
+                  background: 'var(--gv-color-smart-teal)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                }}
+              >
+                <Bot size={18} color="#FFFFFF" />
+              </div>
+            )}
+
+            <div
+              style={{
+                background: m.sender === 'user' ? 'var(--gv-color-midnight-navy)' : 'var(--gv-bg-surface-subtle)',
+                color: m.sender === 'user' ? '#FFFFFF' : 'var(--gv-text-primary)',
+                padding: '0.85rem 1.15rem',
+                borderRadius: 'var(--gv-radius-md)',
+                fontSize: '0.85rem',
+                lineHeight: 1.5,
+                border: m.sender === 'user' ? 'none' : '1px solid var(--gv-border-subtle)',
+                whiteSpace: 'pre-wrap',
+              }}
+            >
+              {m.text}
+              {m.runReferences && m.runReferences.length > 0 && (
+                <div style={{ marginTop: '0.55rem', fontSize: '0.75rem' }}>
+                  Saved run: {m.runReferences.join(', ')}
+                </div>
+              )}
+              {m.charts?.map((chart) => (
+                <div key={chart.title} style={{ marginTop: '0.75rem', padding: '0.75rem', background: '#fff', borderRadius: 8 }}>
+                  <strong>{chart.title}</strong>
+                  {chart.kind === 'map' ? (
+                    chart.points?.length ? (() => {
+                      const lats = chart.points!.map((point) => point.latitude);
+                      const lons = chart.points!.map((point) => point.longitude);
+                      const minLat = Math.min(...lats), maxLat = Math.max(...lats);
+                      const minLon = Math.min(...lons), maxLon = Math.max(...lons);
+                      const latSpan = maxLat - minLat || 0.001;
+                      const lonSpan = maxLon - minLon || 0.001;
+                      return (
+                        <svg role="img" aria-label="Saved event cluster map" viewBox="0 0 480 280" style={{ width: '100%', maxWidth: 560, marginTop: '0.5rem', background: '#f1f5f9', borderRadius: 6 }}>
+                          {chart.points!.map((point) => {
+                            const x = 24 + ((point.longitude - minLon) / lonSpan) * 432;
+                            const y = 24 + ((maxLat - point.latitude) / latSpan) * 232;
+                            return <g key={point.id}><title>{`${point.id}: ${point.scope}, severity ${point.severity.toFixed(3)}`}</title><circle cx={x} cy={y} r={5 + Math.max(0, Math.min(1, point.severity)) * 5} fill="#0f766e" fillOpacity="0.78" stroke="#134e4a" /><text x={x + 7} y={y - 5} fontSize="9" fill="#0f172a">{point.id}</text></g>;
+                          })}
+                        </svg>
+                      );
+                    })() : <div style={{ marginTop: '0.5rem', fontSize: '0.8rem' }}>No saved events had usable coordinates for the map.</div>
+                  ) : (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', marginTop: '0.5rem' }}>
+                    {(chart.series || []).map((series) => {
+                      const entries = Object.entries(series.items);
+                      const max = Math.max(1, ...entries.map(([, value]) => value));
+                      const rowHeight = 25;
+                      return (
+                        <div key={series.label} style={{ flex: '1 1 260px' }}>
+                          <div style={{ fontSize: '0.75rem', fontWeight: 600 }}>{series.label}</div>
+                          <svg role="img" aria-label={`${series.label} breakdown`} viewBox={`0 0 360 ${Math.max(30, entries.length * rowHeight)}`} style={{ width: '100%', maxWidth: 420 }}>
+                            {entries.map(([label, value], index) => {
+                              const y = index * rowHeight;
+                              const barWidth = Math.max(2, (value / max) * 205);
+                              return (
+                                <g key={label}>
+                                  <text x="0" y={y + 16} fontSize="11" fill="#334155">{label.slice(0, 22)}</text>
+                                  <rect x="145" y={y + 4} width={barWidth} height="15" rx="3" fill="#0f766e" />
+                                  <text x={153 + barWidth} y={y + 16} fontSize="11" fill="#0f172a">{value}</text>
+                                </g>
+                              );
+                            })}
+                          </svg>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  )}
+                </div>
+              ))}
+              {m.citations && m.citations.length > 0 && (
+                <div style={{ marginTop: '0.55rem', fontSize: '0.75rem' }}>
+                  <strong>Sources</strong>
+                  <ul style={{ margin: '0.25rem 0 0', paddingLeft: '1.2rem' }}>
+                    {m.citations.map((citation, index) => (
+                      <li key={`${citation.title}-${index}`}>
+                        {citation.sourceUrl ? (
+                          <a href={citation.sourceUrl} target="_blank" rel="noreferrer">
+                            {citation.title}
+                          </a>
+                        ) : citation.title}
+                        {citation.page ? `, p. ${citation.page}` : ''}
+                        {citation.publisher ? ` — ${citation.publisher}` : ''}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {m.downloads && m.downloads.length > 0 && (
+                <div style={{ marginTop: '0.55rem', display: 'flex', gap: '0.8rem', flexWrap: 'wrap' }}>
+                  {m.downloads.map((download) => (
+                    <a
+                      key={download.url}
+                      href={new URL(download.url, analyticsService.getApiBaseUrl()).toString()}
+                      download
+                    >
+                      {download.label} ({download.format})
+                    </a>
+                  ))}
+                </div>
+              )}
+              {m.artifacts?.map((artifact) => artifact.format === 'png' && (
+                <figure key={artifact.url} style={{ margin: '0.75rem 0 0', maxWidth: 720 }}>
+                  <a href={new URL(artifact.url, analyticsService.getApiBaseUrl()).toString()} target="_blank" rel="noreferrer">
+                    <img
+                      src={new URL(artifact.url, analyticsService.getApiBaseUrl()).toString()}
+                      alt={artifact.label}
+                      style={{ display: 'block', width: '100%', height: 'auto', borderRadius: 8, border: '1px solid var(--gv-border-subtle)' }}
+                    />
+                  </a>
+                  <figcaption style={{ marginTop: '0.3rem', fontSize: '0.75rem', color: 'var(--gv-text-secondary)' }}>{artifact.label}</figcaption>
+                </figure>
+              ))}
             </div>
-            {message.sender === 'user' && <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'var(--gv-color-grid-blue)', display: 'grid', placeItems: 'center', flexShrink: 0 }}><User size={18} color="#FFFFFF" /></div>}
+            {m.sender === 'user' && <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'var(--gv-color-grid-blue)', display: 'grid', placeItems: 'center', flexShrink: 0 }}><User size={18} color="#FFFFFF" /></div>}
           </div>
         ))}
         {isTyping && <div style={{ fontStyle: 'italic', color: 'var(--gv-text-muted)', fontSize: '0.85rem' }}>GridVision Assistant is analyzing telemetry...</div>}
-      </section>
+      </div>
 
-      <form onSubmit={(event) => { event.preventDefault(); void handleSend(inputPrompt); }} style={{ display: 'flex', gap: '0.75rem' }}>
-        <input type="text" value={inputPrompt} onChange={(event) => setInputPrompt(event.target.value)} placeholder={`Ask about ${persona} energy consumption, forecasts, or billing equations...`} style={{ flex: 1, padding: '0.85rem 1.15rem', borderRadius: 'var(--gv-radius-md)', border: '1px solid var(--gv-border-accent)', background: 'var(--gv-bg-surface)', fontSize: '0.88rem', color: 'var(--gv-text-primary)', outline: 'none' }} />
-        <button type="submit" disabled={isTyping} style={{ padding: '0 1.5rem', borderRadius: 'var(--gv-radius-md)', background: 'var(--gv-color-smart-teal)', color: '#FFFFFF', fontWeight: 700, fontSize: '0.88rem', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <span>Send</span><Send size={15} />
+      {/* Input Box */}
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          handleSend(inputPrompt);
+        }}
+        style={{
+          display: 'flex',
+          gap: '0.75rem',
+        }}
+      >
+        <input
+          type="text"
+          value={inputPrompt}
+          onChange={(e) => setInputPrompt(e.target.value)}
+          placeholder={persona === 'government'
+            ? 'Ask about anomalies, government-grid demand, or redistribution plans...'
+            : `Ask about ${persona} energy consumption, forecasts, or billing equations...`}
+          style={{
+            flex: 1,
+            padding: '0.85rem 1.15rem',
+            borderRadius: 'var(--gv-radius-md)',
+            border: '1px solid var(--gv-border-accent)',
+            background: 'var(--gv-bg-surface)',
+            fontSize: '0.88rem',
+            color: 'var(--gv-text-primary)',
+            outline: 'none',
+          }}
+        />
+        <button
+          type="submit"
+          style={{
+            padding: '0 1.5rem',
+            borderRadius: 'var(--gv-radius-md)',
+            background: 'var(--gv-color-smart-teal)',
+            color: '#FFFFFF',
+            fontWeight: 700,
+            fontSize: '0.88rem',
+            border: 'none',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '0.5rem',
+          }}
+        >
+          <span>Send</span>
+          <Send size={15} />
         </button>
       </form>
 
+      {/* Prototype Disclosure Footnote */}
+      <div style={{ textAlign: 'center', fontSize: '0.72rem', color: 'var(--gv-text-muted)' }}>
+        Government questions are routed by Ollama to the anomaly or government-grid assistant. Generated redistribution charts and data appear with the answer.
+      </div>
       <footer style={{ textAlign: 'center', fontSize: '0.72rem', color: 'var(--gv-text-muted)' }}>
         Solar estimates show their assumptions and link Tavily web sources when available; figures are illustrative, not a quote.
       </footer>
@@ -709,7 +1070,11 @@ const LegacyAssistantPage: React.FC = () => {
 
 export const AiAssistantPage: React.FC = () => {
   const { currentPersona } = usePersona();
-  return currentPersona === 'commercial'
-    ? <CommercialAssistantPage />
-    : <LegacyAssistantPage />;
+  if (currentPersona === 'commercial') {
+    return <CommercialAssistantPage />;
+  }
+  if (currentPersona === 'household') {
+    return <ResidentialAssistantPage />;
+  }
+  return <LegacyAssistantPage />;
 };

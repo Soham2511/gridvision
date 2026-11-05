@@ -12,10 +12,11 @@ from flask import Blueprint, current_app, g, jsonify, request
 from werkzeug.utils import secure_filename
 
 from ai.commercial.graph import WorkflowExecutionError
-from ai.commercial.schemas.communication import AgentResult
+from ai.commercial.schemas.communication import AgentResult, ToolObservation
 from app.utils.responses import error_response, success_response
 from app.utils.validation import (
     CommercialWorkflowRequestModel,
+    CommercialWebSearchRequestModel,
     ScheduleApprovalRequestModel,
 )
 
@@ -32,6 +33,13 @@ ALLOWED_UPLOAD_EXTENSIONS = {
     ".xlsx",
     ".html",
     ".csv",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".tif",
+    ".tiff",
+    ".bmp",
+    ".webp",
 }
 
 
@@ -129,6 +137,10 @@ def commercial_workflow():
                 "factory_id": DEMO_FACTORY_ID,
                 "building_id": None,
                 "user_goal": validated.user_goal,
+                "conversation_history": [
+                    message.model_dump(mode="python")
+                    for message in validated.conversation_history
+                ],
                 "optimization_inputs": (
                     validated.optimization_inputs.model_dump(mode="python")
                     if validated.optimization_inputs is not None
@@ -155,6 +167,22 @@ def commercial_workflow():
         for agent_result in result.get("specialist_results", {}).values()
         if isinstance(agent_result, AgentResult)
     }
+    operations_result = response_data["specialist_results"].get("operations")
+    operations_error = (
+        operations_result.get("error")
+        if isinstance(operations_result, dict)
+        else None
+    )
+    web_search_offer = (
+        isinstance(operations_error, dict)
+        and operations_error.get("code") == "DATA_NOT_AVAILABLE"
+    )
+    response_data["web_search_offer"] = web_search_offer
+    if web_search_offer:
+        response_data["summary"] = (
+            "The query information is missing from the RAG documents. "
+            "Would you like an answer from web sources instead?"
+        )
     optimizer_result = result.get("optimization_result")
     if (
         isinstance(optimizer_result, AgentResult)
@@ -199,6 +227,45 @@ def commercial_workflow():
             "tool_call_count": result.get("tool_call_count", 0),
             "llm_call_count": result.get("llm_call_count", 0),
         },
+    )
+
+
+@bp.route("/commercial/web-search", methods=["POST"])
+def commercial_web_search():
+    """Search general web sources after the user explicitly opts in."""
+    data = request.get_json(force=True, silent=False) or {}
+    validated = CommercialWebSearchRequestModel.model_validate(data)
+    observation = current_app.extensions["commercial_web_search"](
+        validated.query
+    )
+    if not isinstance(observation, ToolObservation):
+        raise TypeError("The configured Commercial web search returned an invalid result.")
+    if observation.status != "available":
+        error = observation.error
+        return error_response(
+            error.message if error else "The web search could not be completed.",
+            code=error.code if error else "WEB_SEARCH_FAILED",
+            status_code=502,
+        )
+
+    results = observation.data.get("results", [])
+    return success_response(
+        {
+            "answer": observation.findings[0]
+            if observation.findings
+            else "Tavily did not return an answer.",
+            "citations": [
+                {
+                    "title": item.get("title", "Web source"),
+                    "url": item["url"],
+                    "excerpt": item.get("content", ""),
+                }
+                for item in results
+                if isinstance(item, dict)
+                and isinstance(item.get("url"), str)
+                and item["url"].startswith("https://")
+            ],
+        }
     )
 
 
@@ -292,7 +359,7 @@ def upload_rag_document():
                         "code": "UPLOAD_FORMAT_NOT_SUPPORTED",
                         "message": (
                             "Supported formats are PDF, Markdown, TXT, DOCX, "
-                            "PPTX, XLSX, HTML, and CSV."
+                            "PPTX, XLSX, HTML, CSV, PNG, JPEG, TIFF, BMP, and WebP."
                         ),
                     }
                 }
@@ -456,6 +523,19 @@ def upload_rag_document():
         },
         status_code=201,
     )
+
+
+@bp.route("/commercial/rag/documents/<source_id>", methods=["DELETE"])
+def delete_rag_document(source_id: str):
+    """Remove an uploaded document and its searchable index entries."""
+    retriever = current_app.extensions["commercial_rag_retriever"]
+    if not retriever.remove_uploaded_document(source_id):
+        return error_response(
+            "The uploaded document was not found.",
+            code="RAG_DOCUMENT_NOT_FOUND",
+            status_code=404,
+        )
+    return success_response({"deleted": True, "source_id": source_id})
 
 
 @bp.route(

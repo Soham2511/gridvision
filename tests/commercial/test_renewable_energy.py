@@ -72,6 +72,39 @@ def test_solar_estimate_uses_inputs_and_tavily_sources(
     assert result.evidence_refs[0].locator == "https://example.com/solar"
     assert any("Local rooftop solar information" in item for item in result.findings)
     assert json.loads(opener.request_body)["api_key"] == "test-key"
+    assert json.loads(opener.request_body)["include_answer"] is False
+
+
+def test_explicit_web_search_returns_tavily_answer_and_citations(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.delenv("TAVILY_API_KEY", raising=False)
+    key_file = tmp_path / "api.key"
+    key_file.write_text("test-key", encoding="utf-8")
+    tool = RenewableEnergyTools(key_file)
+    opener = _Opener(
+        _Response(
+            {
+                "answer": "A concise answer from web sources.",
+                "results": [
+                    {
+                        "url": "https://example.com/guide",
+                        "title": "Energy guide",
+                        "content": "Supporting source excerpt.",
+                    }
+                ],
+            }
+        )
+    )
+    tool._opener = opener
+
+    observation = tool.search_web("How can industrial motors save energy?")
+
+    assert observation.status == "available"
+    assert observation.findings == ("A concise answer from web sources.",)
+    assert observation.evidence_refs[0].locator == "https://example.com/guide"
+    assert observation.data["results"][0]["title"] == "Energy guide"
+    assert json.loads(opener.request_body)["include_answer"] is True
 
 
 def test_solar_request_without_site_inputs_does_not_invent_a_system_size(

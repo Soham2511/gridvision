@@ -17,6 +17,15 @@ SpecialistName = Literal[
 ]
 
 
+class CommercialConversationMessage(BaseModel):
+    """Untrusted user/assistant message included for short-term context."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=2000)
+
+
 class ContractModel(BaseModel):
     """Base contract that rejects undeclared fields and mutation."""
 
@@ -34,6 +43,10 @@ class CommercialRequest(ContractModel):
     )
     user_goal: str = Field(min_length=1, max_length=2000)
     optimization_inputs: ScheduleInput | None = None
+    conversation_history: list[CommercialConversationMessage] = Field(
+        default_factory=list,
+        max_length=8,
+    )
 
 
 class TaskAssignment(ContractModel):

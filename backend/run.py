@@ -11,6 +11,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 load_dotenv(PROJECT_ROOT / ".env")
+os.environ.setdefault("COMMERCIAL_RAG_CLEAR_UPLOADS_ON_STARTUP", "true")
 
 from app import create_app
 

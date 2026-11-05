@@ -2,6 +2,14 @@
 
 from __future__ import annotations
 
+import sys
+
+if sys.platform == "win32":
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if hasattr(sys.stderr, "reconfigure"):
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+
 import argparse
 from collections import deque
 from dataclasses import replace
@@ -49,6 +57,13 @@ SEGMENTATION_DAG_ID = "government_customer_segmentation"
 ANOMALY_DAG_ID = "gridvision_anomaly_training"
 DEFAULT_MODEL_NAME = "customer-bill-prediction"
 DEFAULT_ALIAS = "champion"
+AUTOMATION_APPROVED_DATA_SOURCES = (
+    "customer_gold",
+    "commercial_gold",
+    "government_2018",
+    "segmentation_2018",
+    "anomaly_synthetic_2019",
+)
 MLFLOW_HOST_PORT = os.getenv("GRIDVISION_MLFLOW_HOST_PORT", "15001")
 MLFLOW_HOST_URI = os.getenv("MLFLOW_TRACKING_URI", f"http://127.0.0.1:{MLFLOW_HOST_PORT}")
 MLFLOW_CONTAINER_URI = "http://mlflow:5001"
@@ -195,69 +210,6 @@ def _compose_command() -> list[str]:
     return [docker, "compose"]
 
 
-def _local_setting(
-    name: str,
-    default: str,
-    env: dict[str, str],
-) -> str:
-    """Read one non-secret Compose setting without exposing other .env values."""
-    if name in env:
-        return env[name]
-    env_file = PROJECT_ROOT / ".env"
-    if not env_file.is_file():
-        return default
-    for line in env_file.read_text(encoding="utf-8").splitlines():
-        candidate = line.strip()
-        if candidate.startswith("export "):
-            candidate = candidate[7:].lstrip()
-        key, separator, value = candidate.partition("=")
-        if separator and key.strip() == name:
-            value = value.strip()
-            if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
-                value = value[1:-1]
-            return value
-    return default
-
-
-def _verify_ollama_models(
-    base_url: str,
-    required_models: tuple[str, ...],
-) -> dict[str, Any]:
-    """Require the configured local Ollama models before expensive automation."""
-    try:
-        with urllib.request.urlopen(
-            f"{base_url.rstrip('/')}/api/tags",
-            timeout=5,
-        ) as response:
-            payload = json.loads(response.read(1_048_576))
-    except (OSError, TimeoutError, json.JSONDecodeError) as exc:
-        raise RuntimeError(
-            "Ollama is not reachable at "
-            f"{base_url}. Start Ollama and verify its local API is available. "
-            "Then run `ollama pull qwen3:8b` and `ollama pull gemma3:4b`."
-        ) from exc
-
-    models = payload.get("models") if isinstance(payload, dict) else None
-    if not isinstance(models, list):
-        raise RuntimeError("Ollama returned an invalid /api/tags response.")
-    installed = {
-        model.get("name")
-        for model in models
-        if isinstance(model, dict) and isinstance(model.get("name"), str)
-    }
-    missing = [model for model in required_models if model not in installed]
-    if missing:
-        commands = " && ".join(f"ollama pull {model}" for model in missing)
-        raise RuntimeError(
-            "Required Ollama models are not installed: "
-            f"{', '.join(missing)}. Install them once with: {commands}"
-        )
-    return {
-        "base_url": base_url,
-        "models": list(required_models),
-    }
-
-
 def _stage_wsl_build_context() -> tempfile.TemporaryDirectory[str] | None:
     """Stage only Docker build inputs off DrvFS, where BuildKit xattrs can fail."""
     if platform.system() != "Linux" or not PROJECT_ROOT.as_posix().startswith("/mnt/"):
@@ -281,7 +233,9 @@ def _stage_wsl_build_context() -> tempfile.TemporaryDirectory[str] | None:
     shutil.copytree(
         PROJECT_ROOT / "ai",
         root / "ai",
-        ignore=ignored_python_cache,
+        ignore=shutil.ignore_patterns(
+            "__pycache__", "*.pyc", "Key", "storage"
+        ),
     )
     shutil.copytree(
         PROJECT_ROOT / "docs" / "ai_commercial",
@@ -422,6 +376,7 @@ def _run_airflow_dag_test(
     airflow_command: list[str],
     dag_id: str,
     env: dict[str, str],
+    is_etl_only: bool = False,
 ) -> dict[str, str]:
     execution_date = date.today().isoformat()
     command = airflow_command + ["dags", "test", dag_id, execution_date]
@@ -446,6 +401,46 @@ def _run_airflow_dag_test(
             f"Airflow DAG test failed (exit {return_code}): {' '.join(command)}"
             + (f"\nLast task output:\n{details}" if details else "")
         )
+    os.environ.update(env)
+    if airflow_command == ["python-direct-runner"]:
+        if dag_id == DAG_ID:
+            from airflow.customer.data_pipeline import (
+                SOURCE_PATH,
+                BRONZE_PATH,
+                SILVER_PATH,
+                GOLD_PATH,
+                create_bronze,
+                create_customer_silver,
+                build_customer_bill_gold,
+            )
+            create_bronze(SOURCE_PATH, BRONZE_PATH)
+            create_customer_silver(BRONZE_PATH, SILVER_PATH)
+            build_customer_bill_gold(SILVER_PATH, GOLD_PATH)
+        elif dag_id == GOVERNMENT_DAG_ID:
+            gov_dir = PROJECT_ROOT / "airflow" / "2_government_load_prediction"
+            for p in (PROJECT_ROOT, gov_dir):
+                if str(p) not in sys.path:
+                    sys.path.insert(0, str(p))
+            from training.government_load.config import PipelineSettings
+            settings = PipelineSettings.from_environment()
+            ready_file = settings.output_path.expanduser().resolve()
+            reuse = os.getenv("GOVERNMENT_PIPELINE_REUSE_PREPARED", "").strip().lower() in {"1", "true", "yes"}
+            if not (reuse and ready_file.is_file()):
+                from grid_forecasting_pipeline.etl import prepare_training_data
+                prepare_training_data(settings)
+            if not is_etl_only and env.get("MLFLOW_TRACKING_URI"):
+                model_file = settings.model_path.expanduser().resolve()
+                if reuse and model_file.is_file():
+                    print(f"Reusing existing government model artifact at {model_file}", flush=True)
+                else:
+                    from training.government_load.modeling import train_hybrid_model
+                    training_settings = PipelineSettings(
+                        **{
+                            **settings.model_dump(),
+                            "input_path": ready_file,
+                        }
+                    )
+                    train_hybrid_model(training_settings)
     result = {"dag_id": dag_id, "execution_date": execution_date}
     print(
         f"Airflow DAG run completed: {dag_id} ({execution_date}). "
@@ -514,25 +509,33 @@ def _dag_dataset_paths(
         output_dir = Path(
             env.get("SEGMENTATION_OUTPUT_DIR", data_root / "segmentation")
         ).expanduser().resolve()
-        feature_path = Path(
-            env.get(
-                "SEGMENTATION_FEATURE_PATH",
-                data_root / "gold" / "customer_segmentation_features.parquet",
-            )
-        ).expanduser().resolve()
-        model_dir = Path(
-            env.get(
-                "SEGMENTATION_MODEL_DIR",
-                PROJECT_ROOT / "models" / "segmentation",
-            )
-        ).expanduser().resolve()
-        reports_dir = Path(
-            env.get(
-                "SEGMENTATION_REPORTS_DIR",
-                PROJECT_ROOT / "docs" / "customer_segmentation" / "reports",
-            )
-        ).expanduser().resolve()
+        # Keep the automation freshness check aligned with the locations used by
+        # the DAG and by SegmentationSettings.validate_outputs(). The published
+        # assignments and metadata live in output_dir, while features, reports,
+        # and model bundles have independently configurable shared locations.
+        from training.customer_segmentation.config import SegmentationSettings
+
+        settings = replace(
+            SegmentationSettings.from_environment(),
+            output_dir=output_dir,
+            feature_path=Path(
+                env.get(
+                    "SEGMENTATION_FEATURE_PATH",
+                    data_root / "gold" / "customer_segmentation_features.parquet",
+                )
+            ).expanduser().resolve(),
+            model_dir=Path(
+                env.get("SEGMENTATION_MODEL_DIR", PROJECT_ROOT / "models" / "segmentation")
+            ).expanduser().resolve(),
+            reports_dir=Path(
+                env.get(
+                    "SEGMENTATION_REPORTS_DIR",
+                    PROJECT_ROOT / "docs" / "customer_segmentation" / "reports",
+                )
+            ).expanduser().resolve(),
+        )
         outputs = [
+            settings.feature_path,
             output_dir / "consumer_assignments.parquet",
             output_dir / "cluster_profiles.parquet",
             output_dir / "segment_distribution.parquet",
@@ -543,12 +546,11 @@ def _dag_dataset_paths(
             output_dir / "cluster_daily_profile.parquet",
             output_dir / "cluster_monthly_profile.parquet",
             output_dir / "model_metadata.json",
-            feature_path,
-            reports_dir / "source_profile.json",
-            reports_dir / "feature_generation.json",
-            reports_dir / "geospatial_summary.json",
-            reports_dir / "model_selection_report.json",
-            reports_dir / "feature_diagnostics.json",
+            settings.reports_dir / "model_selection_report.json",
+            settings.reports_dir / "feature_diagnostics.json",
+            settings.reports_dir / "source_profile.json",
+            settings.reports_dir / "feature_generation.json",
+            settings.reports_dir / "geospatial_summary.json",
         ]
         if float(env.get("SEGMENTATION_BUILDING_SAMPLE_FRACTION", "0.1")) < 1:
             outputs.extend(
@@ -561,7 +563,7 @@ def _dag_dataset_paths(
         if metadata_path.is_file():
             metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
             outputs.extend(
-                model_dir
+                settings.model_dir
                 / f"{model['model_category'].lower()}_model.joblib"
                 for model in metadata.get("trained_models", [])
             )
@@ -692,27 +694,56 @@ def _existing_dag_outputs_are_reusable(
             source, _ = _dag_dataset_paths(dag_id, env)
             source_path = source[0].resolve()
             source_stat = source_path.stat()
-            source_profile = Path(
-                env.get(
-                    "SEGMENTATION_REPORTS_DIR",
-                    PROJECT_ROOT / "docs" / "customer_segmentation" / "reports",
-                )
-            ).expanduser().resolve() / "source_profile.json"
+            from training.customer_segmentation.config import SegmentationSettings
+
+            data_root = Path(
+                env.get("GRIDVISION_DATA_DIR", DATA_ROOT)
+            ).expanduser().resolve()
+            settings = replace(
+                SegmentationSettings.from_environment(),
+                output_dir=Path(
+                    env.get("SEGMENTATION_OUTPUT_DIR", data_root / "segmentation")
+                ).expanduser().resolve(),
+                feature_path=Path(
+                    env.get(
+                        "SEGMENTATION_FEATURE_PATH",
+                        data_root / "gold" / "customer_segmentation_features.parquet",
+                    )
+                ).expanduser().resolve(),
+                model_dir=Path(
+                    env.get("SEGMENTATION_MODEL_DIR", PROJECT_ROOT / "models" / "segmentation")
+                ).expanduser().resolve(),
+                reports_dir=Path(
+                    env.get(
+                        "SEGMENTATION_REPORTS_DIR",
+                        PROJECT_ROOT / "docs" / "customer_segmentation" / "reports",
+                    )
+                ).expanduser().resolve(),
+            )
+            source_profile = settings.reports_dir / "source_profile.json"
             profile = json.loads(source_profile.read_text(encoding="utf-8"))
+            expected_source_paths = {str(source_path)}
+            try:
+                source_relative_to_data = source_path.relative_to(data_root)
+            except ValueError:
+                pass
+            else:
+                expected_source_paths.add(
+                    str(Path("/opt/gridvision/data") / source_relative_to_data)
+                )
             if (
-                profile.get("source_path") != str(source_path)
+                profile.get("source_path") not in expected_source_paths
                 or profile.get("source_bytes") != source_stat.st_size
                 or profile.get("source_mtime_ns") != source_stat.st_mtime_ns
                 or profile.get("building_sample_fraction")
                 != float(env.get("SEGMENTATION_BUILDING_SAMPLE_FRACTION", "0.1"))
             ):
                 return False
-            from training.customer_segmentation.config import SegmentationSettings
             from training.customer_segmentation.pipeline import validate_outputs
 
             validate_outputs(
                 replace(
-                    SegmentationSettings.from_environment(),
+                    settings,
                     output_dir=Path(
                         env.get(
                             "SEGMENTATION_OUTPUT_DIR",
@@ -807,6 +838,7 @@ def _run_airflow_dag_if_dataset_changed(
     env: dict[str, str],
     *,
     force: bool = False,
+    is_etl_only: bool = False,
 ) -> dict[str, Any]:
     """Skip a DAG when its recorded input and generated datasets are unchanged."""
     inputs, outputs = _dag_dataset_paths(dag_id, env)
@@ -908,10 +940,14 @@ def _run_airflow_dag_if_dataset_changed(
     if dag_id == ANOMALY_DAG_ID:
         dag_env["ANOMALY_FORCE_PREPARE"] = "1"
         dag_env["ANOMALY_FORCE_RETRAIN"] = "1"
-    result = _run_airflow_dag_test(airflow_command, dag_id, dag_env)
+    result = _run_airflow_dag_test(airflow_command, dag_id, dag_env, is_etl_only=is_etl_only)
     if dag_id == SEGMENTATION_DAG_ID:
         _, outputs = _dag_dataset_paths(dag_id, env)
-    missing_outputs = [str(path) for path in outputs if not path.is_file()]
+    missing_outputs = [
+        str(path)
+        for path in outputs
+        if not path.is_file() or path.stat().st_size == 0
+    ]
     if missing_outputs:
         raise FileNotFoundError(
             f"Airflow DAG {dag_id} succeeded but expected datasets are missing: "
@@ -1257,6 +1293,18 @@ def _verify_model_catalog(
     }
 
 
+def _backend_stack_environment(env: dict[str, str]) -> dict[str, str]:
+    """Configure the backend for model and data outputs prepared by automation."""
+    stack_env = env.copy()
+    stack_env["MODEL_PROVIDER"] = "mlflow"
+    stack_env["MLFLOW_TRACKING_URI"] = MLFLOW_CONTAINER_URI
+    stack_env.setdefault(
+        "APPROVED_DATA_SOURCES",
+        ",".join(AUTOMATION_APPROVED_DATA_SOURCES),
+    )
+    return stack_env
+
+
 def _start_airflow_ui(
     airflow_command: list[str],
     env: dict[str, str],
@@ -1354,6 +1402,30 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Retrain the anomaly detector instead of reusing a valid saved artifact.",
     )
+    parser.add_argument(
+        "--remote-mlflow",
+        default=os.getenv("MLFLOW_TRACKING_URI"),
+        help=(
+            "Remote MLflow tracking server URI (e.g. http://127.0.0.1:15001 via SSH tunnel or EC2 IP). "
+            "Skips starting a local MLflow container."
+        ),
+    )
+    parser.add_argument(
+        "--pipeline-only",
+        action="store_true",
+        help=(
+            "Run local ETL and model training only, logging to MLflow and "
+            "registering the champion model, then exit without starting local containers."
+        ),
+    )
+    parser.add_argument(
+        "--etl-only",
+        action="store_true",
+        help=(
+            "Run local Airflow ETL only to create the gold dataset and government features, "
+            "verifying outputs before training on EC2."
+        ),
+    )
     arguments = parser.parse_args(argv)
     steps.clear()
     started = time.perf_counter()
@@ -1361,6 +1433,10 @@ def main(argv: list[str] | None = None) -> int:
     result_code = 0
     staged_build_context: tempfile.TemporaryDirectory[str] | None = None
     env = os.environ.copy()
+    env["PYTHONIOENCODING"] = "utf-8"
+    env["PYTHONUTF8"] = "1"
+    os.environ["PYTHONIOENCODING"] = "utf-8"
+    os.environ["PYTHONUTF8"] = "1"
     env["GRIDVISION_DATA_DIR"] = str(DATA_ROOT)
     env["GRIDVISION_LOG_DIR"] = str(LOG_ROOT)
     env["GRIDVISION_SOURCE_PATH"] = str(SOURCE_PATH)
@@ -1439,7 +1515,15 @@ def main(argv: list[str] | None = None) -> int:
     )
     env["AIRFLOW__WEBSERVER__WEB_SERVER_HOST"] = "127.0.0.1"
     env["AIRFLOW__WEBSERVER__WEB_SERVER_PORT"] = "8081"
-    env["MLFLOW_TRACKING_URI"] = MLFLOW_HOST_URI
+    env.setdefault("GIT_PYTHON_REFRESH", "quiet")
+    is_remote_mlflow = bool(arguments.remote_mlflow)
+    effective_mlflow_uri = arguments.remote_mlflow or MLFLOW_HOST_URI
+    if not arguments.etl_only:
+        env["MLFLOW_TRACKING_URI"] = effective_mlflow_uri
+        os.environ["MLFLOW_TRACKING_URI"] = effective_mlflow_uri
+    else:
+        env.pop("MLFLOW_TRACKING_URI", None)
+        os.environ.pop("MLFLOW_TRACKING_URI", None)
     env.setdefault("COMMERCIAL_SILVER_DATASET", str(DATA_ROOT / "silver" / "commercial_silver.parquet"))
     env.setdefault("COMMERCIAL_GOLD_DATASET", str(DATA_ROOT / "gold" / "commercial_gold.parquet"))
     env.setdefault("COMMERCIAL_GOLD_MANIFEST", str(DATA_ROOT / "metadata" / "commercial" / "dataset_versions" / "gold" / "latest.json"))
@@ -1467,6 +1551,7 @@ def main(argv: list[str] | None = None) -> int:
             required_modules = [
                 "duckdb",
                 "lightgbm",
+                "matplotlib",
                 "mlflow",
                 "pandas",
                 "pyarrow",
@@ -1480,10 +1565,11 @@ def main(argv: list[str] | None = None) -> int:
             ]
             if missing_modules:
                 install_hint = (
-                    "Install the model-serving group from requirements.txt; "
-                    "Airflow runs in Docker on macOS."
+                    "Install the model-serving and government-assistant groups "
+                    "from requirements.txt; Airflow runs in Docker on macOS."
                     if platform.system() == "Darwin"
-                    else "Install the airflow and model-serving groups from "
+                    else "Install the airflow, model-serving, and "
+                    "government-assistant groups from "
                     "requirements.txt using the Airflow constraints URL documented "
                     "in the README."
                 )
@@ -1491,43 +1577,14 @@ def main(argv: list[str] | None = None) -> int:
                     "Required Python modules are missing: "
                     f"{', '.join(missing_modules)}. {install_hint}"
                 )
-            llm_provider = _local_setting(
-                "COMMERCIAL_LLM_PROVIDER",
-                "ollama",
-                env,
-            ).lower()
-            if llm_provider in {"auto", "groq"}:
-                llm_provider = "ollama"
-            ollama = None
-            if llm_provider == "ollama":
-                ollama_host = _local_setting(
-                    "OLLAMA_HOST_BASE_URL",
-                    "http://127.0.0.1:11434",
-                    env,
-                )
-                primary_model = _local_setting(
-                    "COMMERCIAL_OLLAMA_PRIMARY_MODEL",
-                    "qwen3:8b",
-                    env,
-                )
-                fallback_model = _local_setting(
-                    "COMMERCIAL_OLLAMA_FALLBACK_MODEL",
-                    "gemma3:4b",
-                    env,
-                )
-                ollama = _verify_ollama_models(
-                    ollama_host,
-                    (primary_model, fallback_model),
-                )
             return {
                 "airflow": airflow,
                 "docker_compose": compose,
                 "source": str(SOURCE_PATH) if SOURCE_PATH.is_file() else None,
-                "ollama": ollama,
             }
 
         prerequisites = run_step(
-            "Check source data, Python dependencies, Docker Compose, and Ollama",
+            "Check source data, Python dependencies, and Docker Compose",
             check_prerequisites,
         )
         compose = prerequisites["docker_compose"]
@@ -1535,16 +1592,27 @@ def main(argv: list[str] | None = None) -> int:
         if staged_build_context:
             env["GRIDVISION_BUILD_CONTEXT"] = staged_build_context.name
 
-        run_step(
-            "Build and start persistent MLflow tracking service",
-            lambda: _compose(compose, ["up", "--build", "-d", "mlflow"], env),
-        )
-        run_step(
-            "Wait for MLflow tracking service",
-            lambda: _wait_for_http(
-                f"{MLFLOW_HOST_URI}/health", "MLflow", timeout=180
-            ),
-        )
+        if not arguments.etl_only:
+            if is_remote_mlflow:
+                run_step(
+                    f"Verify connection to remote MLflow ({effective_mlflow_uri})",
+                    lambda: _wait_for_http(
+                        f"{effective_mlflow_uri}/health",
+                        "Remote MLflow tracking service",
+                        timeout=30,
+                    ),
+                )
+            else:
+                run_step(
+                    "Build and start persistent MLflow tracking service",
+                    lambda: _compose(compose, ["up", "--build", "-d", "mlflow"], env),
+                )
+                run_step(
+                    "Wait for MLflow tracking service",
+                    lambda: _wait_for_http(
+                        f"{MLFLOW_HOST_URI}/health", "MLflow", timeout=180
+                    ),
+                )
 
         airflow = prerequisites["airflow"]
         airflow_command = airflow
@@ -1607,8 +1675,16 @@ def main(argv: list[str] | None = None) -> int:
                 GOVERNMENT_DAG_ID,
                 env,
                 force=arguments.force_airflow_dags,
+                is_etl_only=arguments.etl_only,
             )
         )
+
+        if arguments.etl_only:
+            print("\n[SUCCESS] Local ETL completed successfully!", flush=True)
+            print(f"  Customer Gold Dataset: {DATA_ROOT / 'gold' / 'customer_gold.parquet'}", flush=True)
+            print(f"  Government Features:   {DATA_ROOT / 'airflow' / 'government'}", flush=True)
+            print("  You can now start EC2 whenever you are ready and run model training.", flush=True)
+            return 0
         run_step(
             "Generate and publish Government customer segmentation outputs",
             lambda: _run_airflow_dag_if_dataset_changed(
@@ -1640,7 +1716,7 @@ def main(argv: list[str] | None = None) -> int:
                     "--data-path",
                     str(DATA_ROOT / "gold" / "customer_gold.parquet"),
                     "--tracking-uri",
-                    MLFLOW_HOST_URI,
+                    effective_mlflow_uri,
                     "--model-name",
                     env["MLFLOW_MODEL_NAME"],
                     "--alias",
@@ -1665,13 +1741,21 @@ def main(argv: list[str] | None = None) -> int:
             lambda: _run_anomaly_inference(env),
         )
 
+        if arguments.pipeline_only:
+            print("\n[SUCCESS] Local ETL and candidate model training complete!", flush=True)
+            print(f"  Target MLflow: {effective_mlflow_uri}", flush=True)
+            print(
+                f"  Registered Model: {env['MLFLOW_MODEL_NAME']}@{env['MLFLOW_MODEL_ALIAS']}",
+                flush=True,
+            )
+            print("  EC2 Flask service will dynamically load this champion version.", flush=True)
+            return 0
+
         airflow_service = run_step(
             "Start Airflow scheduler and web UI",
             lambda: _start_airflow_ui(airflow_command, env, compose),
         )
-        stack_env = env.copy()
-        stack_env["MODEL_PROVIDER"] = "mlflow"
-        stack_env["MLFLOW_TRACKING_URI"] = MLFLOW_CONTAINER_URI
+        stack_env = _backend_stack_environment(env)
         run_step(
             "Build and start Flask backend and React frontend containers",
             lambda: _compose(
@@ -1716,7 +1800,7 @@ def main(argv: list[str] | None = None) -> int:
                 flush=True,
             )
         print(f"  Structured logs: {LOG_ROOT}", flush=True)
-        print(f"  MLflow UI: {MLFLOW_HOST_URI}", flush=True)
+        print(f"  MLflow UI: {effective_mlflow_uri}", flush=True)
         print(
             f"  Registered model: {env['MLFLOW_MODEL_NAME']}@{env['MLFLOW_MODEL_ALIAS']}",
             flush=True,
@@ -1725,6 +1809,7 @@ def main(argv: list[str] | None = None) -> int:
     except KeyboardInterrupt:
         print("\nAutomation interrupted by user.", flush=True)
         result_code = 130
+        print("  Stop containers with: podman compose down (or docker compose down)", flush=True)
     except Exception as exc:
         print(f"\nAutomation stopped: {exc}", flush=True)
         result_code = 1

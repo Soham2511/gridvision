@@ -6,6 +6,7 @@ import re
 
 from ai.commercial.config.settings import CommercialSettings
 from ai.commercial.schemas.communication import (
+    CommercialConversationMessage,
     CommercialRequest,
     SpecialistName,
     TaskAssignment,
@@ -55,6 +56,35 @@ def _contains_any_term(goal: str, terms: tuple[str, ...]) -> bool:
     )
 
 
+def _contextualize_goal(
+    goal: str,
+    history: list[CommercialConversationMessage],
+) -> str:
+    """Add the newest useful context while keeping registered tool inputs bounded."""
+    remaining = (
+        2000
+        - len(goal)
+        - len("Recent conversation:\n")
+        - len("\nCurrent request: ")
+    )
+    if remaining <= 0 or not history:
+        return goal
+
+    context_lines: list[str] = []
+    for message in reversed(history):
+        if message.role != "user":
+            continue
+        line = f"{message.role.title()}: {message.content}"
+        if len(line) > remaining:
+            line = line[-remaining:]
+        context_lines.append(line)
+        remaining -= len(line) + 1
+        if remaining <= 0:
+            break
+    context = "\n".join(reversed(context_lines))
+    return f"Recent conversation:\n{context}\nCurrent request: {goal}"[:2000]
+
+
 def plan_request(
     state: CommercialState,
     settings: CommercialSettings,
@@ -63,23 +93,44 @@ def plan_request(
     """Classify a request deterministically and produce bounded assignments."""
     request_fields = {
         key: state[key]
-        for key in ("request_id", "factory_id", "building_id", "user_goal")
+        for key in (
+            "request_id",
+            "factory_id",
+            "building_id",
+            "user_goal",
+            "conversation_history",
+        )
         if key in state
     }
     request = CommercialRequest.model_validate(request_fields)
     goal = request.user_goal.casefold()
+    contextual_goal = _contextualize_goal(
+        request.user_goal,
+        request.conversation_history,
+    )
     selected: list[SpecialistName]
 
     if planner is None:
         selected = []
+        planning_text = goal
+        if request.conversation_history:
+            planning_text = " ".join(
+                [
+                    *(
+                        message.content.casefold()
+                        for message in request.conversation_history[-4:]
+                    ),
+                    goal,
+                ]
+            )
         if _contains_any_term(
-            goal,
+            planning_text,
             ("peak", "forecast", "forecasts", "demand", "demands", "load", "loads"),
         ):
             selected.append("peak_prediction")
 
         if _contains_any_term(
-            goal,
+            planning_text,
             (
                 "process",
                 "processes",
@@ -101,18 +152,21 @@ def plan_request(
             selected.append("operations")
 
         if _contains_any_term(
-            goal,
+            planning_text,
             ("solar", "wind", "battery", "batteries", "renewable", "renewables"),
         ):
             selected.append("renewable")
 
-        if _contains_any_term(goal, OPTIMIZATION_TERMS):
+        if _contains_any_term(planning_text, OPTIMIZATION_TERMS):
             selected.append("cost_optimization")
 
         if not selected:
             selected.append("operations")
     else:
-        selected = planner.select_specialists(request.user_goal)
+        selected = planner.select_specialists(
+            request.user_goal,
+            request.conversation_history,
+        )
 
     selected = list(dict.fromkeys(selected))
     retryable_agents = sum(
@@ -125,7 +179,7 @@ def plan_request(
         TaskAssignment(
             task_id=f"{request.request_id}:{specialist}",
             specialist=specialist,
-            goal=request.user_goal,
+            goal=contextual_goal,
             scope=(
                 request.building_id
                 if specialist == "peak_prediction" and request.building_id

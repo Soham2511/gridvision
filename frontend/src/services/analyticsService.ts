@@ -26,6 +26,13 @@ import {
   KpiMetric,
   PairedCommercialForecast,
 } from '../types/analytics';
+import {
+  QuestionnaireSchema,
+  HouseEnergyPlanningResult,
+  ApplianceScenarioResult,
+  CostManagementResult,
+  AssistantResponsePayload,
+} from '../../../ai/residential/frontend/src/types/residentialFeatures';
 
 export interface OverviewApiResponse {
   kpis: KpiMetric[];
@@ -89,7 +96,18 @@ export interface CommercialWorkflowResponse {
   validation: { status: string; issues: string[]; evidence_count: number };
   specialist_results: Record<string, CommercialSpecialistResult>;
   execution_trace: CommercialExecutionTraceEvent[];
+  web_search_offer?: boolean;
   schedule_proposal?: CommercialScheduleProposal;
+}
+
+export interface CommercialWebSearchResponse {
+  answer: string;
+  citations: Array<{ title: string; url: string; excerpt: string }>;
+}
+
+export interface CommercialConversationMessage {
+  role: 'user' | 'assistant';
+  content: string;
 }
 
 export interface CommercialExecutionTraceEvent {
@@ -105,6 +123,42 @@ export interface UploadedRagDocument {
   page_count: number;
 }
 
+export interface AssistantChatResponse {
+  answer: string;
+  persona: string;
+  entityId?: string;
+  conversationId: string;
+  citations: Array<{
+    title: string;
+    sourceUrl?: string | null;
+    page?: number | null;
+    publisher?: string | null;
+  }>;
+  runReferences: string[];
+  downloads: Array<{ format: string; label: string; url: string }>;
+  artifacts?: Array<{ format: string; label: string; url: string }>;
+  assistantRoute?: 'anomaly' | 'government' | 'clarify';
+  charts?: Array<{
+    title: string;
+    kind?: 'map';
+    points?: Array<{ id: string; latitude: number; longitude: number; severity: number; scope: string }>;
+    series?: Array<{ label: string; items: Record<string, number> }>;
+  }>;
+  status: string;
+}
+
+export interface ConversationSession {
+  id: string;
+  title: string;
+  conversation_id?: string;
+  updated_at?: string | null;
+  created_at?: string | null;
+  active_workflow?: string | null;
+  is_archived?: boolean;
+  message_count?: number;
+  [key: string]: unknown;
+}
+
 class AnalyticsService {
   public getApiBaseUrl(): string {
     return apiClient.getBaseUrl();
@@ -115,9 +169,13 @@ class AnalyticsService {
     return apiClient.get<OverviewApiResponse>('/overview');
   }
 
-  // --- Commercial Facilities ---
+  // --- Commercial Buildings ---
   async getCommercialBuildings(): Promise<CommercialBuilding[]> {
     return apiClient.get<CommercialBuilding[]>('/entities/commercial');
+  }
+
+  async getCommercialBuilding(buildingId: string): Promise<CommercialBuilding> {
+    return apiClient.get<CommercialBuilding>(`/entities/commercial/${encodeURIComponent(buildingId)}`);
   }
 
   async getCommercialForecast(buildingId: string): Promise<{
@@ -137,7 +195,7 @@ class AnalyticsService {
   }
 
   async getCommercialDashboard(
-    tab: 'building' | 'regional' = 'building',
+    tab: 'building' | 'regional' | 'portfolio' | 'eui' = 'building',
     timeRange: '1D' | '7D' | '1M' | '3M' | '1Y' = '1D',
     buildingId: string = 'Panther_office_1'
   ): Promise<CommercialDashboardData> {
@@ -151,6 +209,10 @@ class AnalyticsService {
   // --- Residential Meters ---
   async getResidentialMeters(): Promise<ResidentialMeter[]> {
     return apiClient.get<ResidentialMeter[]>('/entities/residential');
+  }
+
+  async getResidentialMeter(householdId: string): Promise<ResidentialMeter> {
+    return apiClient.get<ResidentialMeter>(`/entities/residential/${encodeURIComponent(householdId)}`);
   }
 
   async getResidentialForecast(householdId: string): Promise<{
@@ -295,16 +357,92 @@ class AnalyticsService {
   async askAssistant(
     prompt: string,
     persona: string = 'household',
-    entityId?: string
-  ): Promise<{ answer: string; persona: string; entityId: string }> {
-    return apiClient.post<{ answer: string; persona: string; entityId: string }>(
+    entityId?: string,
+    historyOrConversationId?: { role: 'user' | 'assistant' | 'system'; content: string }[] | string,
+    conversationId?: string
+  ): Promise<AssistantResponsePayload> {
+    let history: { role: 'user' | 'assistant' | 'system'; content: string }[] | undefined;
+    let effectiveConversationId = conversationId;
+    if (typeof historyOrConversationId === 'string') {
+      effectiveConversationId = historyOrConversationId;
+    } else if (Array.isArray(historyOrConversationId)) {
+      history = historyOrConversationId;
+    }
+    return apiClient.post<AssistantResponsePayload>(
       '/assistant/chat',
       {
         prompt,
         persona,
         entity_id: entityId,
+        history: history || [],
+        ...(effectiveConversationId ? { conversation_id: effectiveConversationId } : {}),
       }
     );
+  }
+
+  async askAssistantStream(
+    prompt: string,
+    persona: string,
+    entityId: string | undefined,
+    conversationId: string,
+    onToken: (token: string) => void,
+  ): Promise<AssistantChatResponse> {
+    const response = await fetch(`${apiClient.getBaseUrl()}/assistant/chat/stream`, {
+      method: 'POST',
+      headers: {
+        Accept: 'text/event-stream',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        prompt,
+        persona,
+        entity_id: entityId,
+        conversation_id: conversationId,
+      }),
+    });
+    if (!response.ok) {
+      const errorBody = await response.json().catch(() => null) as {
+        error?: { message?: string };
+      } | null;
+      throw new Error(errorBody?.error?.message || `Assistant request failed (${response.status}).`);
+    }
+    if (!response.body) {
+      throw new Error('Assistant streaming response had no body.');
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let result: AssistantChatResponse | undefined;
+    let streamError: string | undefined;
+    while (true) {
+      const { value, done } = await reader.read();
+      buffer += decoder.decode(value, { stream: !done });
+      let boundary = buffer.indexOf('\n\n');
+      while (boundary >= 0) {
+        const frame = buffer.slice(0, boundary);
+        buffer = buffer.slice(boundary + 2);
+        const dataLine = frame.split('\n').find((line) => line.startsWith('data: '));
+        if (dataLine) {
+          const event = JSON.parse(dataLine.slice(6)) as {
+            type: string;
+            data?: string | AssistantChatResponse | { message?: string };
+          };
+          if (event.type === 'token' && typeof event.data === 'string') {
+            onToken(event.data);
+          } else if (event.type === 'complete') {
+            result = event.data as AssistantChatResponse;
+          } else if (event.type === 'error') {
+            streamError = (event.data as { message?: string })?.message || 'Assistant stream failed.';
+          }
+        }
+        boundary = buffer.indexOf('\n\n');
+      }
+      if (done) break;
+    }
+    if (streamError) throw new Error(streamError);
+    if (!result) throw new Error('Assistant stream ended without a final response.');
+    return result;
   }
 
   async validateCommercialSession(
@@ -317,14 +455,27 @@ class AnalyticsService {
     userGoal: string,
     credentials: ApiCredentials,
     optimizationInputs?: Record<string, unknown>,
+    conversationHistory: CommercialConversationMessage[] = [],
   ): Promise<CommercialWorkflowResponse> {
     return apiClient.postLongAuthenticated<CommercialWorkflowResponse>(
       '/commercial/workflow',
       {
         user_goal: userGoal,
         factory_id: 'automotive-parts-demo',
+        conversation_history: conversationHistory.slice(-8),
         ...(optimizationInputs ? { optimization_inputs: optimizationInputs } : {}),
       },
+      credentials,
+    );
+  }
+
+  async searchCommercialWeb(
+    query: string,
+    credentials: ApiCredentials,
+  ): Promise<CommercialWebSearchResponse> {
+    return apiClient.postLongAuthenticated<CommercialWebSearchResponse>(
+      '/commercial/web-search',
+      { query },
       credentials,
     );
   }
@@ -355,6 +506,16 @@ class AnalyticsService {
     return apiClient.getAuthenticated('/commercial/rag/documents', credentials);
   }
 
+  async deleteCommercialRagDocument(
+    sourceId: string,
+    credentials: ApiCredentials,
+  ): Promise<{ deleted: boolean; source_id: string }> {
+    return apiClient.deleteAuthenticated(
+      `/commercial/rag/documents/${encodeURIComponent(sourceId)}`,
+      credentials,
+    );
+  }
+
   async decideScheduleProposal(
     proposalId: string,
     decision: 'approved' | 'rejected',
@@ -364,6 +525,106 @@ class AnalyticsService {
       `/commercial/schedules/${encodeURIComponent(proposalId)}/approval`,
       { decision },
       credentials,
+    );
+  }
+
+  // --- Persistent Conversation Sessions ---
+  async listConversations(params?: {
+    include_archived?: boolean;
+    limit?: number;
+    offset?: number;
+  }): Promise<ConversationSession[]> {
+    return apiClient.get<ConversationSession[]>('/assistant/conversations', params);
+  }
+
+  async createConversation(payload?: {
+    title?: string;
+    meter_id?: string;
+  }): Promise<ConversationSession> {
+    return apiClient.post<ConversationSession>('/assistant/conversations', payload || {});
+  }
+
+  async getConversation(conversationId: string): Promise<{
+    session: ConversationSession;
+    messages: Array<{
+      id: string;
+      role: 'user' | 'assistant' | 'system';
+      content: string;
+      mode?: string;
+      created_at?: string;
+    }>;
+  }> {
+    return apiClient.get<{
+      session: ConversationSession;
+      messages: Array<{
+        id: string;
+        role: 'user' | 'assistant' | 'system';
+        content: string;
+        mode?: string;
+        created_at?: string;
+      }>;
+    }>(`/assistant/conversations/${encodeURIComponent(conversationId)}`);
+  }
+
+  async updateConversation(
+    conversationId: string,
+    payload: { title?: string; is_archived?: boolean }
+  ): Promise<ConversationSession> {
+    return apiClient.patch<ConversationSession>(
+      `/assistant/conversations/${encodeURIComponent(conversationId)}`,
+      payload
+    );
+  }
+
+  async deleteConversation(conversationId: string): Promise<{ deleted: boolean; conversation_id: string }> {
+    return apiClient.delete<{ deleted: boolean; conversation_id: string }>(
+      `/assistant/conversations/${encodeURIComponent(conversationId)}`
+    );
+  }
+
+  // --- Dedicated Residential Features ---
+  async getResidentialQuestionnaire(featureId: string): Promise<QuestionnaireSchema> {
+    return apiClient.get<QuestionnaireSchema>(`/residential/questionnaires/${encodeURIComponent(featureId)}`);
+  }
+
+  async planHouseEnergy(payload: Record<string, unknown>): Promise<HouseEnergyPlanningResult> {
+    const res = await apiClient.post<Record<string, unknown>>('/residential/plan-house-energy', payload);
+    return ((res && (res as { results?: HouseEnergyPlanningResult }).results)
+      ? (res as { results: HouseEnergyPlanningResult }).results
+      : res) as HouseEnergyPlanningResult;
+  }
+
+  async analyzeApplianceScenario(payload: Record<string, unknown>): Promise<ApplianceScenarioResult> {
+    const res = await apiClient.post<Record<string, unknown>>('/residential/analyze-appliance', payload);
+    return ((res && (res as { results?: ApplianceScenarioResult }).results)
+      ? (res as { results: ApplianceScenarioResult }).results
+      : res) as ApplianceScenarioResult;
+  }
+
+  async manageEnergyCost(payload: Record<string, unknown>): Promise<CostManagementResult> {
+    const res = await apiClient.post<Record<string, unknown>>('/residential/manage-cost', payload);
+    return ((res && (res as { results?: CostManagementResult }).results)
+      ? (res as { results: CostManagementResult }).results
+      : res) as CostManagementResult;
+  }
+
+  async createResidentialSession(
+    featureId: string,
+    entityId?: string
+  ): Promise<{ session_id: string; status: string }> {
+    return apiClient.post<{ session_id: string; status: string }>('/residential/sessions', {
+      feature_id: featureId,
+      entity_id: entityId,
+    });
+  }
+
+  async updateResidentialSession(
+    sessionId: string,
+    payload: Record<string, unknown>
+  ): Promise<{ session_id: string; status: string }> {
+    return apiClient.put<{ session_id: string; status: string }>(
+      `/residential/sessions/${encodeURIComponent(sessionId)}`,
+      payload
     );
   }
 }
