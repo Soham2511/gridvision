@@ -16,3 +16,8 @@ RUN python scripts/filter_requirements.py requirements.txt /tmp/airflow-requirem
     && pip install --no-cache-dir \
         --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-2.10.5/constraints-3.10.txt" \
         -r /tmp/airflow-requirements.txt
+
+COPY airflow ./airflow
+COPY training ./training
+
+ENTRYPOINT ["airflow"]

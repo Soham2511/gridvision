@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import calendar
 import hashlib
 import json
 import logging
+import math
 import sys
 from pathlib import Path
 from typing import Any
@@ -183,6 +185,24 @@ class CustomerBillPredictionService:
         if model_error:
             summary["error"] = model_error
         return summary
+
+    def get_source_metadata(self, record_type: str) -> dict[str, Any]:
+        """Describe the approved historical source behind a customer result."""
+        frame = self._load_frame()
+        metadata = self._load_metadata()
+        dataset = metadata.get("dataset", {})
+        return {
+            "sourceId": "customer_gold",
+            "dataset": dataset.get("dataset_name", "customer_gold"),
+            "datasetVersion": dataset.get("dataset_version", "untracked"),
+            "recordType": record_type,
+            "period": {
+                "startMonth": pd.Timestamp(frame["month_start"].min()).strftime("%Y-%m"),
+                "endMonth": pd.Timestamp(frame["month_start"].max()).strftime("%Y-%m"),
+            },
+            "units": "kWh",
+            "isLiveTelemetry": False,
+        }
 
     def get_model_catalog(
         self, forecast_status: dict[str, dict[str, Any]] | None = None
@@ -500,7 +520,80 @@ class CustomerBillPredictionService:
             & (frame["cutoff_day"] == cutoff_day)
         ]
         if matches.empty:
-            return {}
+            entity_rows = frame[frame["entity_id"] == entity_id]
+            if entity_rows.empty:
+                return {}
+            latest_row = entity_rows.sort_values(["month_start", "cutoff_day"]).iloc[-1].to_dict()
+            try:
+                target_dt = pd.to_datetime(month_start).date()
+            except Exception:
+                return {}
+
+            year = target_dt.year
+            month = target_dt.month
+            days_in_m = calendar.monthrange(year, month)[1]
+            clamped_cutoff = max(1, min(int(cutoff_day), days_in_m))
+            obs_hours = clamped_cutoff * 24
+
+            same_month_rows = entity_rows[pd.to_datetime(entity_rows["month_start"]).dt.month == month]
+            if not same_month_rows.empty:
+                hist_target_mean = float(same_month_rows["target_month_kwh"].mean())
+                daily_baseline = hist_target_mean / float(same_month_rows["days_in_month"].iloc[0])
+            else:
+                daily_baseline = float(entity_rows["target_month_kwh"].mean()) / 30.0
+
+            est_cumulative = round(daily_baseline * clamped_cutoff, 2)
+            est_recent_7d = round(daily_baseline * min(7, clamped_cutoff), 2)
+            building_area = float(latest_row.get("building_area_m2") or 100.0)
+
+            forward_row = dict(latest_row)
+            forward_row["month_of_year"] = float(month)
+            forward_row["days_in_month"] = float(days_in_m)
+            forward_row["cutoff_day"] = float(clamped_cutoff)
+            forward_row["observed_hours_to_cutoff"] = float(obs_hours)
+            forward_row["month_sin"] = math.sin(2.0 * math.pi * month / 12.0)
+            forward_row["month_cos"] = math.cos(2.0 * math.pi * month / 12.0)
+            forward_row["cumulative_energy_kwh"] = est_cumulative
+            forward_row["recent_7d_energy_kwh"] = est_recent_7d
+            forward_row["recent_7d_mean_hourly_kwh"] = est_recent_7d / (min(7, clamped_cutoff) * 24)
+            forward_row["mean_hourly_energy_to_cutoff"] = est_cumulative / obs_hours
+            forward_row["cumulative_energy_per_m2"] = est_cumulative / building_area
+            forward_row["naive_projected_month_kwh"] = round((est_cumulative / clamped_cutoff) * days_in_m, 2)
+
+            metadata = self._load_metadata()
+            features = metadata.get("features", [])
+            if not features:
+                raise CustomerBillPredictionError("Model metadata does not contain feature list.")
+
+            model_features = {name: forward_row.get(name, 0.0) for name in features}
+            artifact = self._load_artifact()
+            try:
+                predicted_total = float(
+                    artifact["model"].predict(
+                        pd.DataFrame([model_features], columns=features)
+                    )[0]
+                )
+            except Exception as exc:
+                raise CustomerBillPredictionError(f"Customer bill forward prediction failed: {exc}") from exc
+
+            return {
+                "entityId": str(entity_id),
+                "monthStart": target_dt.strftime("%Y-%m-%d"),
+                "cutoffDay": clamped_cutoff,
+                "actualKwhSoFar": est_cumulative,
+                "predictedMonthEndKwh": round(float(predicted_total), 2),
+                "actualMonthEndKwh": None,
+                "predictedRemainingKwh": max(0.0, round(float(predicted_total) - est_cumulative, 2)),
+                "predictedBillInr": round(float(predicted_total) * self.tariff_inr_per_kwh, 2),
+                "actualBillInr": None,
+                "absoluteErrorKwh": None,
+                "modelName": str(artifact.get("model_name", "customer-bill-prediction")),
+                "modelVersion": str(artifact.get("model_version", "3")),
+                "selectedModel": str(metadata.get("selected_model", "naive_month_projection")),
+                "provider": "local_artifact",
+                "isDemo": False,
+                "evaluationStatus": "forward_ml_inference",
+            }
         row = matches.iloc[0]
         metadata = self._load_metadata()
         features = metadata.get("features", [])

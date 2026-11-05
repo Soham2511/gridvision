@@ -1,0 +1,98 @@
+TITLE: DPS Working Groups | Department of Public Service
+SOURCE_URL: https://dps.ny.gov/dps-working-groups
+
+DPS Working Groups
+Active stakeholder working groups.
+DPS Working Groups
+Advanced Technology Working Group
+New York’s grid needs are growing, but building more infrastructure isn’t the only answer.
+The PSC’s Advanced Technology Working Group (ATWG), launched in 2022, is focused on identifying solutions that can meet—and enhance—system needs without defaulting to traditional infrastructure.
+The group brings together utilities, DPS Staff, NYPA, NYISO, NYSERDA, and other stakeholders to evaluate technologies like energy storage, dynamic line ratings, and power flow control devices.
+The ATWG is working to move these tools from theory to deployment, linking them directly to identified grid needs and addressing the operational, data, and process barriers that have historically limited their role in system planning.
+As load grows, this work is critical to creating a repeatable pathway to deployment.
+The reliability and affordability will depend on how effectively we use every tool available to meet our energy system needs.
+To get involved, contact
+[email protected]
+or visit
+https://jointutilitiesofny.org/advanced-technologies-working-group
+.
+Community Distributed Generation Billing and Crediting Working Group
+The CDG Billing and Crediting Working Group was established as part of the Commission’s December 19, 2019 Consolidated Billing Order to address billing and crediting issues associated with Community Distributed Generation (CDG).
+The Working Group provides a collaborative forum for utilities and industry stakeholders to identify, discuss, and resolve issues related to CDG billing and crediting processes, including how credits are calculated and displayed on customer bills. While the group historically met monthly, it currently convenes quarterly as many of the initial issues that prompted its formation have largely been addressed.
+Through its work, the group developed the CDG Host Guidance Document, which established consensus-based timelines for host allocation and project modifications. The Working Group has also advanced consensus-based petitions to the Commission on topics such as CDG banked credits and net crediting for volumetric-billed subscribers, helping to improve consistency and transparency for customers and developers.
+Participants include New York’s major electric utilities, NYSERDA, industry representatives, solar customers, and project developers. Stakeholder collaboration has been central to resolving practical, day-to-day billing and crediting challenges.
+To get involved, contact
+[email protected]
+.
+Read the
+CDG Host Guidance Document
+.
+Electronic Data Interchange (EDI) Working Group
+Electronic Data Interchange (EDI) systems and standards support the electronic exchange of energy-related data between utilities, ESCOs, and other market participants. The EDI Business/Technical Working Group is a stakeholder-led forum—with facilitation by the Department of Public Service (DPS) Staff—focused on maintaining and improving these systems.
+The Working Group addresses ongoing technical issues, updates official EDI guidance, and evaluates proposed changes to EDI processes. It also provides an open forum for stakeholders to raise concerns, propose enhancements, and collaborate on tasks that affect all participants, such as reviewing and updating DPS-hosted EDI guides to remove outdated data elements.
+Meetings are held every other month, with any changes to cadence communicated in advance through posted agendas, allowing stakeholders to provide input on scheduling and priorities.
+Participants include New York electric utilities, ESCOs, EDI providers, DER providers, and State agencies such as NYSERDA. This inclusive structure supports transparency and coordination across the retail energy market.
+To get involved, contact
+[email protected]
+.
+For more information, refer to
+Case 12-M-0476
+, or visit the
+EDI Working Group
+page.
+Energy Affordability Program Working Group
+One of the most important components of New York’s clean energy future is ensuring that energy remains affordable, especially for households who need support the most. In 2016, the Public Service Commission adopted the Energy Affordability Policy (EAP), which set a target energy burden of no more than 6% of household income for low-income customers statewide. To advance this goal, every investor-owned utility established bill discount programs to reduce customer energy costs.
+At its July 2025 session, the Public Service Commission took this commitment even further by adopting an enhanced Energy Affordability Policy that extends the 6% target to households up to the State’s median income, or up to area median income in certain areas. This expanded eligibility will begin enrollment in 2026, allowing more New Yorkers who struggle to pay their monthly utility bills to receive support.
+To inform this policy work, the Commission established the Energy Affordability Program Working Group in 2021. Coordinated by Department of Public Service Staff, the Working Group consists of more than 100 stakeholders—including utilities, consumer advocates, social service organizations, and government partners—who meet regularly to share data, identify challenges, discuss customer experience and utility operations, and recommend improvements based on real-world feedback that directly informs Commission decision-making.
+The Working Group is open to all interested stakeholders and is designed to promote transparency and inclusive participation. To get involved, contact
+[email protected]
+.
+Learn more about the Working Group and access recent reports in
+Case 14-M-0565
+.
+Energy Policy Planning Advisory Council
+To ensure that New York’s electric system planning is well-informed by relevant stakeholders, the Public Service Commission established the Energy Policy Planning Advisory Council (EPPAC) as a technical advisory council to guide the Coordinated Grid Planning Proceeding (CGPP).
+The EPPAC plays a vital role in advising system planners on the development of renewable generation in the State. In addition, the EPPAC provides guidance on transmission sensitivities for each generation scenario and gives input on assumptions that form the basis of modeling used to advance New York’s Climate Leadership and Community Protection Act (CLCPA) goals. The EPPAC also reviews draft materials that inform reports on the conclusions of the CGPP.
+The EPPAC is intended to be independent and stakeholder-led. The Joint Utilities and Department of Public Service Staff are responsible for administering the EPPAC and designating its members to ensure a balance of expertise and perspectives. The EPPAC is composed of representatives from utilities, the NYISO, NYSERDA, New York Power Authority, Long Island Power Authority, Office of Renewable Energy Siting and Electric Transmission, the Utility Intervention Unit of the New York Department of State, the City of New York, environmental justice organizations, and generation and storage associations.
+While EPPAC membership is structured to support technically rigorous analysis, meetings are open for interested stakeholders to attend and observe. This approach promotes transparency while ensuring that advisory input is grounded in the technical expertise required for system planning.
+To inquire further about the EPPAC, email:
+[email protected]
+.
+All EPPAC meetings can be accessed on the
+EPPAC
+page.
+EV Technical Standards Working Group
+To ensure the integrity and reliability of electric vehicle (EV) managed charging programs, the Commission directed Staff to establish the EV Technical Standards Working Group (TSWG) to evaluate whether EV chargers and/or EVs provide sufficiently accurate and reliable data to support their use in managed charging programs and related applications.
+The TSWG focuses on technical evaluation and does not approve EV chargers or vehicles for use as revenue-grade meters.
+The TSWG assesses eligibility criteria, testing methodologies, and device performance, and develops recommendations for minimum standards and specifications. The group worked with Electric Power Research Institute (EPRI) to conduct comprehensive testing of EV chargers and EVs.
+Based on the testing results, the TSWG filed a report on September 2, 2025, concluding that while EV chargers and EVs may support managed charging programs, their accuracy was insufficient for use as approved meters. This work helps ensure program integrity and protects customers by preventing the use of inaccurate metering technologies.
+The TSWG consists of representatives from the Joint Utilities and Department Staff. Meetings are open to the public, with access information posted in advance through Secretary’s Notices, supporting transparency in the technical standards development process.
+To get involved, contact
+[email protected]
+.
+For further information, refer to
+Case 18-E-0138
+, specifically the
+Technical Standards Working Group EVSE Accuracy Report
+.
+Interconnection Working Groups
+Interconnection Policy Working Group
+One of the most important components of New York’s clean energy future is improving the distribution system interconnection process for Distributed Energy Resources (DERs).
+To advance this goal, the Public Service Commission relies on the Interconnection Policy Working Group (IPWG), which convenes DER developers, industry stakeholders, the Joint Utilities, and Department of Public Service Staff. The IPWG works collaboratively to understand and respond to process challenges faced by both developers and utilities in implementing the State’s Standardized Interconnection Requirements (SIR).
+The IPWG is open to all interested stakeholders and meets monthly to discuss challenges and opportunities related to streamlining DER interconnection. When participants reach consensus on proposed changes, recommendations are formally filed with the Commission and, if approved, adopted as State rules, ensuring transparency and accountability in how interconnection policies evolve.
+To get involved, contact
+[email protected]
+, or visit the
+IPWG
+page.
+Interconnection Technical Working Group
+A critical component of New York's clean energy transition is ensuring the efficient and reliable integration of Distributed Energy Resources (DERs). To address the complex technical considerations involved, the Interconnection Technical Working Group (ITWG) was formed in 2016.
+The ITWG’s purpose is to ensure that the necessary policies, procedures, and standards are in place to address technical challenges related to DER interconnection. These challenges include application review processes and the interconnection of a wide array of technologies, such as solar, wind, hydro, energy storage systems, combined heat and power, farm waste, and fuel cells.
+The ITWG plays a pivotal role in identifying, discussing, and resolving technical barriers in the DER interconnection process and the Standardized Interconnection Requirements (SIR) across New York State in an efficient, effective, and collaborative manner.
+The strength of the ITWG lies in its diverse and expert membership, which includes representatives from the PSC, NYSERDA, NYPA, NYISO, LIPA, the Joint Utilities, and liaisons from the DER and distributed generation industries. Members are expected to have strong technical expertise related to the design and installation of DERs.
+While meeting discussions are primarily conducted among core members, non-members may be invited to participate as subject matter experts. Industry liaisons are responsible for soliciting and conveying input from the broader DER community to ensure stakeholder concerns are reflected in technical discussions and outcomes. Technical consultants also regularly participate to support resolution of complex issues.
+The ITWG focuses on technical topics, while the Interconnection Policy Working Group (IPWG) addresses policy-driven issues. The two groups coordinate closely and meet regularly, typically monthly, based on stakeholder needs.
+The ITWG is not currently accepting new members, but membership composition is regularly reviewed and adjusted.
+ITWG meeting links and materials are publicly available on the
+ITWG
+page.

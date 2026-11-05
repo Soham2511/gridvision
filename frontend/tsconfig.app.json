@@ -1,6 +1,15 @@
 {
   "compilerOptions": {
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
+    "baseUrl": ".",
+    "paths": {
+      "react": ["node_modules/@types/react/index.d.ts"],
+      "react/*": ["node_modules/@types/react/*"],
+      "react-markdown": ["node_modules/react-markdown"],
+      "remark-gfm": ["node_modules/remark-gfm"],
+      "recharts": ["node_modules/recharts"],
+      "lucide-react": ["node_modules/lucide-react"]
+    },
     "target": "ES2020",
     "useDefineForClassFields": true,
     "lib": ["ES2020", "DOM", "DOM.Iterable"],

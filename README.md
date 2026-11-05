@@ -48,7 +48,6 @@ gridvision-app/
 ├── .venv/                          # Python virtual environment
 ├── backend/                        # Modular Flask REST API
 │   ├── run.py                      # Development server runner
-│   ├── .env.example                # Backend environment configuration template
 │   ├── app/
 │   │   ├── __init__.py             # Application factory & blueprint registration
 │   │   ├── config.py               # Environment configuration (Dev, Test, Prod)
@@ -68,8 +67,7 @@ gridvision-app/
 │   │   │       ├── peak.py         # /peak-demand & /peak-demand/curtail
 │   │   │       ├── anomalies.py    # /anomalies & status updates
 │   │   │       ├── customers.py    # /customers/segments, diurnal curves, matrix
-│   │   │       ├── insights.py     # /energy-insights
-│   │   │       └── assistant.py    # /assistant/chat domain answers
+│   │   │       └── insights.py     # /energy-insights
 │   │   ├── services/               # Business logic services
 │   │   │   ├── forecast_service.py
 │   │   │   ├── dashboard_service.py
@@ -88,6 +86,12 @@ gridvision-app/
 │   │       ├── logging.py          # Centralized structured logging
 │   │       ├── responses.py        # Consistent JSON response builders
 │   │       └── validation.py       # Pydantic request schemas
+├── ai/residential/                 # Residential assistant, RAG, and complaint features
+│   ├── backend/app/                # Assistant, RAG, reference, complaint, and residential modules
+│   ├── frontend/src/               # Assistant and complaint UI
+│   ├── tests/                      # Residential AI and complaint tests
+│   ├── docs/                       # Residential assistant documentation
+│   └── backend/.env.example        # Residential backend environment template
 ├── airflow/customer/               # Customer bronze/silver/gold DAG
 ├── airflow/commercial/             # Commercial building Silver/Gold DAG and ETL
 ├── airflow/2_government_load_prediction/ # Government grid ETL and forecasting
@@ -136,6 +140,12 @@ gridvision-app/
 
 The script runs the customer, government, commercial, and customer-segmentation ETL/training workflows, then starts the MLflow, Airflow, backend, and frontend services. It verifies that the backend model catalog exposes all five models as configured before reporting success. The Data & Model Health page reads that live catalog and can refresh statuses after a new run. It prints a timed summary and leaves the services running. When the data outputs are already prepared, run `python automation.py --skip-all-data-pipelines` to validate and reuse them while still training/registering each model and starting the services. See [Customer Bill Prediction: Data, Training, and Automation](#customer-bill-prediction-data-training-and-automation) for environment setup, output paths, and EC2 deployment steps.
 
+Automation passes an explicit approval list for the prepared customer, commercial,
+government, segmentation, and synthetic anomaly datasets to the backend. Set
+`APPROVED_DATA_SOURCES` to override that list; direct `docker compose` deployments
+must configure this variable themselves because runtime source approval is
+fail-closed by default.
+
 Before each data-producing Airflow DAG, automation compares its source dataset
 path, size, and modification time with the last successful run, and verifies
 that the generated outputs have not changed. Unchanged inputs and outputs skip
@@ -154,7 +164,14 @@ in Docker; Linux/WSL2 uses its Linux Airflow environment. By default,
 `GRIDVISION_DATA_DIR` points to the checkout's `data/` directory, and the source
 dataset is expected at `data/sample/training_sample_50000.parquet`.
 
-If starting Compose directly instead of using the automation script, create a root `.env` file (it is git-ignored) with `GRIDVISION_DATA_DIR` set to the absolute `data/` directory in your checkout and a private `SECRET_KEY`. Generate a strong key with:
+If starting Compose directly instead of using the automation script, create a root `.env` file (it is
+git-ignored) with `GRIDVISION_DATA_DIR` set to the absolute `data/` directory in your checkout and a
+private `SECRET_KEY`. The backend connects to host-installed Ollama at
+`http://host.docker.internal:11434` by default, uses `qwen3:8b`, and persists its RAG/reference
+database under `data/backend/`. Override `OLLAMA_BASE_URL` and `OLLAMA_MODEL` in `.env` if your
+runtime uses different values, and ensure the Ollama service is running with that model available.
+On Linux, Compose adds the `host.docker.internal` host-gateway mapping; Ollama must accept
+connections from Docker's host-gateway address. Generate a strong key with:
 
 ```powershell
 python -c "import secrets; print(secrets.token_urlsafe(48))"
@@ -184,6 +201,41 @@ npm run build
 cd frontend
 npm run lint
 ```
+
+### Government & Utilities AI assistant
+
+The Government & Utilities assistant page sends each question to the Ollama
+supervisor in `ai/govt`. The supervisor uses examples from both AI packages to
+choose the anomaly assistant or the 2018 government-grid assistant. The selected
+assistant keeps its existing validation and data tools. Redistribution PNG
+visualizations are shown inline in the chat, with generated CSV files available
+as downloads. The backend image includes both assistant packages and the
+Government assistant's plotting dependency.
+
+The router defaults to `qwen3:8b`. Start Ollama where the backend can reach it;
+for Docker Compose, `GRIDVISION_ROUTER_OLLAMA_URL` defaults to
+`http://host.docker.internal:11434`. Override the routing model with
+`GRIDVISION_ROUTER_MODEL`. The anomaly assistant's existing Ollama settings
+continue to configure its answer model and retrieval embeddings. Government
+forecasting inputs and generated assistant artifacts are mounted into the
+backend container by Compose.
+
+The standalone router can also be used from the repository root:
+
+```bash
+.venv/bin/python -m ai.govt --query "Show the redistribution plan for 2018-09-24"
+.venv/bin/python -m ai.govt --query "Run anomaly analysis for 2019-05-03"
+```
+
+Router and Government UI integration tests are included in the root `tests/`
+suite. Run them with:
+
+```bash
+python -m pytest tests/test_govt_router.py tests/backend/test_insights.py
+```
+
+The full `automation.py` flow builds the backend image with the router and both
+assistants before starting the UI and API.
 
 ---
 
@@ -218,6 +270,7 @@ npm run lint
 | `GET` | `/api/v1/government/segmentation/*` | Government building behaviour segments, category-aware regional drilldown, profiles and assignments |
 | `GET` | `/api/v1/energy-insights` | Algorithmic optimization recommendations |
 | `POST` | `/api/v1/assistant/chat` | Domain-grounded query answering |
+| `GET` | `/api/v1/assistant/government-artifacts/<filename>` | Generated Government assistant PNG/CSV outputs |
 | `GET` | `/api/v1/models` | Registered model catalog and gold dataset summary |
 | `GET` | `/api/v1/models/customer-bill-prediction/records` | Page through customer entities in the gold dataset |
 | `GET` | `/api/v1/models/customer-bill-prediction/records/<entity_id>` | Get a customer's available gold records |
@@ -319,7 +372,7 @@ To connect your real production database or data warehouse:
        data_provider = SampleDataProvider()
    ```
 
-3. **Configure your production environment** in `backend/.env`:
+3. **Configure your production environment** in `ai/residential/backend/.env`:
    ```bash
    DATA_PROVIDER=database
    DATABASE_URL=postgresql://user:password@timescale-db:5432/gridvision
@@ -345,7 +398,7 @@ The tracking server proxies artifacts from the persistent `/mlflow/artifacts` vo
 
 ## Customer Bill Prediction: Data, Training, and Automation
 
-The customer-bill workflow creates one raw bronze copy, a deterministic residential-only silver sample, and `data/gold/customer_gold.parquet`. Training compares a chronological-tuned HistGradientBoosting model with a cutoff-safe monthly projection baseline; only the validation winner is registered to the `champion` alias. The existing notebook remains experimental. Docker Compose runs MLflow, the Flask API, and the React UI; the Airflow DAG and model training execute in the active Python environment.
+The customer-bill workflow creates one raw Bronze copy, a Silver dataset filtered only to residential source rows, and `data/gold/customer_gold.parquet`, where observations are grouped and monthly prediction features are engineered. Training compares a chronological-tuned HistGradientBoosting model with a cutoff-safe monthly projection baseline; only the validation winner is registered to the `champion` alias. The existing notebook remains experimental. Docker Compose runs MLflow, the Flask API, and the React UI; the Airflow DAG and model training execute in the active Python environment.
 
 The customer-specific MLflow entrypoint and run instructions are in
 [`mlflow/customer`](mlflow/customer/README.md). It delegates to the existing
@@ -410,7 +463,7 @@ cd /path/to/GridVision
 python3.10 -m venv ~/.venvs/gridvision
 source ~/.venvs/gridvision/bin/activate
 python scripts/filter_requirements.py requirements.txt /tmp/gridvision-model-requirements.txt \
-  --groups model-serving
+  --groups model-serving government-assistant
 python -m pip install --upgrade pip
 python -m pip install -r /tmp/gridvision-model-requirements.txt
 ```
@@ -422,7 +475,7 @@ Airflow and model-serving groups into the Linux Python 3.10 environment:
 python3.10 -m venv ~/.venvs/gridvision
 source ~/.venvs/gridvision/bin/activate
 python scripts/filter_requirements.py requirements.txt /tmp/gridvision-automation-requirements.txt \
-  --groups airflow model-serving
+  --groups airflow model-serving government-assistant
 python -m pip install -r /tmp/gridvision-automation-requirements.txt \
   --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-2.10.5/constraints-3.10.txt"
 ```
@@ -449,7 +502,7 @@ training. On Linux/WSL, Airflow runs in the configured Linux Python environment.
 The script generates a development secret if `SECRET_KEY` is not set. Services
 remain running after the script exits.
 
-For a functional, resource-conscious local run, the silver stage deterministically samples **100 residential entities** by default (down from 1,000). The sample size can be changed with `CUSTOMER_SAMPLE_BUILDINGS` before running automation. The silver transform discovers residential entity profiles with bounded Arrow batches, avoiding a full-file DuckDB profile aggregation. DuckDB is limited to 2 GB and two worker threads by default, and spills intermediate data when needed. In the macOS Airflow container, spill files use the persistent Airflow volume; on Linux/WSL, the default is `~/.cache/gridvision/duckdb_temp`. Ensure the filesystem containing the spill directory has free space. You can tune the DuckDB limits with `CUSTOMER_DUCKDB_MEMORY_LIMIT` and `CUSTOMER_DUCKDB_THREADS`. This smaller sample is intended for functional development; increase it as resources and scaling work allow.
+The customer Bronze stage is an exact copy/link of `data/sample/training_sample_50000.parquet`; it refreshes a stale Bronze file even when its size matches the source. Silver only filters that source to rows whose `GeneralUseType` is Residential; it preserves the source columns and rows without grouping or cleaning. Gold partitions rows by building ID, groups duplicate building/timestamp observations, and creates monthly targets and cutoff features. Gold partition staging files are temporary and stored beside the Gold output, so allow additional free disk space there during a run. The complete residential dataset can produce substantially larger Silver and Gold outputs and take longer to run than the former 100-building development sample. DuckDB is limited to 4 GB and two worker threads by default. Ensure Docker Desktop's memory allocation or the host's available memory exceeds 4 GB to leave room for Airflow, Python, and filesystem buffers. DuckDB spills intermediate data when needed. In the macOS Airflow container, spill files use the persistent Airflow volume; on Linux/WSL, the default is `~/.cache/gridvision/duckdb_temp`. Ensure both locations have free space. You can tune the DuckDB limits with `CUSTOMER_DUCKDB_MEMORY_LIMIT` and `CUSTOMER_DUCKDB_THREADS`.
 
 To retrain and rebuild the services using already-prepared outputs without rerunning the ETL, run `python automation.py --skip-all-data-pipelines`. This validates Customer Gold and its quality manifest, the Government training-ready parquet, Commercial Silver/Gold plus its quality manifest, and the complete customer-segmentation output set. It reuses unchanged Government and segmentation DAG outputs, while still running commercial and customer model training/registration. `--skip-data-pipeline` skips only customer ETL, while `--skip-commercial-data-pipeline` skips only commercial ETL. Customer segmentation uses the existing Bronze dataset and runs separately.
 
@@ -471,7 +524,7 @@ guide.
 |---|---|
 | Raw source input | `data/sample/training_sample_50000.parquet` |
 | Bronze (raw Parquet copy/link) | `data/bronze/training_sample_50000.parquet` |
-| Silver (residential sample) | `data/silver/customer_silver.parquet` |
+| Silver (all residential source rows) | `data/silver/customer_silver.parquet` |
 | Gold (engineered training data) | `data/gold/customer_gold.parquet` |
 | Commercial Silver (non-residential) | `data/silver/commercial_silver.parquet` |
 | Commercial Gold (building-level forecasting) | `data/gold/commercial_gold.parquet` |
@@ -502,14 +555,24 @@ DuckDB spill files use `~/.cache/gridvision/duckdb_temp` by default so WSL store
 
 The backend loads the registered MLflow alias from the same persistent `data/mlflow` directory mounted read-only inside its container. The pickle is a local training artifact; production inference uses the MLflow registry alias.
 
-### Run the workflow on an AWS EC2 Ubuntu instance
+### Deploy the prepared serving stack on AWS EC2
 
-1. Launch an Ubuntu 22.04 EC2 instance. Choose CPU, memory, and EBS storage based on the actual Parquet size and the intermediate datasets; check the source size with `ls -lh`. Allow enough free disk for bronze/silver/gold files and DuckDB spill data. In the security group, allow SSH (port 22) only from your IP and, for a temporary UI demo, port 8082 only from your IP. Do **not** expose ports 5000, 5001, or 8081 publicly.
-2. SSH into the instance, install Docker Engine/Compose and Python 3.10, then log out/in after adding your user to the Docker group:
+This deployment path serves the prepared datasets and registered models without
+running Airflow or retraining. Run data preparation locally first if any
+required published outputs are missing. The checked-out release and all
+generated files must belong to the same GridVision revision.
+
+1. Launch an Ubuntu 22.04 EC2 instance with enough RAM and persistent EBS
+   storage for the backend image, MLflow store, prepared data, model artifacts,
+   and runtime databases. In the security group, allow SSH (port 22) only from
+   your IP and, for a temporary UI demo, port 8082 only from your IP. Do
+   **not** expose ports 5000, 5001, 8081, or 11434 publicly.
+2. Install Docker Engine and Compose, then log out/in after adding your user to
+   the Docker group:
 
    ```bash
    sudo apt-get update
-   sudo apt-get install -y ca-certificates curl python3.10 python3.10-venv python3-pip
+   sudo apt-get install -y ca-certificates curl
    sudo install -m 0755 -d /etc/apt/keyrings
    sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
    sudo chmod a+r /etc/apt/keyrings/docker.asc
@@ -519,38 +582,82 @@ The backend loads the registered MLflow alias from the same persistent `data/mlf
    sudo usermod -aG docker "$USER"
    ```
 
-3. Clone this project onto the instance (replace the placeholder with your repository URL), then create the input directory:
+3. Clone the exact release revision onto the instance and create the persistent
+   data directory. Do not use the example branch name until the intended
+   `reports` commit and its local changes have been reviewed and published:
 
    ```bash
-   git clone YOUR_REPOSITORY_URL ~/gridvision_2
-   mkdir -p ~/gridvision_2/data/sample
+   git clone YOUR_REPOSITORY_URL ~/gridvision
+   cd ~/gridvision
+   git checkout YOUR_RELEASE_COMMIT
+   sudo mkdir -p /srv/gridvision/data
+   sudo chown "$USER":"$USER" /srv/gridvision
    ```
 
-   Copy the source file into `data/sample/training_sample_50000.parquet`. The dataset may be too large for Git; use SCP or an S3 bucket. From your local Windows PowerShell, an example SCP command is:
+   Copy the prepared `data/` tree (including `mlflow/`, Gold/Silver data,
+   government and anomaly inputs, and `segmentation/`) into
+   `/srv/gridvision/data`. Also copy the generated `models/` tree,
+   `docs/customer_segmentation/reports/`, and any existing `instance/` or
+   `reports/` state that must be retained. Use SCP or a private S3 bucket for
+   files that are not in Git. Include `data/reference.db`; Compose mounts it
+   separately for the residential reference-data database. These generated datasets and models are not
+   reliably delivered by cloning the source repository alone. For example,
+   from local Windows PowerShell:
 
    ```powershell
-   scp -i C:\path\to\key.pem D:\path\to\training_sample_50000.parquet ubuntu@EC2_PUBLIC_IP:~/gridvision_2/data/sample/
+   scp -i C:\path\to\key.pem -r D:\path\to\gridvision-final\data ubuntu@EC2_PUBLIC_IP:/srv/gridvision/
+   scp -i C:\path\to\key.pem -r D:\path\to\gridvision-final\models ubuntu@EC2_PUBLIC_IP:~/gridvision/
+   scp -i C:\path\to\key.pem -r D:\path\to\gridvision-final\docs\customer_segmentation\reports ubuntu@EC2_PUBLIC_IP:~/gridvision/docs/customer_segmentation/
    ```
 
-4. After reconnecting over SSH, create and install the Python environment from the project root:
+   Before starting, verify that the segmentation tables and reports, four
+   category model bundles, customer and commercial Gold datasets, government
+   artifacts, anomaly inputs/model, and MLflow database/artifacts are present.
+   The model files in `models/` and the MLflow artifact store must come from
+   compatible training runs.
+4. Create an ignored root `.env` file from `.env.example`. Set
+   `GRIDVISION_DATA_DIR=/srv/gridvision/data`, a strong stable `SECRET_KEY`,
+   unique demo credentials, and `GRIDVISION_OLLAMA_BASE_URL` to the **private**
+   Ollama endpoint reachable from the backend container. Generate a fresh
+   stable Flask signing key; do not keep the example placeholder. Leave optional
+   `TAVILY_API_KEY` and SMTP settings empty unless those services are
+   configured. The frontend defaults to the same-origin `/api/v1` route
+   through Nginx; do not set it to `localhost` or the EC2 private address.
 
    ```bash
-   cd ~/gridvision_2
-   python3.10 -m venv ~/.venvs/gridvision
-   source ~/.venvs/gridvision/bin/activate
-   python -m pip install --upgrade pip
-   python scripts/filter_requirements.py requirements.txt /tmp/gridvision-automation-requirements.txt \
-     --groups airflow model-serving
-   pip install -r /tmp/gridvision-automation-requirements.txt \
-     --constraint "https://raw.githubusercontent.com/apache/airflow/constraints-2.10.5/constraints-3.10.txt"
+   cd ~/gridvision
+   cp .env.example .env
+   chmod 600 .env
+   openssl rand -base64 48
    ```
 
-5. Run `python automation.py` from that activated environment. It builds and starts MLflow, runs ETL and training, starts Airflow, then builds and starts the API/UI. Visit `http://EC2_PUBLIC_IP:8082` from an allowed IP. Use a domain and HTTPS reverse proxy/load balancer before exposing this beyond a temporary demo. Keep `data/` on persistent EBS storage and back it up; it contains the trained data products and MLflow registry/artifacts.
+   Replace the example `SECRET_KEY`, demo credentials, and local Ollama URL
+   in `.env` with the generated key, unique credentials, and private endpoint.
 
-To access Airflow and MLflow from your computer without opening their ports publicly, create an SSH tunnel:
+5. Start only the serving services. This command does **not** start the Airflow
+   service:
+
+   ```bash
+   docker compose up -d --build mlflow backend frontend
+   docker compose ps
+   docker compose logs --tail=100 mlflow backend frontend
+   ```
+
+   Check `/api/v1/health`, `/api/v1/ready`, and `/api/v1/models` through the
+   frontend origin, and verify representative forecasts, anomaly results,
+   segmentation, and assistant requests. The browser should call
+   `http://EC2_HOST:8082/api/...`; it must not try to call localhost on the
+   viewer's computer. Keep `/srv/gridvision/data` and the checkout on persistent
+   storage and back up the data and MLflow database/artifacts together.
+   Stop or restart only the serving stack with `docker compose stop` or
+   `docker compose up -d`; use a domain and HTTPS reverse proxy before
+   exposing the application beyond a restricted demo.
+
+The EC2 serving command does not start Airflow. To inspect the loopback-only
+MLflow UI without opening its port publicly, create an SSH tunnel:
 
 ```powershell
-ssh -i C:\path\to\key.pem -L 8081:127.0.0.1:8081 -L 15001:127.0.0.1:15001 ubuntu@EC2_PUBLIC_IP
+ssh -i C:\path\to\key.pem -L 15001:127.0.0.1:15001 ubuntu@EC2_PUBLIC_IP
 ```
 
-Then use `http://localhost:8081` for Airflow and `http://localhost:15001` for MLflow. The Airflow generated login details are on the instance in `logs/airflow/standalone.log`.
+Then use `http://localhost:15001` for MLflow.

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import sys
 from datetime import date
 from pathlib import Path
@@ -12,7 +13,7 @@ import pyarrow.parquet as pq
 
 from app.models.registry import MODEL_REGISTRY
 
-MAX_ANALYSIS_ROWS = 2_100_000
+logger = logging.getLogger("gridvision.anomaly.inference")
 
 
 def estimate_workload_rows(
@@ -196,10 +197,16 @@ class AnomalyPredictionService:
         )
         if start_date is None or end_date is None:
             raise AnomalyPredictionError("Both start_date and end_date are required.")
+        start = date.fromisoformat(str(start_date))
+        end = date.fromisoformat(str(end_date))
+        if end < start:
+            raise ValueError("end_date must be on or after start_date.")
+        if (end - start).days + 1 > 7:
+            raise ValueError("Each anomaly analysis run may cover at most 7 days.")
         return inference.analyze(
             customer_ids=customer_ids,
-            start_date=date.fromisoformat(str(start_date)),
-            end_date=date.fromisoformat(str(end_date)),
+            start_date=start,
+            end_date=end,
             localization=config,
         )
 
@@ -227,6 +234,8 @@ class AnomalyPredictionService:
         source_end = inference.end_time.date()
         if end < start:
             raise ValueError("end_date must be on or after start_date.")
+        if (end - start).days + 1 > 7:
+            raise ValueError("Each anomaly analysis run may cover at most 7 days.")
         if start < source_start or end > source_end:
             raise ValueError(
                 f"Requested dates must be within {source_start} and {source_end}."
@@ -238,31 +247,82 @@ class AnomalyPredictionService:
             unknown_ids = sorted(set(selected_ids) - inference.customer_ids)
             if unknown_ids:
                 raise ValueError(f"Unknown customer IDs: {unknown_ids[:20]}")
-        selected_count = len(set(selected_ids)) if selected_ids is not None else len(
-            inference.customer_ids
-        )
-        estimated_rows = estimate_workload_rows(
-            selected_count, start, end, source_start, source_end
-        )
-        if estimated_rows > MAX_ANALYSIS_ROWS:
-            raise ValueError(
-                f"Analysis requires about {estimated_rows:,} hourly rows including "
-                f"feature history; the per-run limit is {MAX_ANALYSIS_ROWS:,}. "
-                "Choose fewer customers or a shorter date range."
-            )
         manifest = self.analysis_store.create(normalized)
         self.analysis_store.run(inference, manifest["analysis_id"], normalized)
         completed = self.analysis_store.get(manifest["analysis_id"])
         if completed is None or completed.get("status") != "completed":
             detail = completed.get("error") if completed else "Run record was not created."
+            logger.error(
+                "model_inference_failed",
+                extra={
+                    "event": {
+                        "model_name": "gridvision_anomaly_model",
+                        "model_version": inference.model_metadata()
+                        .get("saved_evaluation_metrics", {})
+                        .get("model_version", "saved_bundle"),
+                        "run_id": manifest["analysis_id"],
+                        "start_date": normalized["start_date"],
+                        "end_date": normalized["end_date"],
+                        "input_record_count": None,
+                        "detected_anomaly_count": None,
+                        "localized_event_count": None,
+                        "status": "failed",
+                    }
+                },
+            )
             raise AnomalyPredictionError(f"Anomaly analysis failed: {detail}")
+        metrics = completed.get("metrics", {})
+        model_version = inference.model_metadata().get(
+            "saved_evaluation_metrics", {}
+        ).get("model_version", "saved_bundle")
+        logger.info(
+            "model_inference_completed",
+            extra={
+                "event": {
+                    "model_name": "gridvision_anomaly_model",
+                    "model_version": model_version,
+                    "run_id": manifest["analysis_id"],
+                    "start_date": normalized["start_date"],
+                    "end_date": normalized["end_date"],
+                    "input_record_count": metrics.get("input_rows_scored"),
+                    "detected_anomaly_count": metrics.get("anomaly_window_count"),
+                    "localized_event_count": metrics.get("localized_event_count"),
+                    "status": completed["status"],
+                }
+            },
+        )
+        events = self.analysis_store.events(manifest["analysis_id"])["items"]
+        if events:
+            try:
+                from flask import current_app, has_app_context
+                if has_app_context():
+                    store = current_app.extensions.get("ai_application_store")
+                    private_store = current_app.extensions.get("ai_private_storage")
+                    if store and private_store:
+                        from app.services.anomaly_workflow_service import AnomalyWorkflowService
+                        workflow_svc = AnomalyWorkflowService(
+                            store=store,
+                            private_store=private_store,
+                            config=current_app.config,
+                        )
+                        workflow_svc.process_run_events(
+                            run_id=manifest["analysis_id"],
+                            events=events,
+                            persona=request.get("persona", "household"),
+                        )
+            except Exception as exc:
+                logger.warning(
+                    "anomaly_workflow_auto_trigger_failed",
+                    extra={"event": {"run_id": manifest["analysis_id"], "error": str(exc)}},
+                )
+
         return {
             "run_id": manifest["analysis_id"],
             "status": completed["status"],
             "request": completed["request"],
             "metadata": completed.get("metadata", {}),
             "metrics": completed.get("metrics", {}),
-            "events": self.analysis_store.events(manifest["analysis_id"])["items"],
+            "events": events,
             "anomaly_windows": self.analysis_store.anomaly_windows(
                 manifest["analysis_id"], limit=1000
             )["items"],

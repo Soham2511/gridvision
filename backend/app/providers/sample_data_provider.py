@@ -88,7 +88,7 @@ class SampleDataProvider(BaseDataProvider):
                 "estimatedMonthEndBillInr": 4245.0,
                 "coverageRatio": 0.985,
                 "elapsedDays": 19,
-                "lastDate": "2014-05-19",
+                "lastDate": "2018-12-19",
             },
             {
                 "householdId": "METER-1001",
@@ -100,7 +100,7 @@ class SampleDataProvider(BaseDataProvider):
                 "estimatedMonthEndBillInr": 6170.0,
                 "coverageRatio": 0.992,
                 "elapsedDays": 19,
-                "lastDate": "2014-05-19",
+                "lastDate": "2018-12-19",
             },
             {
                 "householdId": "METER-1002",
@@ -112,7 +112,7 @@ class SampleDataProvider(BaseDataProvider):
                 "estimatedMonthEndBillInr": 2666.0,
                 "coverageRatio": 0.978,
                 "elapsedDays": 19,
-                "lastDate": "2014-05-19",
+                "lastDate": "2018-12-19",
             },
             {
                 "householdId": "METER-1003",
@@ -124,7 +124,7 @@ class SampleDataProvider(BaseDataProvider):
                 "estimatedMonthEndBillInr": 8705.0,
                 "coverageRatio": 0.965,
                 "elapsedDays": 19,
-                "lastDate": "2014-05-19",
+                "lastDate": "2018-12-19",
             },
         ]
 
@@ -445,8 +445,16 @@ class SampleDataProvider(BaseDataProvider):
         return copy.deepcopy(self._residential_meters)
 
     def get_residential_meter(self, household_id: str) -> dict[str, Any] | None:
+        target = household_id.strip()
+        alias_map = {"2254213": "METER-1000", "meter-2254213": "METER-1000", "293861": "METER-1001", "meter-293861": "METER-1001", "537421": "METER-1002", "meter-537421": "METER-1002", "679900": "METER-1003", "meter-679900": "METER-1003"}
+        target = alias_map.get(target.lower(), target)
         for m in self._residential_meters:
-            if m["householdId"] == household_id:
+            hid = m["householdId"].strip()
+            if hid.lower() == target.lower():
+                return copy.deepcopy(m)
+            if target.isdigit() and hid.lower() == f"meter-{target}".lower():
+                return copy.deepcopy(m)
+            if target.lower().startswith("meter-") and hid.lower() == target.lower():
                 return copy.deepcopy(m)
         return None
 
@@ -600,8 +608,54 @@ class SampleDataProvider(BaseDataProvider):
 
     def get_household_overview(self, household_id: str | None = None) -> dict[str, Any]:
         data = copy.deepcopy(self._household_overview)
-        if household_id:
+        target = household_id or "METER-1000"
+        meter = self.get_residential_meter(target)
+        if meter:
+            hid = meter.get("householdId", target)
+            num_part = hid.replace("METER-", "").replace("meter-", "")
+            data["householdId"] = hid
+            data["userName"] = f"Resident-{num_part}"
+            data["currentDailyUsageKwh"] = meter.get("dailyKwh", 14.8)
+            scale = meter.get("dailyKwh", 14.8) / 14.8
+            data["dailyAvgKwh"] = round(15.2 * scale, 1)
+            data["prev7DaysAvgKwh"] = round(15.6 * scale, 1)
+            data["monthlyAvgKwh"] = round(456.0 * scale, 1)
+            data["prevMonthKwh"] = round(438.0 * scale, 1)
+            data["predictedMonthEndKwh"] = meter.get("estimatedMonthEndKwh", round(424.5 * scale, 1))
+            data["estimatedMonthEndBillInr"] = meter.get("estimatedMonthEndBillInr", round(4245.0 * scale))
+
+            # Dynamically recalculate percentage changes against verified baselines
+            daily_avg = data["dailyAvgKwh"]
+            cur_daily = data["currentDailyUsageKwh"]
+            data["dailyAvgChangePct"] = (
+                round(((cur_daily - daily_avg) / daily_avg) * 100, 1) if daily_avg > 0 else 0.0
+            )
+
+            prev_7d = data["prev7DaysAvgKwh"]
+            data["prev7DaysChangePct"] = (
+                round(((cur_daily - prev_7d) / prev_7d) * 100, 1) if prev_7d > 0 else 0.0
+            )
+
+            prev_month = data["prevMonthKwh"]
+            mon_avg = data["monthlyAvgKwh"]
+            data["monthlyAvgChangePct"] = (
+                round(((mon_avg - prev_month) / prev_month) * 100, 1) if prev_month > 0 else 0.0
+            )
+
+            # Cycle-to-date average consumption
+            elapsed = meter.get("elapsedDays", 1)
+            cycle_kwh = meter.get("actualCycleKwhSoFar", cur_daily * elapsed)
+            data["cycleDailyAvgKwh"] = round(cycle_kwh / elapsed, 2) if elapsed and elapsed > 0 else cur_daily
+
+            for pt in data.get("consumptionCurve", []):
+                if pt.get("actualConsumption") is not None:
+                    pt["actualConsumption"] = round(pt["actualConsumption"] * scale, 2)
+                if pt.get("predictedConsumption") is not None:
+                    pt["predictedConsumption"] = round(pt["predictedConsumption"] * scale, 2)
+        elif household_id:
+            num_part = household_id.replace("METER-", "").replace("meter-", "")
             data["householdId"] = household_id
+            data["userName"] = f"Resident-{num_part}"
         return data
 
     def get_government_regions(self) -> list[dict[str, Any]]:
@@ -800,6 +854,21 @@ class SampleDataProvider(BaseDataProvider):
                     "peakDemand": round(p["peakDemand"] * 28.5 + 320, 1),
                     "avgDemand": round(p["avgDemand"] * 25.0 + 310, 1),
                     "totalConsumption": round(p["totalConsumption"] * 26.0 + 5000, 1),
+                }
+                for p in base_points
+            ]
+        elif persona == "household":
+            scale = 1.0
+            if entity_id:
+                meter = self.get_residential_meter(entity_id)
+                if meter:
+                    scale = meter.get("dailyKwh", 14.8) / 14.8
+            base_points = [
+                {
+                    **p,
+                    "peakDemand": round(p["peakDemand"] * scale, 1),
+                    "avgDemand": round(p["avgDemand"] * scale, 1),
+                    "totalConsumption": round(p["totalConsumption"] * scale, 1),
                 }
                 for p in base_points
             ]

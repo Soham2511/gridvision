@@ -1,0 +1,12 @@
+allowed_domains:
+  - energy.gov
+  - ferc.gov
+  - dps.ny.gov
+  - nyc.gov
+  - osha.gov
+seed_urls:
+  - https://www.energy.gov/
+  - https://www.ferc.gov/
+  - https://dps.ny.gov/electric
+  - https://www.nyc.gov/
+  - https://www.osha.gov/

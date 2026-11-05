@@ -6,7 +6,7 @@ import json
 import os
 import uuid
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 import duckdb
@@ -66,8 +66,11 @@ def _manifest_dataset_matches(manifest_path: Path, gold_path: Path) -> bool:
         data_relative_path = gold_path.resolve().relative_to(DATA_ROOT.resolve())
     except ValueError:
         return False
-    airflow_dataset_path = Path("/opt/gridvision/data") / data_relative_path
-    return manifest_path.resolve() == airflow_dataset_path
+    airflow_dataset_path = PurePosixPath("/opt/gridvision/data").joinpath(
+        *data_relative_path.parts
+    )
+    manifest_posix_path = PurePosixPath(str(manifest_path).replace("\\", "/"))
+    return manifest_posix_path == airflow_dataset_path
 
 
 def chronological_boundaries(

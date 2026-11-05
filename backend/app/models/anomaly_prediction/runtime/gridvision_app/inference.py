@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import closing
 from dataclasses import asdict
 from datetime import date
 from pathlib import Path
@@ -67,9 +68,11 @@ class InferenceService:
         if not self.model_path.is_file():
             raise FileNotFoundError(f"Model artifact was not found: {self.model_path}")
         self.bundle = load_model_bundle(self.model_path)
-        self.parquet = pq.ParquetFile(self.data_path)
-        if not set(INPUT_COLUMNS).issubset(self.parquet.schema.names):
-            missing = sorted(set(INPUT_COLUMNS) - set(self.parquet.schema.names))
+        with closing(pq.ParquetFile(self.data_path)) as parquet:
+            self.source_rows = int(parquet.metadata.num_rows)
+            source_columns = set(parquet.schema.names)
+        if not set(INPUT_COLUMNS).issubset(source_columns):
+            missing = sorted(set(INPUT_COLUMNS) - source_columns)
             raise ValueError(f"Parquet input is missing model columns: {missing}")
         self.customer_locations = self._read_customer_locations()
         self.customer_ids = set(self.customer_locations[CUSTOMER].astype(int))
@@ -84,7 +87,7 @@ class InferenceService:
             "point_features": list(self.bundle["point_features"]),
             "anomaly_types": list(self.bundle.get("anomaly_types", [])),
             "source_columns": list(INPUT_COLUMNS),
-            "source_rows": int(self.parquet.metadata.num_rows),
+            "source_rows": self.source_rows,
             "source_customer_count": len(self.customer_ids),
             "max_analysis_rows": MAX_ANALYSIS_ROWS,
             "source_start": self.start_time.isoformat(),
@@ -135,28 +138,34 @@ class InferenceService:
             end_exclusive + pd.Timedelta(hours=POST_EVENT_HOURS),
             source_end_exclusive,
         )
-        expected_rows = len(selected_ids) * int(
+        rows_per_customer = int(
             (read_end - history_start) / pd.Timedelta(hours=1)
         )
-        if expected_rows > MAX_ANALYSIS_ROWS:
-            raise ValueError(
-                f"Analysis requires about {expected_rows:,} hourly rows including "
-                f"feature history; the per-run limit is {MAX_ANALYSIS_ROWS:,}. "
-                "Choose fewer customers or a shorter date range."
-            )
-
-        data = self._read_selected_rows(
-            selected_ids, history_start, read_end
+        customer_batch_size = max(1, MAX_ANALYSIS_ROWS // rows_per_customer)
+        requested_parts: list[pd.DataFrame] = []
+        input_rows_scored = 0
+        batch_count = 0
+        for offset in range(0, len(selected_ids), customer_batch_size):
+            batch_ids = selected_ids[offset : offset + customer_batch_size]
+            data = self._read_selected_rows(batch_ids, history_start, read_end)
+            input_rows_scored += len(data)
+            batch_count += 1
+            event_windows = predict_anomaly_events_from_bundle(data, self.bundle)
+            if not event_windows.empty:
+                requested_parts.append(
+                    event_windows.loc[
+                        (pd.to_datetime(event_windows["start_time"]) < end_exclusive)
+                        & (pd.to_datetime(event_windows["end_time"]) > start)
+                    ].copy()
+                )
+        requested_windows = (
+            pd.concat(requested_parts, ignore_index=True)
+            if requested_parts
+            else pd.DataFrame()
         )
-        event_windows = predict_anomaly_events_from_bundle(data, self.bundle)
-        if event_windows.empty:
-            requested_windows = event_windows
-        else:
-            requested_windows = event_windows.loc[
-                (pd.to_datetime(event_windows["start_time"]) < end_exclusive)
-                & (pd.to_datetime(event_windows["end_time"]) > start)
-            ].copy()
         anomaly_records = prepare_anomaly_records(requested_windows)
+        # Localize after combining batch outputs so events spanning customer batches
+        # are grouped using the same spatial/temporal rules as a single-pass run.
         localized_records, _ = form_events(anomaly_records, localization)
         event_summary = generate_event_summary(
             localized_records,
@@ -206,7 +215,9 @@ class InferenceService:
                 "history_start": history_start.isoformat(),
                 "read_end_exclusive": read_end.isoformat(),
                 "selected_customer_count": len(selected_ids),
-                "input_rows_scored": len(data),
+                "input_rows_scored": input_rows_scored,
+                "customer_batch_count": batch_count,
+                "customer_batch_size": customer_batch_size,
                 "detector_threshold": float(self.bundle["detector_threshold"]),
                 "point_feature_count": len(self.bundle["point_features"]),
                 "localization": asdict(localization),
@@ -216,7 +227,7 @@ class InferenceService:
                 ),
             },
             "metrics": {
-                "input_rows_scored": len(data),
+                "input_rows_scored": input_rows_scored,
                 "selected_customer_count": len(selected_ids),
                 "anomaly_window_count": len(localized_records),
                 "localized_event_count": len(event_summary),
@@ -242,7 +253,8 @@ class InferenceService:
 
     def _read_customer_locations(self) -> pd.DataFrame:
         columns = [CUSTOMER, LATITUDE, LONGITUDE]
-        frame = self.parquet.read_row_group(0, columns=columns).to_pandas()
+        with closing(pq.ParquetFile(self.data_path)) as parquet:
+            frame = parquet.read_row_group(0, columns=columns).to_pandas()
         locations = frame.drop_duplicates(CUSTOMER, keep="first").sort_values(
             CUSTOMER
         )
@@ -251,19 +263,25 @@ class InferenceService:
         return locations.reset_index(drop=True)
 
     def _read_time_bounds(self) -> tuple[pd.Timestamp, pd.Timestamp]:
-        timestamp_index = self.parquet.schema.names.index(TIMESTAMP)
-        first = self.parquet.metadata.row_group(0).column(timestamp_index).statistics
-        last = self.parquet.metadata.row_group(
-            self.parquet.metadata.num_row_groups - 1
-        ).column(timestamp_index).statistics
-        if first is not None and last is not None and first.has_min_max and last.has_min_max:
-            return pd.Timestamp(first.min), pd.Timestamp(last.max)
-        first_frame = self.parquet.read_row_group(
-            0, columns=[TIMESTAMP]
-        ).to_pandas()
-        last_frame = self.parquet.read_row_group(
-            self.parquet.metadata.num_row_groups - 1, columns=[TIMESTAMP]
-        ).to_pandas()
+        with closing(pq.ParquetFile(self.data_path)) as parquet:
+            timestamp_index = parquet.schema.names.index(TIMESTAMP)
+            first = parquet.metadata.row_group(0).column(timestamp_index).statistics
+            last = parquet.metadata.row_group(
+                parquet.metadata.num_row_groups - 1
+            ).column(timestamp_index).statistics
+            if (
+                first is not None
+                and last is not None
+                and first.has_min_max
+                and last.has_min_max
+            ):
+                return pd.Timestamp(first.min), pd.Timestamp(last.max)
+            first_frame = parquet.read_row_group(
+                0, columns=[TIMESTAMP]
+            ).to_pandas()
+            last_frame = parquet.read_row_group(
+                parquet.metadata.num_row_groups - 1, columns=[TIMESTAMP]
+            ).to_pandas()
         return (
             pd.to_datetime(first_frame[TIMESTAMP]).min(),
             pd.to_datetime(last_frame[TIMESTAMP]).max(),
@@ -275,30 +293,31 @@ class InferenceService:
         start: pd.Timestamp,
         end_exclusive: pd.Timestamp,
     ) -> pd.DataFrame:
-        timestamp_index = self.parquet.schema.names.index(TIMESTAMP)
-        selected = set(customer_ids)
-        parts: list[pd.DataFrame] = []
-        for row_group_index in range(self.parquet.metadata.num_row_groups):
-            statistics = self.parquet.metadata.row_group(row_group_index).column(
-                timestamp_index
-            ).statistics
-            if statistics is not None and statistics.has_min_max:
-                row_min = pd.Timestamp(statistics.min)
-                row_max = pd.Timestamp(statistics.max)
-                if row_max < start or row_min >= end_exclusive:
-                    continue
-            frame = self.parquet.read_row_group(
-                row_group_index, columns=INPUT_COLUMNS
-            ).to_pandas()
-            frame[TIMESTAMP] = pd.to_datetime(frame[TIMESTAMP], errors="coerce")
-            frame = frame.loc[
-                frame[CUSTOMER].isin(selected)
-                & frame[TIMESTAMP].ge(start)
-                & frame[TIMESTAMP].lt(end_exclusive),
-                INPUT_COLUMNS,
-            ]
-            if not frame.empty:
-                parts.append(frame)
+        with closing(pq.ParquetFile(self.data_path)) as parquet:
+            timestamp_index = parquet.schema.names.index(TIMESTAMP)
+            selected = set(customer_ids)
+            parts: list[pd.DataFrame] = []
+            for row_group_index in range(parquet.metadata.num_row_groups):
+                statistics = parquet.metadata.row_group(row_group_index).column(
+                    timestamp_index
+                ).statistics
+                if statistics is not None and statistics.has_min_max:
+                    row_min = pd.Timestamp(statistics.min)
+                    row_max = pd.Timestamp(statistics.max)
+                    if row_max < start or row_min >= end_exclusive:
+                        continue
+                frame = parquet.read_row_group(
+                    row_group_index, columns=INPUT_COLUMNS
+                ).to_pandas()
+                frame[TIMESTAMP] = pd.to_datetime(frame[TIMESTAMP], errors="coerce")
+                frame = frame.loc[
+                    frame[CUSTOMER].isin(selected)
+                    & frame[TIMESTAMP].ge(start)
+                    & frame[TIMESTAMP].lt(end_exclusive),
+                    INPUT_COLUMNS,
+                ]
+                if not frame.empty:
+                    parts.append(frame)
         if not parts:
             raise ValueError("No matching rows were found for the requested customers and dates.")
         data = pd.concat(parts, ignore_index=True)

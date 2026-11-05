@@ -29,6 +29,9 @@ class ModelService {
     const model = (await this.getModelCatalog()).find(
       (item) => item.modelId === 'customer-bill-prediction'
     );
+    if (model?.provenanceStatus === 'unverified') {
+      throw new Error(model.reason ?? 'Customer Gold data provenance is unverified.');
+    }
     if (!isCustomerBillModel(model)) {
       throw new Error(
         model?.error ?? 'Customer bill prediction model or its gold dataset is unavailable.'

@@ -107,7 +107,7 @@
     "monthly_energy_cv",
     "monthly_peak_to_average"
   ],
-  "feature_path": "/mnt/d/GridVision/data/gold/customer_segmentation_features.parquet",
+  "feature_path": "/opt/gridvision/data/gold/customer_segmentation_features.parquet",
   "feature_rows": 5034,
   "maximum_observed_coverage": 0.9583333333333334,
   "mean_observed_coverage": 0.9583333333333391,
@@ -150,9 +150,9 @@
   },
   "observation_end_exclusive": "2019-01-01 00:00:00",
   "observation_start": "2018-01-01 00:00:00",
-  "processed_source_path": "/mnt/d/GridVision/data/segmentation/source_sample.parquet",
+  "processed_source_path": "/opt/gridvision/data/segmentation/source_sample.parquet",
   "quantile_method": "DuckDB APPROX_QUANTILE T-Digest estimates for median and p95",
   "scope": "all GeneralUseType values in the configured Bronze source, including Residential",
-  "source_path": "/mnt/d/GridVision/data/bronze/training_sample_50000.parquet",
+  "source_path": "/opt/gridvision/data/bronze/training_sample_50000.parquet",
   "window_months": 12
 }

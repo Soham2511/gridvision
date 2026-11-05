@@ -7,7 +7,7 @@ import {
 } from './PersonaContextDef';
 
 const DEFAULT_ENTITIES: Record<PersonaType, string> = {
-  household: 'METER-1000',
+  household: '2254213',
   commercial: 'Panther_office_1',
   government: 'Bear & Aggregate',
 };
@@ -32,7 +32,7 @@ export const PersonaProvider: React.FC<{ children: React.ReactNode }> = ({ child
     if (currentPersona) {
       return localStorage.getItem(`gv_active_entity_${currentPersona}`) || DEFAULT_ENTITIES[currentPersona];
     }
-    return 'METER-1000';
+    return '2254213';
   });
 
   const [energyUnit, setEnergyUnitState] = useState<EnergyUnit>(() => {

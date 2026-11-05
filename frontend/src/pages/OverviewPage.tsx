@@ -43,21 +43,31 @@ export const OverviewPage: React.FC = () => {
       if (refresh) setIsRefreshing(true);
       setError(null);
 
-      const [overviewData, commData, anomData, segData, insData] = await Promise.all([
+      const results = await Promise.allSettled([
         analyticsService.getOverview(),
         analyticsService.getCommercialForecast('Panther_office_1'),
         analyticsService.getAnomalyEvents(),
         analyticsService.getCustomerSegments(),
         analyticsService.getBusinessInsights(),
       ]);
-
-      setPeakAnalysis(overviewData.peakAnalysis);
-      setAnomalies(anomData);
-      setSegments(segData);
-      setInsights(insData);
-      setTrends(commData.horizon);
-      setKpis(overviewData.kpis);
-      setLastSyncedAt(new Date());
+      const [overviewResult, commercialResult, anomalyResult, segmentResult, insightsResult] = results;
+      const failures = results.filter((result) => result.status === 'rejected');
+      if (overviewResult.status === 'fulfilled') {
+        setPeakAnalysis(overviewResult.value.peakAnalysis);
+        setKpis(overviewResult.value.kpis);
+      } else {
+        setPeakAnalysis(null);
+      }
+      if (commercialResult.status === 'fulfilled') setTrends(commercialResult.value.horizon);
+      else setTrends([]);
+      if (anomalyResult.status === 'fulfilled') setAnomalies(anomalyResult.value);
+      else setAnomalies([]);
+      if (segmentResult.status === 'fulfilled') setSegments(segmentResult.value);
+      else setSegments([]);
+      if (insightsResult.status === 'fulfilled') setInsights(insightsResult.value);
+      else setInsights([]);
+      setError(failures.length ? `${failures.length} overview data section(s) are unavailable.` : null);
+      if (failures.length < results.length) setLastSyncedAt(new Date());
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to retrieve overview metrics.');
     } finally {
@@ -82,11 +92,11 @@ export const OverviewPage: React.FC = () => {
     );
   }
 
-  if (error || !peakAnalysis) {
+  if (!peakAnalysis) {
     return (
       <ErrorState
         title="Telemetry Offline"
-        message={error || 'Unable to connect to telemetry service.'}
+        message={error || 'No approved source is available for the executive summary.'}
         onRetry={() => {
           setLoading(true);
           loadData();
@@ -113,6 +123,12 @@ export const OverviewPage: React.FC = () => {
           </span>
         }
       />
+
+      {error && (
+        <div role="status" className="gv-card" style={{ borderColor: 'var(--gv-status-warning)' }}>
+          Some overview sections are unavailable. No missing readings or metrics are replaced with sample values.
+        </div>
+      )}
 
       {/* System Status Banner */}
       <div
@@ -154,7 +170,7 @@ export const OverviewPage: React.FC = () => {
         {/* Demand Forecasting Snapshot */}
         <ChartCard
           title="Demand Trajectory Snapshot"
-          subtitle="Recent hourly observations vs projected 10-hour horizon (Panther Commercial)"
+          subtitle="Available historical observations and model predictions (commercial workspace)"
           height="280px"
           actions={
             <Link

@@ -1,11 +1,14 @@
 import React, { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { TopHeader } from '../layouts/TopHeader';
 import { analyticsService } from '../services/analyticsService';
 import { PlatformHealthSummary, ModelRegistryItem, CustomerBillModel, RegisteredModel } from '../types/analytics';
 import { modelService } from '../services/modelService';
 import { LoadingSkeleton } from '../components/common/LoadingSkeleton';
 import { ErrorState } from '../components/common/ErrorState';
+import { ModelWorkbenchPage } from './ModelWorkbenchPage';
+import { CustomerBillModelPage } from './CustomerBillModelPage';
+import { AnomalyDetectionPage } from './AnomalyDetectionPage';
 import {
   Building2,
   MapPin,
@@ -17,6 +20,10 @@ import {
   Activity,
   Layers,
   RefreshCw,
+  FileJson,
+  Cpu,
+  BarChart2,
+  ShieldAlert,
 } from 'lucide-react';
 
 const mapRegistryModel = (model: RegisteredModel): ModelRegistryItem => {
@@ -56,6 +63,13 @@ const mapRegistryModel = (model: RegisteredModel): ModelRegistryItem => {
 
 export const DataModelHealthPage: React.FC = () => {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeTab = searchParams.get('tab') || 'registry';
+
+  const setTab = (tabId: string) => {
+    setSearchParams({ tab: tabId });
+  };
+
   const [data, setData] = useState<PlatformHealthSummary | null>(null);
   const [customerModel, setCustomerModel] = useState<CustomerBillModel | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -138,7 +152,7 @@ export const DataModelHealthPage: React.FC = () => {
     };
 
     if (actionType === 'Open Model Workbench') {
-      navigate('/models/customer');
+      setTab('bill-prediction');
       return;
     }
 
@@ -200,6 +214,11 @@ export const DataModelHealthPage: React.FC = () => {
           gap: '1.75rem',
         }}
       >
+        {customerModel?.provenanceStatus === 'unverified' && (
+          <div role="status" className="gv-card" style={{ borderColor: 'var(--gv-status-warning)' }}>
+            Customer Gold metadata is diagnostic only. Its data provenance is unverified; customer records and predictions are unavailable.
+          </div>
+        )}
         {/* Page Title & Subtitle */}
         <div
           style={{
@@ -234,6 +253,26 @@ export const DataModelHealthPage: React.FC = () => {
               Monitor data availability, pipeline health and model performance across the GridVision platform.
             </p>
           </div>
+          <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            onClick={() => navigate('/developer/json-report-generator')}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              border: '1px solid #CBD5E1',
+              borderRadius: '8px',
+              background: '#FFFFFF',
+              color: '#334155',
+              padding: '0.65rem 0.9rem',
+              fontSize: '0.84rem',
+              fontWeight: 600,
+              cursor: 'pointer',
+            }}
+          >
+            <FileJson size={15} /> JSON Report Generator
+          </button>
           <button
             type="button"
             onClick={() => setRefreshKey((current) => current + 1)}
@@ -256,6 +295,7 @@ export const DataModelHealthPage: React.FC = () => {
             <RefreshCw size={15} />
             {loading ? 'Refreshing…' : 'Refresh status'}
           </button>
+          </div>
         </div>
 
         {/* Action feedback toast */}
@@ -279,21 +319,88 @@ export const DataModelHealthPage: React.FC = () => {
           </div>
         )}
 
-        {loading ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.25rem' }}>
-              <LoadingSkeleton height="110px" count={4} />
-            </div>
-            <LoadingSkeleton height="360px" />
+        {/* Navigation Tabs for Health & Model Suites */}
+        <div
+          role="tablist"
+          style={{
+            display: 'flex',
+            gap: '0.5rem',
+            borderBottom: '1px solid #E2E8F0',
+            paddingBottom: '0.75rem',
+            flexWrap: 'wrap',
+          }}
+        >
+          {[
+            { id: 'registry', label: 'Platform Health & Registry', icon: <Layers size={16} /> },
+            { id: 'forecast', label: 'Forecast Models Workbench', icon: <Cpu size={16} /> },
+            { id: 'bill-prediction', label: 'Customer Bill Prediction', icon: <BarChart2 size={16} /> },
+            { id: 'anomaly', label: 'Anomaly Detection Engine', icon: <ShieldAlert size={16} /> },
+          ].map((tab) => {
+            const isActive = activeTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                role="tab"
+                aria-selected={isActive}
+                type="button"
+                onClick={() => setTab(tab.id)}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  padding: '0.6rem 1rem',
+                  borderRadius: '8px',
+                  border: isActive ? '1px solid #005E72' : '1px solid #CBD5E1',
+                  background: isActive ? '#005E72' : '#FFFFFF',
+                  color: isActive ? '#FFFFFF' : '#334155',
+                  fontSize: '0.85rem',
+                  fontWeight: isActive ? 700 : 600,
+                  cursor: 'pointer',
+                  boxShadow: isActive ? '0 1px 4px rgba(0,94,114,0.25)' : '0 1px 2px rgba(0,0,0,0.03)',
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                {tab.icon}
+                <span>{tab.label}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {activeTab === 'forecast' && (
+          <div style={{ backgroundColor: '#FFFFFF', borderRadius: '12px', border: '1px solid #E2E8F0', padding: '1.75rem', boxShadow: '0 1px 3px rgba(0, 0, 0, 0.03)' }}>
+            <ModelWorkbenchPage />
           </div>
-        ) : error || !data ? (
-          <ErrorState
-            title="Platform Telemetry Offline"
-            message={error || 'Failed to retrieve model registry status.'}
-          />
-        ) : (
-          <>
-            {/* 3. Four Platform Summary KPI Cards */}
+        )}
+
+        {activeTab === 'bill-prediction' && (
+          <div style={{ backgroundColor: '#FFFFFF', borderRadius: '12px', border: '1px solid #E2E8F0', padding: '1.75rem', boxShadow: '0 1px 3px rgba(0, 0, 0, 0.03)' }}>
+            <CustomerBillModelPage />
+          </div>
+        )}
+
+        {activeTab === 'anomaly' && (
+          <div style={{ backgroundColor: '#FFFFFF', borderRadius: '12px', border: '1px solid #E2E8F0', padding: '1.75rem', boxShadow: '0 1px 3px rgba(0, 0, 0, 0.03)' }}>
+            <AnomalyDetectionPage />
+          </div>
+        )}
+
+        {activeTab === 'registry' && (
+          loading ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '1.25rem' }}>
+                <LoadingSkeleton height="110px" count={4} />
+              </div>
+              <LoadingSkeleton height="360px" />
+            </div>
+          ) : error || !data ? (
+            <ErrorState
+              title="Platform Telemetry Offline"
+              message={error || 'Failed to retrieve model registry status.'}
+            />
+          ) : (
+            <>
+              {/* 3. Four Platform Summary KPI Cards */}
             <div
               style={{
                 display: 'grid',
@@ -734,31 +841,101 @@ export const DataModelHealthPage: React.FC = () => {
 
                         {/* Actions */}
                         <td style={{ padding: '1rem', textAlign: 'center', position: 'relative' }}>
-                          {(model.id === 'customer-bill-prediction' ||
-                            model.id === 'government-customer-segmentation') && <button
-                            type="button"
-                            onClick={() =>
-                              setActiveMenuId(activeMenuId === model.id ? null : model.id)
-                            }
-                            aria-label={`Actions for ${model.modelName}`}
-                            style={{
-                              background: 'transparent',
-                              border: 'none',
-                              cursor: 'pointer',
-                              color: '#64748B',
-                              padding: '4px',
-                              borderRadius: '4px',
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                            }}
-                          >
-                            <MoreVertical size={16} />
-                          </button>}
+                          {(model.id === 'commercial-building-forecast' ||
+                            model.id === 'government-load-forecast') && (
+                            <button
+                              type="button"
+                              onClick={() => setTab('forecast')}
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '5px',
+                                padding: '5px 10px',
+                                fontSize: '0.76rem',
+                                fontWeight: 600,
+                                borderRadius: '6px',
+                                border: '1px solid #087EBD',
+                                backgroundColor: '#F0F9FF',
+                                color: '#0369A1',
+                                cursor: 'pointer',
+                              }}
+                            >
+                              <Cpu size={13} />
+                              <span>Workbench</span>
+                            </button>
+                          )}
+
+                          {model.id === 'anomaly-prediction' && (
+                            <button
+                              type="button"
+                              onClick={() => setTab('anomaly')}
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '5px',
+                                padding: '5px 10px',
+                                fontSize: '0.76rem',
+                                fontWeight: 600,
+                                borderRadius: '6px',
+                                border: '1px solid #D97706',
+                                backgroundColor: '#FFFBEB',
+                                color: '#B45309',
+                                cursor: 'pointer',
+                              }}
+                            >
+                              <ShieldAlert size={13} />
+                              <span>Anomaly Engine</span>
+                            </button>
+                          )}
+
+                          {model.id === 'government-customer-segmentation' && (
+                            <button
+                              type="button"
+                              onClick={() => navigate('/app/customers')}
+                              style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '5px',
+                                padding: '5px 10px',
+                                fontSize: '0.76rem',
+                                fontWeight: 600,
+                                borderRadius: '6px',
+                                border: '1px solid #059669',
+                                backgroundColor: '#ECFDF5',
+                                color: '#047857',
+                                cursor: 'pointer',
+                              }}
+                            >
+                              <Layers size={13} />
+                              <span>Segmentation</span>
+                            </button>
+                          )}
+
+                          {model.id === 'customer-bill-prediction' && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setActiveMenuId(activeMenuId === model.id ? null : model.id)
+                              }
+                              aria-label={`Actions for ${model.modelName}`}
+                              style={{
+                                background: 'transparent',
+                                border: 'none',
+                                cursor: 'pointer',
+                                color: '#64748B',
+                                padding: '4px',
+                                borderRadius: '4px',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                              }}
+                            >
+                              <MoreVertical size={16} />
+                            </button>
+                          )}
 
                           {/* Context Menu Dropdown */}
-                          {(model.id === 'customer-bill-prediction' ||
-                            model.id === 'government-customer-segmentation') &&
+                          {model.id === 'customer-bill-prediction' &&
                             activeMenuId === model.id && (
                             <div
                               style={{
@@ -777,14 +954,10 @@ export const DataModelHealthPage: React.FC = () => {
                             >
                               <button
                                 type="button"
-                                onClick={() =>
-                                  handleActionClick(
-                                    model,
-                                    model.id === 'government-customer-segmentation'
-                                      ? 'Open Segmentation Dashboard'
-                                      : 'Open Model Workbench'
-                                  )
-                                }
+                                onClick={() => {
+                                  setActiveMenuId(null);
+                                  setTab('bill-prediction');
+                                }}
                                 style={{
                                   width: '100%',
                                   padding: '8px 12px',
@@ -802,14 +975,10 @@ export const DataModelHealthPage: React.FC = () => {
                                 onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#F1F5F9')}
                                 onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
                               >
-                                <Activity size={14} color="#087EBD" />
-                                <span>
-                                  {model.id === 'government-customer-segmentation'
-                                    ? 'Open Segmentation Dashboard'
-                                    : 'Open Model Workbench'}
-                                </span>
+                                <BarChart2 size={14} color="#087EBD" />
+                                <span>Open Bill Model</span>
                               </button>
-                              {model.id === 'customer-bill-prediction' && <button
+                              <button
                                 type="button"
                                 onClick={() => handleActionClick(model, 'Inspect Schema')}
                                 style={{
@@ -831,8 +1000,8 @@ export const DataModelHealthPage: React.FC = () => {
                               >
                                 <FileCode size={14} color="#64748B" />
                                 <span>Inspect Schema</span>
-                              </button>}
-                              {model.id === 'customer-bill-prediction' && <button
+                              </button>
+                              <button
                                 type="button"
                                 onClick={() => handleActionClick(model, 'Show Test Metrics')}
                                 style={{
@@ -854,8 +1023,8 @@ export const DataModelHealthPage: React.FC = () => {
                               >
                                 <Activity size={14} color="#00A389" />
                                 <span>Show Test Metrics</span>
-                              </button>}
-                              {model.id === 'customer-bill-prediction' && <button
+                              </button>
+                              <button
                                 type="button"
                                 onClick={() => handleActionClick(model, 'Download Model Metadata')}
                                 style={{
@@ -877,7 +1046,7 @@ export const DataModelHealthPage: React.FC = () => {
                               >
                                 <Layers size={14} color="#64748B" />
                                 <span>Download Model Metadata</span>
-                              </button>}
+                              </button>
                             </div>
                           )}
                         </td>
@@ -888,7 +1057,7 @@ export const DataModelHealthPage: React.FC = () => {
               </div>
             </div>
           </>
-        )}
+        ))}
       </main>
     </div>
   );

@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="report-id" content="{{ report.report_id }}">
+  <title>{{ report.title }}</title>
+  <style>{{ css | safe }}</style>
+</head>
+<body>
+  <main class="report">
+    <header class="cover">
+      <p class="eyebrow">GRIDVISION · DATA REPORT</p>
+      <h1>{{ report.title }}</h1>
+      {% if report.subtitle %}<p class="subtitle">{{ report.subtitle }}</p>{% endif %}
+      <p class="generated">Generated {{ report.generated_at.isoformat() }}</p>
+    </header>
+    <section class="summary">
+      <h2>Executive summary</h2>
+      <p>{{ report.executive_summary }}</p>
+    </section>
+    {% if report.metrics %}
+    <section>
+      <h2>Calculated metrics</h2>
+      <div class="metric-grid">
+      {% for metric in report.metrics %}
+        <article class="metric">
+          <h3>{{ metric.name }}</h3>
+          <p class="value">{{ metric.value }}{% if metric.units %} <span>{{ metric.units }}</span>{% endif %}</p>
+          <p class="method">{{ metric.methodology }}</p>
+          <p class="source">Fields: {{ metric.source_fields | join(", ") }}</p>
+        </article>
+      {% endfor %}
+      </div>
+    </section>
+    {% endif %}
+    {% for section in report.sections | sort(attribute="order") %}
+    <section>
+      <h2>{{ section.title }}</h2>
+      {% for paragraph in section.content %}<p>{{ paragraph }}</p>{% endfor %}
+      {% if section.metrics %}
+      <div class="metric-grid">
+        {% for metric in section.metrics %}<article class="metric"><h3>{{ metric.name }}</h3><p class="value">{{ metric.value }} {{ metric.units or "" }}</p><p>{{ metric.methodology }}</p></article>{% endfor %}
+      </div>
+      {% endif %}
+      {% for table in section.tables %}
+      <h3>{{ table.title }}</h3>
+      <div class="table-wrap"><table><thead><tr>{% for column in table.columns %}<th>{{ column }}</th>{% endfor %}</tr></thead><tbody>{% for row in table.rows %}<tr>{% for cell in row %}<td>{{ cell if cell is not none else "—" }}</td>{% endfor %}</tr>{% endfor %}</tbody></table></div>
+      {% endfor %}
+      {% if section.observations %}<ul>{% for item in section.observations %}<li>{{ item }}</li>{% endfor %}</ul>{% endif %}
+    </section>
+    {% endfor %}
+    {% if report.observations %}<section><h2>Observations</h2><ul>{% for item in report.observations %}<li>{{ item }}</li>{% endfor %}</ul></section>{% endif %}
+    {% if report.conclusion %}<section class="conclusion"><h2>Conclusion</h2><p>{{ report.conclusion }}</p></section>{% endif %}
+    {% if report.limitations %}<section class="limitations"><h2>Limitations</h2><ul>{% for item in report.limitations %}<li>{{ item }}</li>{% endfor %}</ul></section>{% endif %}
+    <footer>Report {{ report.report_id }} · Generated from user-supplied JSON</footer>
+  </main>
+</body>
+</html>

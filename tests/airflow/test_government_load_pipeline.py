@@ -260,9 +260,7 @@ def test_training_fits_saves_and_logs_hybrid_artifact(
     assert "training_artifacts/feature_importance.csv" in artifact_names
     assert artifact["features"] == features
     assert set(artifact["routing"]["selected_model"]).issubset({"original", "log"})
-    assert result["routing_counts"]["original"] + result["routing_counts"].get(
-        "log", 0
-    ) == 1
+    assert sum(result["routing_counts"].values()) == len(artifact["routing"])
 
 
 def test_training_requires_mlflow_tracking_uri(

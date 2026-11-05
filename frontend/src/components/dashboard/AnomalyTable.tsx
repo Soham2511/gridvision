@@ -69,7 +69,7 @@ export const AnomalyTable: React.FC<AnomalyTableProps> = ({ anomalies, onViewDet
         <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.8rem' }}>
           <thead>
             <tr style={{ borderBottom: '1px solid var(--gv-border-medium)', background: 'var(--gv-bg-surface-subtle)' }}>
-              <th style={{ padding: '0.65rem 0.75rem', fontWeight: 600, color: 'var(--gv-text-secondary)' }}>Entity / Meter ID</th>
+              <th style={{ padding: '0.65rem 0.75rem', fontWeight: 600, color: 'var(--gv-text-secondary)' }}>Entity / OBJECTID</th>
               <th style={{ padding: '0.65rem 0.75rem', fontWeight: 600, color: 'var(--gv-text-secondary)' }}>Facility Name</th>
               <th style={{ padding: '0.65rem 0.75rem', fontWeight: 600, color: 'var(--gv-text-secondary)' }}>Anomaly Type</th>
               <th style={{ padding: '0.65rem 0.75rem', fontWeight: 600, color: 'var(--gv-text-secondary)' }}>Deviation</th>

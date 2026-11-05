@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { usePersona } from '../context';
+import { usePersona, useAuth } from '../context';
 import { analyticsService } from '../services/analyticsService';
 import { modelService } from '../services/modelService';
 import {
@@ -69,6 +69,7 @@ const ToggleSwitch: React.FC<ToggleSwitchProps> = ({ id, checked, onChange, aria
 };
 
 export const ProfilePage: React.FC = () => {
+  const { user, logout } = useAuth();
   const {
     currentPersona,
     activeEntity,
@@ -117,6 +118,7 @@ export const ProfilePage: React.FC = () => {
   const [buildingListLoading, setBuildingListLoading] = useState(false);
   const [buildingProfileLoading, setBuildingProfileLoading] = useState(false);
   const [buildingError, setBuildingError] = useState<string | null>(null);
+  const [switchNotice, setSwitchNotice] = useState<string | null>(null);
 
   useEffect(() => {
     if (currentPersona !== 'household' && currentPersona !== 'commercial') return;
@@ -135,10 +137,17 @@ export const ProfilePage: React.FC = () => {
             setActiveEntity(buildingIds[0]);
           }
         } else {
-          const page = await modelService.getCustomerRecords(200, 0);
+          const benchmarkIds = ['2254213', '293861', '537421', '679900'];
+          let customerIds: string[] = [];
+          try {
+            const page = await modelService.getCustomerRecords(200, 0);
+            customerIds = page.items.map((record) => record.entityId);
+          } catch {
+            // fallback to benchmarks
+          }
           if (cancelled) return;
           const entityIds = Array.from(
-            new Set(page.items.map((record) => record.entityId))
+            new Set([...benchmarkIds, ...customerIds])
           );
           setResidentialEntityIds(entityIds);
           if (entityIds.length && !entityIds.includes(activeEntity)) {
@@ -296,6 +305,116 @@ export const ProfilePage: React.FC = () => {
         </p>
       </div>
 
+      {/* Centralized Identity Access Card */}
+      {user && (
+        <section
+          aria-label="User identity & authentication details"
+          style={{
+            backgroundColor: '#FFFFFF',
+            borderRadius: '14px',
+            border: '1px solid #E2E8F0',
+            boxShadow: '0 1px 3px rgba(0, 0, 0, 0.04)',
+            padding: '1.5rem 1.75rem',
+          }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              gap: '1rem',
+              marginBottom: '1rem',
+            }}
+          >
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <span style={{ fontSize: '1.15rem', fontWeight: 700, color: '#0F172A' }}>
+                  Authenticated Identity
+                </span>
+                <span
+                  style={{
+                    backgroundColor: '#F0FDFA',
+                    color: '#0D9488',
+                    border: '1px solid #CCFBF1',
+                    fontSize: '0.72rem',
+                    fontWeight: 700,
+                    padding: '0.15rem 0.5rem',
+                    borderRadius: '999px',
+                  }}
+                >
+                  {user.persona}
+                </span>
+              </div>
+              <p style={{ fontSize: '0.82rem', color: '#64748B', margin: '0.25rem 0 0' }}>
+                Secured via signed JWT session and household tenant isolation.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={logout}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.4rem',
+                backgroundColor: '#FFF1F2',
+                color: '#E11D48',
+                border: '1px solid #FFE4E6',
+                borderRadius: '8px',
+                padding: '0.45rem 0.85rem',
+                fontSize: '0.82rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              Sign Out
+            </button>
+          </div>
+
+          <dl
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+              gap: '1rem',
+              margin: 0,
+            }}
+          >
+            <div style={{ borderTop: '1px solid #E2E8F0', paddingTop: '0.75rem' }}>
+              <dt style={{ color: '#64748B', fontSize: '0.75rem', fontWeight: 600, marginBottom: '0.3rem' }}>
+                Username
+              </dt>
+              <dd style={{ color: '#0F172A', fontSize: '0.92rem', fontWeight: 700, margin: 0 }}>
+                {user.username}
+              </dd>
+            </div>
+            <div style={{ borderTop: '1px solid #E2E8F0', paddingTop: '0.75rem' }}>
+              <dt style={{ color: '#64748B', fontSize: '0.75rem', fontWeight: 600, marginBottom: '0.3rem' }}>
+                Email
+              </dt>
+              <dd style={{ color: '#0F172A', fontSize: '0.92rem', fontWeight: 700, margin: 0 }}>
+                {user.email || 'None'}
+              </dd>
+            </div>
+            <div style={{ borderTop: '1px solid #E2E8F0', paddingTop: '0.75rem' }}>
+              <dt style={{ color: '#64748B', fontSize: '0.75rem', fontWeight: 600, marginBottom: '0.3rem' }}>
+                Authorization Role
+              </dt>
+              <dd style={{ color: '#0F172A', fontSize: '0.92rem', fontWeight: 700, margin: 0 }}>
+                {user.role}
+              </dd>
+            </div>
+            <div style={{ borderTop: '1px solid #E2E8F0', paddingTop: '0.75rem' }}>
+              <dt style={{ color: '#64748B', fontSize: '0.75rem', fontWeight: 600, marginBottom: '0.3rem' }}>
+                Authorized Smart Meters
+              </dt>
+              <dd style={{ color: '#0F172A', fontSize: '0.92rem', fontWeight: 700, margin: 0 }}>
+                {user.meters && user.meters.length > 0 ? user.meters.join(', ') : 'None provisioned (Isolated)'}
+              </dd>
+            </div>
+          </dl>
+        </section>
+      )}
+
       {(currentPersona === 'household' || currentPersona === 'commercial') && (
         <section
           aria-label="Building profile"
@@ -319,32 +438,78 @@ export const ProfilePage: React.FC = () => {
           >
             <div>
               <h2 style={{ fontSize: '1.15rem', fontWeight: 700, color: '#0F172A', margin: 0 }}>
-                Selected building details
+                {isComm ? 'Selected Building Profile' : 'Selected Resident & Meter Profile'}
               </h2>
               <p style={{ fontSize: '0.82rem', color: '#64748B', margin: '0.35rem 0 0' }}>
-                Dataset attributes and location for the selected {isComm ? 'building' : 'household'}.
+                Dataset attributes and grid telemetry for the active {isComm ? 'commercial building' : 'residential household'}.
               </p>
             </div>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', color: '#334155', fontSize: '0.85rem', fontWeight: 700 }}>
-              Building ID
-              <select
-                aria-label="Select building ID"
-                value={activeEntity}
-                onChange={(event) => setActiveEntity(event.target.value)}
-                disabled={buildingListLoading || buildingOptions.length === 0}
-                style={{ border: '1px solid #CBD5E1', borderRadius: '8px', background: '#FFFFFF', color: '#0B1F33', padding: '0.55rem 0.7rem', minWidth: '150px' }}
-              >
-                {buildingOptions.length === 0 && (
-                  <option value="">
-                    {buildingListLoading ? 'Loading building IDs…' : 'No building IDs'}
-                  </option>
-                )}
-                {buildingOptions.map((buildingId) => (
-                  <option key={buildingId} value={buildingId}>{buildingId}</option>
-                ))}
-              </select>
-            </label>
+            {(isComm || currentPersona === 'household') && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', color: '#0F172A', fontSize: '0.86rem', fontWeight: 700 }}>
+                  <span>{isComm ? 'Switch Facility / Building:' : 'Switch Active Resident / Meter:'}</span>
+                  <select
+                    aria-label={isComm ? 'Select building ID' : 'Select residential meter ID'}
+                    value={activeEntity}
+                    onChange={(event) => {
+                      const newId = event.target.value;
+                      setActiveEntity(newId);
+                      setSwitchNotice(`Active ${isComm ? 'building' : 'user'} changed to ${newId}. Dashboard, telemetry, and notifications updated.`);
+                      window.setTimeout(() => setSwitchNotice(null), 4000);
+                    }}
+                    disabled={buildingListLoading || buildingOptions.length === 0}
+                    style={{
+                      border: '2px solid #00A389',
+                      borderRadius: '8px',
+                      background: '#F0FDFA',
+                      color: '#0F172A',
+                      padding: '0.55rem 0.85rem',
+                      fontSize: '0.85rem',
+                      fontWeight: 700,
+                      minWidth: '220px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {buildingOptions.length === 0 && (
+                      <option value="">
+                        {buildingListLoading ? 'Loading IDs…' : 'No IDs available'}
+                      </option>
+                    )}
+                    {buildingOptions.map((buildingId) => (
+                      <option key={buildingId} value={buildingId}>
+                        {buildingId === '2254213'
+                          ? '2254213 (Primary Household)'
+                          : buildingId === '293861'
+                          ? '293861 (Benchmark Meter)'
+                          : buildingId === '537421'
+                          ? '537421 (Benchmark Meter)'
+                          : buildingId === '679900'
+                          ? '679900 (Benchmark Meter)'
+                          : `${isComm ? 'Building' : 'Meter'} ${buildingId}`}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            )}
           </div>
+          {switchNotice && (
+            <div
+              role="status"
+              style={{
+                backgroundColor: '#ECFDF5',
+                border: '1px solid #A7F3D0',
+                color: '#065F46',
+                padding: '0.75rem 1rem',
+                borderRadius: '8px',
+                fontSize: '0.85rem',
+                fontWeight: 600,
+                marginBottom: '1rem',
+              }}
+            >
+              ✓ {switchNotice}
+            </div>
+          )}
           {buildingError && (
             <div
               role="alert"

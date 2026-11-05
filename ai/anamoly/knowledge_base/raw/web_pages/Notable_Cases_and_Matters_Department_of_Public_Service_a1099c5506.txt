@@ -1,0 +1,163 @@
+TITLE: Notable Cases and Matters | Department of Public Service
+SOURCE_URL: https://dps.ny.gov/notable-cases-and-matters
+
+Notable Cases and Matters
+Notable Cases and Matters
+Affordable Broadband Act
+Overview
+The Affordable Broadband Act (ABA) requires internet providers serving over 20,000 customers to offer reduced-cost plans to qualifying households. Under the ABA, qualifying New York households can access high-speed internet at two price points:
+$15 per month for speeds of at least 25 megabits per second
+$20 per month for high-speed service of at least 200 megabits per second
+These discounted rates are permanent, though providers may adjust prices once every five years. Any price increase must be announced 30 days in advance to customers and regulators, and are limited to the lesser of either the most recent consumer price index change or a maximum of two percent per year.
+The ABA, enacted in 2021, recently cleared final legal hurdles when the United States Supreme Court denied further review of the law in December 2024, and takes effect immediately.
+New Yorkers can qualify for these low-income broadband plans if they participate in any of the following programs:
+Free or reduced-priced lunch through the National School Lunch Program
+Supplemental Nutrition Assistance Program
+Medicaid
+Senior citizen rent increase exemption
+Disability rent increase exemption
+Affordability benefit from a utility
+The Public Service Commission (PSC) has reinstated temporary exemptions for small ISPs with fewer than 20,000 customers and will review new requests for exemptions based on economic hardship.
+Related Orders and Documents
+Governor Hochul Announces Major Digital Access Initiatives With Launch of Affordable Broadband Act and $18.5 Million ConnectALL Investment
+(Press Release, 1/23/25)
+One Commissioner Order Reopening Proceeding and Reinstating Temporary Exemptions Subject to Conditions
+Find more information in
+Case 24-00933
+.
+Grid of the Future
+Case 24-E-0165
+- Proceeding on Motion of the Commission Regarding the Grid of the Future.
+Overview
+The Public Service Commission (PSC) instituted the proceeding to transition New York to a more connected, affordable, resilient, and clean electric grid. During the proceeding, PSC staff will engage with stakeholders to develop a comprehensive New York Grid of the Future plan that establishes targets for the deployment of flexible resources such as virtual power plants and identifies the utility investments needed to enable the grid of the future.
+Related Orders and Documents
+First Iteration of the Grid of the Future Plan
+(NYSERDA and DPS, March 31, 2025)
+Order Instituting the Proceeding
+Governor Hochul Launches Grid of the Future Study to Build Clean and Resilient Electric Grid
+(Press Release, 4/18/24)
+September 27, 2024 Grid of the Future Technical Conference Video
+November 15, 2024 Grid of the Future Technical Conference Video
+Inter-Agency Fire Safety Working Group
+To ensure the safety and security of energy storage systems across the state.
+Overview
+Following fire incidents at energy storage facilities in Jefferson, Orange, and Suffolk Counties, Governor Hochul created an Inter-Agency Fire Safety Working Group to ensure the safety and security of energy storage systems across the state. The Working Group will thoroughly investigate the recent energy storage fires and will conduct a comprehensive fire safety review, including emergency response analysis, of energy storage projects that experienced thermal runaway events across New York.
+View the final recommendations from The Working Group
+(NYSERDA website)
+Related Documents
+Governor Hochul Announces Draft Fire Code Language that Addresses Recommendations from the Interagency Fire Safety Working Group
+(Press Release, 7/26/24)
+Governor Hochul Releases Initial Recommendations From Inter-Agency Fire Safety Working Group
+(Press Release, 2/6/24)
+Governor Hochul Announces Release of Initial Findings from Inter-Agency Fire Safety Working Group on Emergency Response
+(Press Release, 12/21/23)
+Governor Hochul Convenes Inter-Agency Fire Safety Working Group Following Fires In Jefferson, Orange, and Suffolk Counties
+(Press Release, 7/28/23)
+Investigation of Lead-Covered Cables
+Recent media reports have identified lead-covered cables installed years ago by telecom companies could pose a potential public health and environmental risk associated with those cables through releases into the environment.
+In an effort to better understand the scope of this potential concern, the State is compiling an inventory of the presence of aerial and buried cables, both on land and below water, containing lead across New York to conduct its own investigation of the health and safety issues potentially caused by these cables.
+Related Documents and Press Releases
+Lead Cable Inventory Letter to Providers from NYSDPS, DOH, and DEC
+Governor Hochul Announces Temple Park Will Reopen After Comprehensive Soil Testing Reveals Park is Safe for Public Use
+(Press Release, 8/1/23)
+Governor Hochul Directs State Agencies to Investigate Old Lead-Covered Cables Left in Communities By Telecommunication Companies
+(Press Release, 7/20/23)
+Read All Case-Related Documents
+Matter 23-01547
+- In the Matter of the Investigation of Lead-Covered Cables and the Potential Associated Health Risks.
+Central Hudson Billing System
+On September 1, 2021, Central Hudson Gas & Electric (Central Hudson, or the Company) upgraded its Customer Information and Billing System. Following implementation, several customers complained to local officials and to the New York State Department of Public Service (DPS) about excessive and delayed bills, and a lack of customer support by the Company.
+The PSC on June 20, 2024, approved a settlement valued at $62.59 million with Central Hudson Gas & Electric Corporation (Central Hudson), and up to an additional $2 million in stipulated payments if the company fails to deliver monthly meter readings on schedule. The agreement requires shareholders to pay the full cost of remedial actions taken to fix the billing system, as well as costs associated with a move to regular monthly meter reading and to implement recommendations made by an independent monitor.  In addition, shareholders will pay $4 million to directly benefit Central Hudson ratepayers. As adopted, the $64.59 million settlement agreement resolves the Department’s ongoing investigation into past billing system failures by the company.
+Read the DPS Investigation Report
+Related Press Releases, Presentations and Orders
+PSC Reaches $64.59 Million Settlement with Central Hudson Over Billing Issues
+(Press Release, 6/20/24)
+Central Hudson Independent Monitor Report - FINAL Redacted-with attachments
+Order Adopting Terms of Settlement Agreement
+(6/20/24)
+Central Hudson Billing Investigation was presented at the June 20, 2024 PSC Session -
+View Session Recording
+(starts at around 55:15)
+Central Hudson Billing Investigation June 20 PPT Settlement Presentation
+DPS to Install Independent Monitor to Examine Billing System at Central Hudson
+(Press Release, 7/27/23)
+Central Hudson Called to Account for Apparent Billing System Defects
+(Press Release, 12/15/22)
+Central Hudson Billing was discussed as the first item at the December 15, 2022 PSC Session -
+View Session Recording
+Presentation by DPS staff at the December 15, 2022 PSC session -
+Central Hudson Gas & Electric (Customer Information & Billing System Development & Deployment) (22-M-0645)
+Order to Commence Proceeding and Show Cause - Case 22-M-0645
+Read All Case-Related Documents
+Case 22-M-0645
+- Proceeding on Motion of the Commission Concerning Central Hudson Gas & Electric Corporation's Development and Deployment of Modifications to its Customer Information and Billing System and Resulting Impacts on Billing Accuracy, Timeliness, and Errors.
+Electric Vehicle Proceeding
+The Commission commenced a proceeding on April 18, 2018, to consider the role of electric utilities in providing infrastructure and rate design to accommodate the needs and electricity demand of electric vehicles (EVs) and electric vehicle supply equipment (EVSE). The proceeding explores cost-effective ways to build such infrastructure and equipment, and determine whether utility tariff changes will be needed in addition to those already being considered for residential customers to accommodate and promote the deployment of EVs. The proceeding also investigates the characteristics of EV charging systems and how those systems may facilitate EV participation as a distributed energy resource (DER).
+Related Orders and Documents
+PSC Order Instituting Procedure
+DPS Staff Whitepaper Regarding Electric Vehicle Supply Equipment and Infrastructure Deployment
+Related Events
+DPS Make Ready Program Midpoint Review Stakeholder Session,
+12/21/23 Recording
+.
+EV Technical Standards Working Group Meeting,
+12/12/23 Recording
+.
+DPS EV Make Ready Program Workforce Development webinar, September 7, 2023 -
+9/7/23 webinar recording
+.
+Related Press Releases
+Governor Hochul Advances Nation-Leading Electric Vehicle Infrastructure Buildout Program
+(11/16/23)
+Governor Hochul announces $29 million for electric vehicle charging infrastructure rebates
+(7/19/23)
+Virtual Meeting Set For Review of Electric Vehicle Make-Ready Program
+(9/13/22)
+Governor Hochul Announces Charging Discount Programs For Electric Vehicle Drivers Across New York
+(7/14/22)
+Governor Hochul Announces Advancement of Program to Deploy More Than 50,000 New EV Charging Ports Across the State
+(11/18/21)
+PSC Expands Electric Vehicle Charging Incentive Program
+(3/19/20)
+Read All Case-Related Documents
+Case 18-E-0138
+- Proceeding on Motion of the Commission Regarding Electric Vehicle Supply Equipment and Infrastructure.
+Electric Transmission Planning Proceeding
+Case 20-E-0197
+- Proceeding on Motion of the Commission to Implement Transmission Planning Pursuant to the Accelerated Renewable Energy Growth and Community Benefit Act.
+Related Orders and Pages
+Order Approving a Coordinated Grid Planning Process
+Energy Policy Planning Advisory Council
+web page
+Related Press Releases
+PSC Approves Utility Transmission Planning Processes
+NYSEG/RG&E Billing Issues Investigation
+Department staff commenced a review and an investigation related to a September 2022 change to the NYSEG/RG&E's customer information and billing system. The complaints received by the Department range from incorrect bills being sent to consumers or very late bills being sent. The investigation is ongoing.
+Related Press Releases
+DPS Expands Investigation of NYSEG and RG&E for Billing Errors
+(Press Release, 12/28/22)
+Virtual and In-Person Public Forums Set Regarding Billing Errors
+(Press Release, 1/24/23)
+View transcripts of public forums in
+Matter 23-00068
+View All Matter-Related Documents
+Matter 23-00068
+- In the Matter of DPS staff's Investigation into Billing, Customer Service, and Meter Reading Issues Affecting Customers of New York State Electric & Gas Corporation and Rochester Gas and Electric Corporation.
+New Area Code for NYC
+Case 24-C-0314
+- Petition of the North American Numbering Plan Administrator on Behalf of the New York Telecommunications Industry for Relief of the 347/718/917/929 Numbering Plan Area.
+Overview
+The North American Numbering Plan Administrator notified the Public Service Commission in May 2024, that the 347/718/917/929 Numbering Plan Area (NPA), serving the New York City boroughs of Bronx, Brooklyn, Queens, Staten Island, and the Marble Hill section of Manhattan, is projected to exhaust its central office codes during the fourth quarter of 2026 and is in need of relief.
+The Industry recommended the new additional overlay NPA for the existing 347/718/917/929 NPA be implemented based upon a nine month schedule. Adhering to the Industry agreed-upon schedule will allow the new NPA to be implemented six months prior to the projected exhaust of the 347/718/917/929 NPA.
+The Public Service Commission approved the new area code on January 23, 2025. On February 13, 2025, the PSC announced that residential, business and wireless customers within the existing area codes that serve the Bronx, Brooklyn, Queens, Staten Island, and the Marble Hill section of the New York City metropolitan area should begin to prepare for the introduction of a new area code —
+465
+— once the supply of central office codes under the existing area codes exhausts.
+Related Documents
+New Area Code Selected for Portions of New York City Metropolitan Area
+(Press Release, 2/13/25)
+PSC Approves New Area Code for New York City Area
+(Press Release, 1/23/25)
+Notice Soliciting Comments
+Petition of the North American Numbering Plan Administrator, On Behalf of the New York Telecommunications Industry, For Relief of the “347/718/917/929” Numbering Plan Area
+October 1, 2024 Virtual Public Statement Hearing -
+1pm Transcript

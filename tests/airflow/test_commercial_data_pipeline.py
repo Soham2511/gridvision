@@ -155,6 +155,8 @@ def test_gold_rejects_horizon_outside_supported_range(pipeline_dirs: Path) -> No
 def test_airflow_dag_parses_with_expected_task_order(
     tmp_path: Path,
 ) -> None:
+    if os.name == "nt":
+        pytest.skip("Airflow DAG parsing must run in WSL2 or Linux, not native Windows.")
     airflow_home = tmp_path / "airflow_home"
     env = os.environ.copy()
     env["AIRFLOW_HOME"] = str(airflow_home)

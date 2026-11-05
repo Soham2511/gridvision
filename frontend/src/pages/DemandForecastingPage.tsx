@@ -492,23 +492,29 @@ export const DemandForecastingPage: React.FC = () => {
         {sector === 'government' && (
           <>
             <div className="gv-card">
-              <span className="gv-text-muted" style={{ fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase' }}>Zone Total Demand</span>
+              <span className="gv-text-muted" style={{ fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase' }}>2018 Historical Total</span>
               <div style={{ fontSize: '1.8rem', fontWeight: 800, color: 'var(--gv-text-primary)', marginTop: '0.35rem' }}>
                 {currentSite.totalDemandKwh.toLocaleString()} <span style={{ fontSize: '0.9rem', color: 'var(--gv-text-secondary)' }}>kWh</span>
               </div>
-              <p className="gv-text-muted" style={{ fontSize: '0.72rem', marginTop: '0.35rem' }}>Aggregate across {currentSite.buildingCount} buildings</p>
+              <p className="gv-text-muted" style={{ fontSize: '0.72rem', marginTop: '0.35rem' }}>Historical aggregate across {currentSite.buildingCount} buildings</p>
             </div>
 
             <div className="gv-card">
               <span className="gv-text-muted" style={{ fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase' }}>Regional Model Prediction</span>
               <div style={{ fontSize: '1.8rem', fontWeight: 800, color: 'var(--gv-color-grid-blue)', marginTop: '0.35rem' }}>
-                {currentSite.predictedDemandKwh.toLocaleString()} <span style={{ fontSize: '0.9rem', color: 'var(--gv-text-secondary)' }}>kWh</span>
+                {currentSite.predictedDemandKwh == null
+                  ? 'Unavailable'
+                  : <>{currentSite.predictedDemandKwh.toLocaleString()} <span style={{ fontSize: '0.9rem', color: 'var(--gv-text-secondary)' }}>kWh</span></>}
               </div>
-              <p className="gv-text-muted" style={{ fontSize: '0.72rem', marginTop: '0.35rem' }}>LightGBM regional-v1 inference</p>
+              <p className="gv-text-muted" style={{ fontSize: '0.72rem', marginTop: '0.35rem' }}>
+                {currentSite.predictedDemandKwh == null
+                  ? 'No configured government forecast model is available.'
+                  : 'Existing government model prediction.'}
+              </p>
             </div>
 
             <div className="gv-card">
-              <span className="gv-text-muted" style={{ fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase' }}>Peak Hour Demand</span>
+              <span className="gv-text-muted" style={{ fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase' }}>2018 Peak Hour Demand</span>
               <div style={{ fontSize: '1.8rem', fontWeight: 800, color: 'var(--gv-color-energy-amber)', marginTop: '0.35rem' }}>
                 {currentSite.peakHourKwh.toLocaleString()} <span style={{ fontSize: '0.9rem', color: 'var(--gv-text-secondary)' }}>kWh</span>
               </div>
@@ -645,9 +651,9 @@ export const DemandForecastingPage: React.FC = () => {
 
       {sector === 'government' && (
         <div className="gv-card">
-          <h3 className="gv-heading-3" style={{ marginBottom: '0.5rem' }}>Regional Demand Comparison Across 17 Administrative Sites</h3>
+          <h3 className="gv-heading-3" style={{ marginBottom: '0.5rem' }}>Historical 2018 Demand Across {regionalSites.length} Available Grids</h3>
           <p className="gv-text-muted" style={{ fontSize: '0.78rem', marginBottom: '1.25rem' }}>
-            Ranked total demand distribution across all 17 government sites (Bear through Wolf) with 1,400 constituent buildings.
+            Annual aggregates from the prepared 2018 grid dataset; these are historical observations, not current grid load.
           </p>
           <div style={{ height: '320px' }}>
             <ResponsiveContainer width="100%" height="100%">

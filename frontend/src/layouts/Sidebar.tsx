@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { usePersona, PersonaType } from '../context';
+import { useAuth } from '../context/AuthContext';
 import {
   Home,
   BarChart2,
@@ -16,10 +17,14 @@ import {
   Map,
   PieChart,
   ShieldAlert,
+  FileText,
+  Bell,
+  LifeBuoy,
 } from 'lucide-react';
 
 export const Sidebar: React.FC = () => {
   const { currentPersona, setPersona } = usePersona();
+  const { logout } = useAuth();
   const navigate = useNavigate();
   const [showPersonaMenu, setShowPersonaMenu] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(
@@ -52,17 +57,13 @@ export const Sidebar: React.FC = () => {
       label: 'Historical Insights',
       icon: <BarChart2 size={18} />,
     },
-    {
-      path: '/anomalies',
-      label: currentPersona === 'government'
-        ? 'Anomaly Monitoring'
-        : currentPersona === 'commercial'
-        ? 'Building Alerts'
-        : 'Anomaly Alerts',
-      icon: <ShieldAlert size={18} />,
-    },
     ...(currentPersona === 'government'
       ? [
+          {
+            path: '/app/anomalies',
+            label: 'Anomaly Monitoring',
+            icon: <ShieldAlert size={18} />,
+          },
           {
             path: '/app/customers',
             label: 'Customer Segmentation',
@@ -71,10 +72,17 @@ export const Sidebar: React.FC = () => {
         ]
       : []),
     {
+      path: '/app/complaints',
+      label: 'Complaint Centre',
+      icon: <LifeBuoy size={18} />,
+    },
+    {
       path: '/app/assistant',
       label: 'AI Assistant',
       icon: <MessageSquare size={18} />,
     },
+    { path: '/app/reports', label: 'Reports', icon: <FileText size={18} /> },
+    { path: '/app/notifications', label: 'Notifications', icon: <Bell size={18} /> },
     {
       path: '/profile',
       label: currentPersona === 'government' ? 'Profile' : 'Building Profile',
@@ -93,9 +101,10 @@ export const Sidebar: React.FC = () => {
     navigate('/');
   };
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    await logout();
     setPersona(null);
-    navigate('/');
+    navigate('/login');
   };
 
   return (

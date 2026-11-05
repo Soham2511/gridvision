@@ -1,12 +1,22 @@
-import React, { useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import React, { useCallback, useEffect, useState } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { usePersona } from '../context';
+import { useAuth } from '../context/AuthContext';
+import {
+  aiLayerService,
+  cleanNotificationBody,
+  extractReportIdFromNotification,
+  NotificationRecord,
+} from '../services/aiLayerService';
 import {
   Bell,
   Calendar,
   ChevronDown,
+  Download,
   X,
   Layers,
+  LogOut,
+  LogIn,
 } from 'lucide-react';
 
 export interface TopHeaderProps {
@@ -19,8 +29,70 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   isAdmin: propIsAdmin,
 }) => {
   const [showNotifications, setShowNotifications] = useState(false);
+  const [notifications, setNotifications] = useState<NotificationRecord[]>([]);
   const location = useLocation();
-  const { currentPersona } = usePersona();
+  const navigate = useNavigate();
+  const { currentPersona, activeEntity } = usePersona();
+  const { user, isAuthenticated, logout } = useAuth();
+  const persona = currentPersona ?? 'household';
+  const entityId = persona === 'household' || persona === 'commercial' ? activeEntity : undefined;
+
+  const refreshNotifications = useCallback(async () => {
+    try {
+      const stored = await aiLayerService.listNotifications(persona, entityId);
+      setNotifications([...stored.items].sort(
+        (a, b) => Date.parse(b.created_at) - Date.parse(a.created_at),
+      ));
+    } catch {
+      setNotifications([]);
+    }
+  }, [persona, entityId]);
+
+  useEffect(() => {
+    let inFlight = false;
+    const refreshWhenVisible = async () => {
+      if (inFlight || document.visibilityState === 'hidden') return;
+      inFlight = true;
+      try {
+        await refreshNotifications();
+      } finally {
+        inFlight = false;
+      }
+    };
+
+    void refreshWhenVisible();
+    const intervalId = window.setInterval(() => void refreshWhenVisible(), 5_000);
+    window.addEventListener('focus', refreshWhenVisible);
+    document.addEventListener('visibilitychange', refreshWhenVisible);
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', refreshWhenVisible);
+      document.removeEventListener('visibilitychange', refreshWhenVisible);
+    };
+  }, [refreshNotifications]);
+
+  const markNotificationRead = async (notificationId: string) => {
+    try {
+      await aiLayerService.markRead(notificationId, persona, entityId);
+    } catch {
+      return;
+    }
+    await refreshNotifications();
+  };
+
+  const handleDownloadReport = async (reportId: string) => {
+    try {
+      const blob = await aiLayerService.downloadReport(reportId, 'pdf', persona, entityId);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `gridvision-anomaly-report-${reportId}.pdf`;
+      anchor.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 0);
+    } catch {
+      // no-op
+    }
+  };
 
   const isPlatformScope =
     location.pathname === '/' ||
@@ -29,6 +101,30 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
 
   const showLogo = propShowLogo !== undefined ? propShowLogo : isPlatformScope;
   const isAdmin = propIsAdmin !== undefined ? propIsAdmin : isPlatformScope;
+
+  const userDisplayName = user?.username
+    ? user.username
+    : user?.email
+    ? user.email
+    : isAdmin
+    ? 'Admin'
+    : currentPersona === 'government'
+    ? 'Grid Operations Admin'
+    : currentPersona === 'commercial'
+    ? 'Facility Manager'
+    : 'Household Resident';
+
+  const userInitial = user?.username
+    ? user.username.charAt(0).toUpperCase()
+    : user?.email
+    ? user.email.charAt(0).toUpperCase()
+    : isAdmin
+    ? 'A'
+    : currentPersona === 'government'
+    ? 'G'
+    : currentPersona === 'commercial'
+    ? 'C'
+    : 'H';
 
   const personaLabel =
     currentPersona === 'commercial'
@@ -56,29 +152,7 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
     pageLabel = 'Actionable Insights';
   }
 
-  const notifications = [
-    {
-      id: 'notif-1',
-      title: 'Peak Alert Notice',
-      message: 'Thursday 18:30 projected demand exceeds 88% capacity limit.',
-      time: '12m ago',
-      type: 'warning',
-    },
-    {
-      id: 'notif-2',
-      title: 'North Substation Anomaly',
-      message: 'Sudden +42.5% spike detected at SUB-NORTH-104.',
-      time: '34m ago',
-      type: 'danger',
-    },
-    {
-      id: 'notif-3',
-      title: 'Airflow Batch Sync Simulated',
-      message: 'Telemetry feature cache refreshed with mock baseline.',
-      time: '1h ago',
-      type: 'success',
-    },
-  ];
+  const unreadCount = notifications.filter((notification) => !notification.read_at).length;
 
   return (
     <header
@@ -175,26 +249,28 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
             title="System Notifications"
           >
             <Bell size={17} />
-            <span
-              style={{
-                position: 'absolute',
-                top: '-3px',
-                right: '-3px',
-                width: '16px',
-                height: '16px',
-                borderRadius: '50%',
-                background: 'var(--gv-status-danger)',
-                color: '#FFFFFF',
-                fontSize: '0.62rem',
-                fontWeight: 700,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                border: '2px solid #FFFFFF',
-              }}
-            >
-              3
-            </span>
+            {unreadCount > 0 && (
+              <span
+                style={{
+                  position: 'absolute',
+                  top: '-3px',
+                  right: '-3px',
+                  width: '16px',
+                  height: '16px',
+                  borderRadius: '50%',
+                  background: 'var(--gv-status-danger)',
+                  color: '#FFFFFF',
+                  fontSize: '0.62rem',
+                  fontWeight: 700,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  border: '2px solid #FFFFFF',
+                }}
+              >
+                {unreadCount > 9 ? '9+' : unreadCount}
+              </span>
+            )}
           </button>
 
           {/* Notifications Dropdown Drawer */}
@@ -227,81 +303,175 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem' }}>
-                {notifications.map((n) => (
-                  <div
-                    key={n.id}
-                    style={{
-                      padding: '0.6rem 0.75rem',
-                      borderRadius: 'var(--gv-radius-md)',
-                      background: 'var(--gv-bg-surface-subtle)',
-                      borderLeft: `3px solid ${
-                        n.type === 'danger'
-                          ? 'var(--gv-status-danger)'
-                          : n.type === 'warning'
-                          ? 'var(--gv-color-energy-amber)'
-                          : 'var(--gv-color-smart-teal)'
-                      }`,
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.2rem' }}>
-                      <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--gv-text-primary)' }}>
-                        {n.title}
-                      </span>
-                      <span style={{ fontSize: '0.65rem', color: 'var(--gv-text-muted)' }}>
-                        {n.time}
-                      </span>
+                {notifications.filter((notification) => !notification.read_at).slice(0, 5).map((n) => {
+                  const reportId = extractReportIdFromNotification(n);
+                  const displayBody = cleanNotificationBody(n.body);
+
+                  return (
+                    <div
+                      key={n.notification_id}
+                      style={{
+                        padding: '0.6rem 0.75rem',
+                        borderRadius: 'var(--gv-radius-md)',
+                        background: 'var(--gv-bg-surface-subtle)',
+                        borderLeft: `3px solid ${
+                          n.notification_type === 'anomaly' || n.notification_type === 'danger' || n.notification_type === 'anomaly_alert'
+                            ? 'var(--gv-status-danger)'
+                            : n.notification_type === 'warning'
+                            ? 'var(--gv-color-energy-amber)'
+                            : 'var(--gv-color-smart-teal)'
+                        }`,
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.2rem' }}>
+                        <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--gv-text-primary)' }}>
+                          {n.title}
+                        </span>
+                        <span style={{ fontSize: '0.65rem', color: 'var(--gv-text-muted)' }}>
+                          {new Date(n.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </div>
+                      {displayBody && (
+                        <p style={{ fontSize: '0.72rem', color: 'var(--gv-text-secondary)', lineHeight: 1.35 }}>
+                          {displayBody}
+                        </p>
+                      )}
+                      <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', marginTop: '0.35rem' }}>
+                        {reportId && (
+                          <button
+                            type="button"
+                            onClick={() => void handleDownloadReport(reportId)}
+                            style={{
+                              fontSize: '0.68rem',
+                              fontWeight: 600,
+                              color: '#ffffff',
+                              background: 'var(--gv-color-smart-teal)',
+                              border: 'none',
+                              borderRadius: 'var(--gv-radius-sm)',
+                              padding: '0.2rem 0.5rem',
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.25rem',
+                            }}
+                          >
+                            <Download size={11} />
+                            Download PDF
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => void markNotificationRead(n.notification_id)}
+                          style={{ fontSize: '0.68rem', color: 'var(--gv-color-grid-blue)', background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
+                        >
+                          Dismiss
+                        </button>
+                      </div>
                     </div>
-                    <p style={{ fontSize: '0.72rem', color: 'var(--gv-text-secondary)', lineHeight: 1.35 }}>
-                      {n.message}
-                    </p>
-                  </div>
-                ))}
+                  );
+                })}
+                {unreadCount === 0 && <p className="gv-text-subtle">No new alerts or activity.</p>}
               </div>
 
               <div style={{ marginTop: '0.75rem', textAlign: 'center', borderTop: '1px solid var(--gv-border-subtle)', paddingTop: '0.5rem' }}>
                 <span style={{ fontSize: '0.7rem', color: 'var(--gv-text-muted)' }}>
-                  Simulated telemetry notifications
+                  Alerts and activity are shared with Notifications.
                 </span>
+              </div>
+              <div style={{ marginTop: '0.6rem', textAlign: 'center' }}>
+                <Link to="/app/notifications" onClick={() => setShowNotifications(false)} style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--gv-color-grid-blue)' }}>
+                  View all notifications
+                </Link>
               </div>
             </div>
           )}
         </div>
 
-        {/* Profile Entry Point */}
-        <Link
-          to="/profile"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '0.65rem',
-            padding: '0.25rem 0.5rem',
-            borderRadius: '999px',
-            textDecoration: 'none',
-            transition: 'background 0.15s ease',
-          }}
-          title={isAdmin ? 'User Profile: Admin' : 'User Profile: Rohit Sharma'}
-        >
-          <div
+        {isAuthenticated ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+            {/* Profile Entry Point */}
+            <Link
+              to="/profile"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.65rem',
+                padding: '0.25rem 0.5rem',
+                borderRadius: '999px',
+                textDecoration: 'none',
+                transition: 'background 0.15s ease',
+              }}
+              title={`User Profile: ${userDisplayName}`}
+            >
+              <div
+                style={{
+                  width: '32px',
+                  height: '32px',
+                  borderRadius: '50%',
+                  backgroundColor: '#D1E5EE',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  color: '#0B1F33',
+                  fontWeight: 700,
+                  fontSize: '0.88rem',
+                }}
+              >
+                {userInitial}
+              </div>
+              <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#0B1F33' }}>
+                {userDisplayName}
+              </span>
+              <ChevronDown size={14} color="#64748B" />
+            </Link>
+
+            <button
+              type="button"
+              onClick={async () => {
+                await logout();
+                navigate('/login');
+              }}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.35rem',
+                background: 'none',
+                border: '1px solid var(--gv-border-subtle, #E2E8F0)',
+                borderRadius: '8px',
+                padding: '0.35rem 0.65rem',
+                color: '#64748B',
+                fontSize: '0.78rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+                transition: 'all 0.15s ease',
+              }}
+              title="Sign out of your session"
+            >
+              <LogOut size={14} />
+              <span>Sign Out</span>
+            </button>
+          </div>
+        ) : (
+          <Link
+            to="/login"
             style={{
-              width: '32px',
-              height: '32px',
-              borderRadius: '50%',
-              backgroundColor: '#D1E5EE',
               display: 'flex',
               alignItems: 'center',
-              justifyContent: 'center',
-              color: '#0B1F33',
-              fontWeight: 700,
-              fontSize: '0.88rem',
+              gap: '0.35rem',
+              backgroundColor: 'var(--gv-color-smart-teal, #00A396)',
+              color: '#FFFFFF',
+              borderRadius: '8px',
+              padding: '0.4rem 0.85rem',
+              fontSize: '0.82rem',
+              fontWeight: 600,
+              textDecoration: 'none',
+              boxShadow: '0 2px 4px rgba(0, 163, 150, 0.2)',
             }}
           >
-            {isAdmin ? 'A' : 'R'}
-          </div>
-          <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#0B1F33' }}>
-            {isAdmin ? 'Admin' : 'Rohit Sharma'}
-          </span>
-          <ChevronDown size={14} color="#64748B" />
-        </Link>
+            <LogIn size={14} />
+            <span>Sign In</span>
+          </Link>
+        )}
       </div>
     </header>
   );

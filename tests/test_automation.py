@@ -5,6 +5,7 @@ import io
 import subprocess
 from datetime import datetime
 from pathlib import Path
+from pathlib import Path
 
 import pytest
 import pyarrow as pa
@@ -326,6 +327,20 @@ def test_model_catalog_verification_requires_all_configured_models(
     assert {
         model["model_id"] for model in result["configured_models"]
     } == set(model_ids)
+
+
+def test_backend_stack_environment_approves_automation_outputs_and_preserves_override():
+    default_env = automation._backend_stack_environment({})
+    assert default_env["APPROVED_DATA_SOURCES"] == ",".join(
+        automation.AUTOMATION_APPROVED_DATA_SOURCES
+    )
+    assert default_env["MODEL_PROVIDER"] == "mlflow"
+    assert default_env["MLFLOW_TRACKING_URI"] == automation.MLFLOW_CONTAINER_URI
+
+    custom_env = automation._backend_stack_environment(
+        {"APPROVED_DATA_SOURCES": "customer_gold"}
+    )
+    assert custom_env["APPROVED_DATA_SOURCES"] == "customer_gold"
 
 
 def test_compose_service_url_uses_published_host_port(
@@ -652,11 +667,9 @@ def test_segmentation_dag_paths_use_bronze_source_and_published_output_dir(
         "GRIDVISION_DATA_DIR": str(data_root),
         "SEGMENTATION_SOURCE_PATH": str(source),
         "SEGMENTATION_OUTPUT_DIR": str(output_dir),
-        "SEGMENTATION_FEATURE_PATH": str(
-            data_root / "gold" / "customer_segmentation_features.parquet"
-        ),
-        "SEGMENTATION_MODEL_DIR": str(tmp_path / "models"),
-        "SEGMENTATION_REPORTS_DIR": str(tmp_path / "reports"),
+        "SEGMENTATION_FEATURE_PATH": str(output_dir / "building_features.parquet"),
+        "SEGMENTATION_MODEL_DIR": str(output_dir / "models"),
+        "SEGMENTATION_REPORTS_DIR": str(output_dir / "reports"),
     }
 
     inputs, outputs = automation._dag_dataset_paths(
@@ -665,12 +678,8 @@ def test_segmentation_dag_paths_use_bronze_source_and_published_output_dir(
 
     assert inputs == [source.resolve()]
     assert output_dir / "consumer_assignments.parquet" in outputs
-    assert (
-        data_root / "gold" / "customer_segmentation_features.parquet"
-    ).resolve() in outputs
-    assert (tmp_path / "models" / "residential_model.joblib").resolve() not in outputs
-    assert (tmp_path / "reports" / "geospatial_summary.json").resolve() in outputs
-    assert output_dir / "building_features.parquet" not in outputs
+    assert output_dir / "building_features.parquet" in outputs
+    assert output_dir / "reports" / "geospatial_summary.json" in outputs
 
 
 def test_segmentation_dag_runs_when_published_outputs_are_missing(
@@ -684,11 +693,9 @@ def test_segmentation_dag_runs_when_published_outputs_are_missing(
         "GRIDVISION_DATA_DIR": str(data_root),
         "SEGMENTATION_SOURCE_PATH": str(source),
         "SEGMENTATION_OUTPUT_DIR": str(data_root / "segmentation"),
-        "SEGMENTATION_FEATURE_PATH": str(
-            data_root / "gold" / "customer_segmentation_features.parquet"
-        ),
-        "SEGMENTATION_MODEL_DIR": str(tmp_path / "models"),
-        "SEGMENTATION_REPORTS_DIR": str(tmp_path / "reports"),
+        "SEGMENTATION_FEATURE_PATH": str(data_root / "segmentation" / "building_features.parquet"),
+        "SEGMENTATION_MODEL_DIR": str(data_root / "segmentation" / "models"),
+        "SEGMENTATION_REPORTS_DIR": str(data_root / "segmentation" / "reports"),
     }
     calls: list[str] = []
 
@@ -715,8 +722,9 @@ def test_segmentation_dag_runs_when_published_outputs_are_missing(
     assert calls == [automation.SEGMENTATION_DAG_ID]
 
 
+@pytest.mark.parametrize("container_source_path", [False, True])
 def test_segmentation_dag_adopts_complete_current_outputs_without_running(
-    monkeypatch: pytest.MonkeyPatch, tmp_path
+    monkeypatch: pytest.MonkeyPatch, tmp_path, container_source_path: bool
 ) -> None:
     data_root = tmp_path / "data"
     source = data_root / "bronze" / "training_sample.parquet"
@@ -729,10 +737,16 @@ def test_segmentation_dag_adopts_complete_current_outputs_without_running(
     model_dir = tmp_path / "models"
     output_dir.mkdir(parents=True)
     source_stat = source.stat()
+    profiled_source_path = source.resolve()
+    if container_source_path:
+        profiled_source_path = (
+            Path("/opt/gridvision/data")
+            / source.resolve().relative_to(data_root.resolve())
+        )
     (reports / "source_profile.json").write_text(
         json.dumps(
             {
-                "source_path": str(source.resolve()),
+                "source_path": str(profiled_source_path),
                 "source_bytes": source_stat.st_size,
                 "source_mtime_ns": source_stat.st_mtime_ns,
                 "building_sample_fraction": 0.1,
@@ -744,16 +758,17 @@ def test_segmentation_dag_adopts_complete_current_outputs_without_running(
         json.dumps({"trained_models": [{"model_category": "Residential"}]}),
         encoding="utf-8",
     )
+    env = {
+        "GRIDVISION_DATA_DIR": str(data_root),
+        "SEGMENTATION_SOURCE_PATH": str(source),
+        "SEGMENTATION_OUTPUT_DIR": str(output_dir),
+        "SEGMENTATION_FEATURE_PATH": str(output_dir / "building_features.parquet"),
+        "SEGMENTATION_MODEL_DIR": str(output_dir / "models"),
+        "SEGMENTATION_REPORTS_DIR": str(output_dir / "reports"),
+    }
     _, outputs = automation._dag_dataset_paths(
         automation.SEGMENTATION_DAG_ID,
-        {
-            "GRIDVISION_DATA_DIR": str(data_root),
-            "SEGMENTATION_SOURCE_PATH": str(source),
-            "SEGMENTATION_OUTPUT_DIR": str(output_dir),
-            "SEGMENTATION_FEATURE_PATH": str(feature_path),
-            "SEGMENTATION_MODEL_DIR": str(model_dir),
-            "SEGMENTATION_REPORTS_DIR": str(reports),
-        },
+        env,
     )
     for output in outputs:
         output.parent.mkdir(parents=True, exist_ok=True)
@@ -774,15 +789,6 @@ def test_segmentation_dag_adopts_complete_current_outputs_without_running(
             AssertionError("Complete current outputs should be reused")
         ),
     )
-    env = {
-        "GRIDVISION_DATA_DIR": str(data_root),
-        "SEGMENTATION_SOURCE_PATH": str(source),
-        "SEGMENTATION_OUTPUT_DIR": str(output_dir),
-        "SEGMENTATION_FEATURE_PATH": str(feature_path),
-        "SEGMENTATION_MODEL_DIR": str(model_dir),
-        "SEGMENTATION_REPORTS_DIR": str(reports),
-    }
-
     result = automation._run_airflow_dag_if_dataset_changed(
         ["airflow"], automation.SEGMENTATION_DAG_ID, env
     )

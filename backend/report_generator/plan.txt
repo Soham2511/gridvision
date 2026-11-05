@@ -1,0 +1,478 @@
+GRIDVISION — JSON-TO-REPORT GENERATION MODULE
+PHASE 1: REPOSITORY AUDIT AND IMPLEMENTATION PLAN
+Status: STEPS 1–8 COMPLETE — awaiting review.
+Date: 2026-11-04
+
+1. OBJECTIVE AND SCOPE
+
+Build an independent Flask feature that accepts arbitrary JSON, discovers its
+structure without a business-domain schema, computes only supported and
+traceable deterministic analytics, optionally uses a configured LLM to plan
+and write a structured report, validates the report, and renders HTML and PDF
+from the same validated document.
+
+The feature will not modify or retrain ML models, change Gold datasets, or
+depend on the existing AI Layer or Data Retrieval Agent workflows. It may reuse
+the Flask application, Pydantic, structured logging, private file storage, and
+AI application SQLite database after the storage details below are approved.
+
+2. REPOSITORY AUDIT FINDINGS
+
+Application and API:
+- The project uses a Flask application factory in backend/app/__init__.py and
+  versioned API v1 blueprints aggregated by backend/app/api/v1/__init__.py.
+- Routes use Flask blueprints, Pydantic request validation, shared AppError /
+  success_response conventions, and central error handlers.
+- The API prefix defaults to /api/v1. The requested /api/report-generator
+  endpoints would be inconsistent with the existing API versioning. Proposed
+  endpoints are /api/v1/report-generator/... unless the project owner explicitly
+  requests an unversioned alias.
+
+Authentication and authorization:
+- No general authentication or authorization middleware/provider was found in
+  the Flask application. Existing AI demo endpoints use a caller-selected
+  persona/context and explicitly describe their local-demo limitations; that
+  is not authenticated ownership and is not sufficient for private report
+  access.
+- The Data Retrieval Agent has an optional trusted identity resolver extension
+  and fails closed when it is absent. It is feature-specific, not a general
+  authentication system. Do not silently reuse it as a report authorization
+  mechanism without confirming its contract.
+- Proposed report API behavior is fail-closed: require a separately injected
+  trusted resolver (or a confirmed shared authentication adapter) before
+  generation, metadata lookup, or artifact download. If no trusted identity
+  integration exists in deployment, these APIs remain unavailable rather than
+  treating a report ID as authorization.
+
+Configuration and logging:
+- Environment-backed configuration is centralized in backend/app/config.py.
+- setup_logging() installs GridVision structured JSON stdout and rotating file
+  handlers. Request logs include method, path, status, request ID, and duration.
+- Avoid logging raw JSON, user instructions, prompts, generated report text,
+  provider credentials, or private filesystem paths. Log report ID, owner
+  pseudonym/context where suitable, operation, outcome, duration, and safe error
+  code only.
+
+Storage:
+- backend/app/ai/storage.py provides PrivateFileStore: opaque random artifact
+  IDs, size bounds, private permissions, symlink/path checks, and byte reads.
+- backend/app/ai/application_store.py provides AIApplicationStore backed by
+  the configured AI_DATABASE_PATH. Its ai_reports table stores report metadata,
+  payload JSON, context, one HTML artifact ID, idempotency key, and timestamp.
+  There is no generic report status/error field or a dedicated HTML+PDF record.
+- No separate report storage service or general report repository was found.
+- Proposed approach: reuse the existing private artifact store and extend the
+  existing AI report repository additively to record dynamic report metadata,
+  both artifact IDs, status, and sanitized failure code. This requires an
+  additive, versioned SQLite schema migration and changes to existing AI
+  storage code; it is necessary to meet lifecycle and metadata requirements
+  without introducing a second database. It must be approved before that
+  existing module is changed. Alternative: keep report metadata in a new
+  report-specific table in the same AI_DATABASE_PATH, if the owner prefers
+  tighter module isolation; this still requires a migration/initialization
+  change to shared storage and no new database.
+
+Existing reports and rendering:
+- backend/app/ai/report_service.py renders fixed, server-owned project result
+  payloads to escaped HTML and optionally PDF via ReportLab. It is not a
+  generic dynamic report pipeline and currently converts payloads to JSON
+  rather than rendering arbitrary validated sections/tables.
+- backend/app/api/v1/ai_layer.py and models.py expose existing domain-specific
+  reports. The new feature must use distinct routes and storage ownership and
+  must not change these flows.
+- Jinja2 is available as a Flask dependency. ReportLab is already listed in
+  requirements-ai.txt as optional PDF support. Existing renderer is not
+  template-based; do not reuse it for dynamic rendering without refactoring.
+
+AI and dependencies:
+- Pydantic is already in the backend dependency group and is used throughout
+  request contracts.
+- Existing AI provider interfaces in backend/app/ai/providers.py define
+  provider-neutral generation/embedding protocols, and AI configuration is
+  disabled by default (AI_ENABLED=false; provider defaults to none).
+- No concrete general-purpose LLM provider is configured in the repository.
+  LangGraph and OpenAI/Hugging Face integration packages appear in the separate
+  agent dependency group; LangGraph is explicitly out of scope for this
+  structured pipeline.
+- Proposed: provider interface owned by the new module, with configurable
+  hosted API and Hugging Face implementations or adapters to a concrete
+  configured provider if one is approved. Provider package/dependency and
+  credential names must be chosen before implementation; do not add a second
+  competing provider framework.
+- Proposed PDF renderer: ReportLab, already present as optional dependency,
+  rather than WeasyPrint. This avoids adding a native system-library/runtime
+  requirement and renders from the same validated report object. It means the
+  PDF design will share tokens/layout conventions with HTML but not literally
+  convert the HTML bytes; visual parity and content parity will be tested.
+
+Testing conventions:
+- Pytest is used, with Flask app/client fixtures in tests/backend/conftest.py.
+- Tests use isolated temporary directories and mocked services/providers.
+- requirements.txt is group-filtered for Docker; requirements-ai.txt currently
+  carries optional LangGraph/ReportLab dependencies. Dependency edits should
+  keep the core backend install small and not make LangGraph a requirement for
+  report generation.
+
+Potential conflicts and constraints:
+- Several AI and report features already exist. Reusing endpoint names, report
+  IDs/artifact APIs, or treating domain reports as arbitrary JSON could cause
+  authorization and compatibility problems.
+- Shared AI storage migration and API blueprint registration are the only
+  anticipated existing-code changes; both are additive but need the review
+  required by the supplied specification.
+- No production identity provider exists in this repository. This is a go-live
+  blocker for private report access, not something to replace with caller-
+  supplied persona, an unguessable report ID alone, or a new auth system.
+
+3. PROPOSED ARCHITECTURE
+
+Create backend/report_generator/ as a self-contained Python package. Keep the
+pipeline synchronous initially; use bounded request/model/PDF timeouts and
+input/output limits. Do not add LangGraph or another orchestration framework.
+
+Proposed layout:
+backend/report_generator/
+  __init__.py
+  config.py
+  schemas/
+    __init__.py
+    input_schema.py
+    analysis_schema.py
+    report_schema.py
+  services/
+    __init__.py
+    input_processor.py
+    json_analyzer.py
+    analytics_service.py
+    llm_provider.py
+    report_planner.py
+    report_generator.py
+    html_renderer.py
+    pdf_renderer.py
+  prompts/
+    report_planning.txt
+    report_generation.txt
+  templates/
+    report.html
+    report.css
+  storage/
+    __init__.py
+    report_storage.py
+  api/
+    __init__.py
+    routes.py
+  docs/
+    architecture.md
+    api.md
+    usage.md
+  tests/ (prefer project-level tests/backend/test_report_generator_*.py)
+  plan.txt
+
+The API blueprint will be registered under the existing /api/v1 aggregate at
+/report-generator. Services will be constructed/injected using Flask app
+extensions, following current patterns. Settings will be additive in the
+existing configuration class. Existing ML and unrelated AI routes remain
+untouched.
+
+4. DATA FLOW
+
+1. Authenticate using the approved trusted identity integration and establish
+   owner context server-side. Reject anonymous/invalid contexts.
+2. Enforce request Content-Length and encoded JSON byte limits before deep
+   processing. Parse JSON, reject non-JSON values, excessive nesting, non-finite
+   numbers, unsupported root types if the approved schema requires an object or
+   array, and user-instruction length violations.
+3. Walk JSON deterministically to produce structural descriptors, field paths,
+   inferred types, array/object counts, null/missing counts, date-like field
+   candidates, and candidate grouping/relationship descriptions. Never execute
+   or interpret input strings as instructions.
+4. Calculate conservative analytics independently of the LLM. Every metric
+   records source JSON paths, operation, eligible row count, exclusions, units
+   (only when explicitly supplied/inferable without guessing), and methodology.
+   Keep numeric fields separate unless a supported shared grouping/time axis
+   makes a comparison meaningful.
+5. Produce a safely bounded representation for the LLM (size-limited field
+   inventory and sampled/representative values; raw input only if within strict
+   limits and needed). Separate trusted system prompt from user-supplied
+   instructions and data. Clearly delimit data and tell the provider that
+   embedded instructions are untrusted content.
+6. Request a structured plan/content payload from the configured provider.
+   Validate against flexible Pydantic report contracts; retry only within a
+   configured small bound. Deterministic calculations are supplied as
+   authoritative facts; reject/report mismatches rather than silently changing
+   them. With no provider configured, return a clear unavailable error; do not
+   substitute fabricated/mock content.
+7. Validate the final report object, render escaped HTML using Jinja2 and the
+   report template, then render PDF from that same report object using ReportLab.
+   Commit successful artifacts and metadata to private storage/repository.
+   Preserve HTML if PDF rendering fails and record partial status.
+8. Return the report ID, title, generation status, and only available URLs.
+   Metadata/download routes verify owner context on every request and resolve
+   opaque storage identifiers internally; they never accept filesystem paths.
+
+5. JSON ANALYSIS AND ANALYTICS STRATEGY
+
+- Traverse objects and arrays recursively with stable JSONPath-like paths,
+  bounded depth, element counts, and string lengths.
+- Infer JSON primitive types, mixed arrays, object-array record shapes, nulls,
+  absent keys within records, and date-like strings without coercing source
+  data or rewriting values.
+- Treat date recognition as a candidate with method/confidence marker; preserve
+  the original representation and timezone ambiguity.
+- Compute counts, null/missing rates, and summaries only where meaningful.
+  For numeric series, report count, sum, mean, median, min, max, and possibly
+  quantiles subject to sample/size thresholds. Skip NaN/Infinity by rejecting
+  them as non-standard JSON numbers.
+- Group only compatible numeric values from records sharing an explicit key;
+  do not sum unrelated top-level fields or assume common units.
+- Date trends require parseable date-like keys and numeric observations in
+  corresponding records. Percentage change is omitted when its baseline is
+  zero or otherwise undefined. Record all filtering/exclusion rules.
+- Any pairwise relationships/correlation are optional, only for sufficiently
+  large aligned numeric arrays with explicit alignment; include method and
+  sample count. No causal claims.
+
+6. FLASK API DESIGN
+
+POST /api/v1/report-generator/generate
+- Request: {"data": arbitrary JSON, "instructions": optional string,
+  "output_formats": ["html", "pdf"]}.
+- Response: {"report_id", "title", "status", "html_url", "pdf_url"?}.
+- Enforce owner auth, payload limits, permitted formats, request validation,
+  bounded provider runtime, and no logging of payloads.
+
+GET /api/v1/report-generator/reports/<report_id>/html
+GET /api/v1/report-generator/reports/<report_id>/pdf
+GET /api/v1/report-generator/reports/<report_id>
+GET /api/v1/report-generator/health
+- Artifact and metadata reads require the same trusted owner as the report.
+- Use existing response/error conventions and generic public error messages.
+- Health reports feature/config readiness only and never exposes credentials,
+  internal paths, prompt contents, or raw exceptions.
+
+7. STORAGE STRATEGY
+
+Reuse AI_DATABASE_PATH and PrivateFileStore with report ownership derived from a
+trusted resolver, not request parameters. Store HTML/PDF with the existing
+opaque-ID private file store; store metadata, status, timestamps, and sanitized
+error code with existing SQLite infrastructure. Do not introduce another DB.
+
+The implementation uses a dedicated `json_report_generator_reports` table in
+the existing `AI_DATABASE_PATH`, initialized by a report-specific repository.
+This keeps the existing `ai_reports` schema and backend/app/ai/application_store.py
+unchanged and does not create a second database. Do not persist the submitted
+JSON or prompts. Rendered HTML/PDF and minimal metadata/status are stored in the
+existing private artifact root and shared SQLite file. Define a retention/
+cleanup policy before production deployment.
+
+8. SECURITY AND RELIABILITY
+
+- Configure request JSON byte cap, maximum nesting depth, node/array/string
+  sizes, instruction cap, generated output cap, and artifact-size cap.
+- Pydantic strict/flexible bounded schemas; reject duplicate keys if parser
+  integration supports it safely; reject non-finite numeric constants.
+- Escape all template text by default; never accept model-generated HTML/CSS/
+  JavaScript or executable artifacts. CSS and templates remain application-
+  owned. PDF paragraph content must be escaped.
+- Prompt-injection controls: user instruction is a separate low-trust field;
+  arbitrary JSON values are untrusted data. Send only bounded relevant input.
+  Ask for claims grounded in known fields/metrics and validate metric references.
+- Provider calls use environment credentials, configurable timeout, low bounded
+  retries, and output/token limits. Provider failures produce safe error codes.
+- Store/download paths use opaque artifact IDs and PrivateFileStore checks.
+  Always verify trusted owner scope before metadata/artifact retrieval.
+- Structured logs contain event IDs and safe operation status, never raw input,
+  prompt, report body, credentials, or internal exception details in responses.
+- Synchronous operation may be long for large input/provider calls; initially
+  cap workload and runtime. Add background jobs only if measured usage requires
+  them and after separate approval.
+
+9. DEPENDENCIES AND COMPATIBILITY
+
+Existing/reusable: Flask, Pydantic, Jinja2 (Flask dependency), pytest, shared
+structured logging, AI SQLite store, PrivateFileStore, ReportLab (optional in
+requirements-ai.txt).
+
+Potential changes: keep PDF extra optional or add ReportLab to a report-specific
+requirements group; do not install LangGraph for this feature. A concrete LLM
+provider package is not yet selected/configured. Proposed next-phase decision:
+adapt to an already approved provider implementation if one exists, otherwise
+choose between Hugging Face Inference API/client and a hosted compatible API,
+then add only that provider's dependencies and documented settings. Do not
+download/load a large local Hugging Face model as a default.
+
+10. IMPLEMENTATION STEPS (COMPLETED UNDER OWNER APPROVAL FOR STEPS 2–8)
+
+Step 1 — Package foundation, settings, schemas, request guards [COMPLETE]
+Deliverables: package skeleton; strict bounded input/settings schemas; report
+Pydantic contracts; JSON parsing and size/depth validation; configuration
+defaults; unit tests for arbitrary flat/nested/mixed JSON, nulls, malformed and
+oversized/deep input. No routes yet.
+Acceptance: valid JSON values are accepted without business schema; limits are
+deterministic; invalid data is rejected with safe errors; no input code runs.
+Implementation notes: created backend/report_generator package, environment-
+based bounded settings, strict request/report schemas, and UTF-8 JSON parser
+with byte/depth/node/string limits, duplicate-key rejection, and non-finite
+number rejection. Added foundation tests. No Flask routes, application
+registration, existing storage changes, provider integration, or dependencies
+were added in this step.
+Verification: `./.venv/bin/python -m pytest
+tests/backend/test_report_generator_foundation.py -q` — 29 passed (13 existing
+LangSmith deprecation warnings); `python3.10 -m compileall -q
+backend/report_generator tests/backend/test_report_generator_foundation.py` —
+passed.
+
+Step 2 — Generic structural analyzer
+Deliverables: recursive deterministic analyzer and typed analysis descriptors;
+tests for fields, arrays, mixed shapes, missing/null values, date candidates,
+and relationship/grouping candidates.
+Acceptance: arbitrary structures analyzed within limits; stable paths/types;
+no domain assumptions or mutation of supplied data.
+Status: COMPLETE. Added typed structural profiles, recursive JSONPath-like
+inventory, date candidates, missing/null counts, and array-record grouping
+candidates. Covered by focused tests.
+
+Step 3 — Deterministic analytics
+Deliverables: independent analytics service, provenance/method records, grouped
+and date-aware supported calculations, tests for correctness, divisions by
+zero, missing values, unrelated fields, and provenance.
+Acceptance: repeatable calculations; every metric identifies source fields and
+method; unsupported/incommensurate calculations are omitted; no imputation.
+Status: COMPLETE. Added independent path-level summaries and category/date-like
+group comparison tables with provenance, finite-number guards, and safe
+omissions for unsupported numeric ranges. No unrelated paths are combined.
+
+Step 4 — Provider abstraction and dynamic report planning/content
+Deliverables: bounded configurable provider adapter, versionable prompt builder, dynamic
+plan and section generation, untrusted-data handling, bounded retry/timeout,
+provider mocks and tests. No framework-based agent orchestration.
+Acceptance: distinct structures can create distinct plans; provider output is
+strictly structured; unconfigured/failing provider returns a clear failure;
+numeric analytics remain authoritative and unsupported claims are rejected or
+marked as limitations.
+Status: COMPLETE. Added hosted and Hugging Face OpenAI-compatible providers,
+environment configuration, separated untrusted JSON/instructions, strict
+content-plan validation, bounded retries/timeouts/output, and a guard rejecting
+unsupported numeric literals. Provider is disabled unless configured.
+
+Step 5 — Rendering
+Deliverables: escaped Jinja2 HTML template/CSS and ReportLab PDF renderer from
+validated report schema; tests for dynamic section count/order, tables, long
+reports, escaping/XSS, PDF failure while retaining HTML, and content parity.
+Acceptance: no LLM-authored executable markup; HTML and PDF contain the same
+validated textual data/tables/metrics; professional page-friendly output.
+Status: COMPLETE. Jinja2 autoescaped template/CSS and ReportLab renderer use
+the same validated ReportDocument. PDF errors preserve HTML and set partial
+status. Actual ReportLab rendering was not available in the current local venv;
+the Docker/report dependency group installs ReportLab.
+
+Step 6 — Private persistence and owner authorization
+Deliverables: repository adapter on existing AI SQLite DB, private artifact
+storage, migration, per-report owner check, status/error recording, retention
+notes, tests for ownership, missing report/artifact, partial PDF failure, and
+path traversal resistance.
+Acceptance: no new database; report artifacts never public; metadata and both
+artifact references are durable; unauthorized access fails closed.
+Status: COMPLETE. Added an isolated table in the existing AI database, using
+PrivateFileStore for artifacts and owner HMACs for access scope. No shared AI
+storage schema was changed. The API requires a trusted host identity resolver.
+
+Step 7 — Flask API integration
+Deliverables: new report-generator blueprint, app factory/config registration,
+generate/HTML/PDF/metadata/health endpoints, safe error mapping, API tests.
+Acceptance: API contract works with mocked provider and temp storage; auth,
+validation, provider-disabled, missing-report, and partial-render paths return
+documented status/errors. Existing API behavior remains unchanged. Any change
+to existing app factory or blueprint aggregator is additive and shown in review.
+Status: COMPLETE. Registered `/api/v1/report-generator` endpoints additively;
+added app factory/config injection and endpoint tests. Resolver absence fails
+closed. Existing API regression tests were run; see verification below.
+
+Step 8 — Documentation and final verification
+Deliverables: architecture/data-flow, provider config, API examples, usage,
+limits/security, test/evaluation docs; focused test suite and supported Python
+syntax/package checks; updated completion notes.
+Acceptance: all focused tests pass; docs can configure at least one provider;
+manual example returns HTML and PDF when prerequisites are configured; known
+auth/provider limitations are explicit. No live provider evaluation without
+credentials and explicit authorization.
+Status: COMPLETE. Added architecture, API, and setup docs plus a fake-provider
+test suite. No live provider call was made. Full manual authenticated LLM/PDF
+workflow requires the host resolver, model credentials, and ReportLab.
+
+Final focused verification: 52 report-generator tests passed (13 LangSmith
+deprecation warnings from the local Python 3.15 environment). Python 3.10
+compileall and dependency-group filtering passed. The backend regression run
+passed 145 tests with 3 dependency-blocked tests deselected. An unfiltered
+`tests/backend` run reported 136 passed and 3 failures because this local venv
+lacks ReportLab and `mlflow.tracking`; ReportLab is now installed by the new
+Docker/report dependency group. No report-generator test failed.
+
+11. PROPOSED FILES
+
+New files:
+- backend/report_generator/** package, templates, docs, and local plan.txt.
+- tests/backend/test_report_generator_*.py.
+
+Existing files anticipated for additive integration after relevant step
+approval:
+- backend/app/config.py (settings only).
+- backend/app/api/v1/__init__.py (register new blueprint).
+- backend/app/__init__.py (inject services/storage/auth adapter).
+- requirements.txt (optional report-generator PDF dependency group).
+- Dockerfile.backend (install report-generator group and copy isolated package).
+
+No model, dataset, existing report route, existing AI workflow, or frontend file
+was modified. Dockerfile.backend was changed only to package the new isolated
+module and install its ReportLab runtime dependency.
+
+12. RISKS AND UNRESOLVED DECISIONS
+
+1. Trusted auth: no shared auth exists. The implementation accepts a
+   host-provided `REPORT_GENERATOR_IDENTITY_RESOLVER`; configure it before use.
+   Until configured, endpoints fail closed and are not production-ready.
+2. LLM provider: hosted and Hugging Face OpenAI-compatible adapters are
+   implemented, but credentials/model identifiers are deployment settings.
+3. Storage: the report-specific metadata table shares `AI_DATABASE_PATH`; no
+   new database or migration to the existing AI reports table is used.
+4. API prefix: `/api/v1/report-generator` follows the existing API versioning.
+5. PDF parity: ReportLab avoids WeasyPrint system packages but is a separate
+   renderer. Content parity is testable; exact pixel parity with HTML is not
+   promised.
+6. Arbitrary JSON has no inherent units or semantics. The analyzer can infer
+   shapes and candidate types but cannot guarantee business meaning; LLM
+   narrative must state uncertainty and avoid guessing.
+7. Synchronous generation duration is bounded by the provider timeout and
+   request limits. Report cleanup/retention period must be selected before
+   production use.
+
+8. Input can contain sensitive data. Owner authorization, bounded provider
+   disclosure, private persistence, and no raw-input logging are required;
+   deployment data classification/provider terms remain an operator decision.
+
+13. DEFINITION OF DONE / ACCEPTANCE SUMMARY
+
+- Arbitrary bounded JSON is analyzed without domain schemas and is never
+  modified or executed.
+- Structural analysis and deterministic analytics work without any LLM.
+- LLM planning/content is dynamic, optional/configurable, bounded, and factual;
+  Pydantic validation and retries are bounded.
+- One validated report object drives safe, dynamic HTML and PDF renderers.
+- API supports generation, owner-authorized metadata and downloads, and health.
+- Existing shared storage/auth/config conventions are reused without a new DB
+  or authentication system; approved additive changes are documented.
+- Tests cover JSON, analytics/provenance, provider behavior, schemas, rendering,
+  authorization, storage, and API errors.
+- Documentation covers setup, provider configuration, API, limitations, and
+  tests; the complete focused suite passes.
+
+14. IMPLEMENTATION STATUS
+
+Steps 1–8 are implemented and focused tests pass. Additive changes were made to
+backend/app/config.py, backend/app/__init__.py,
+backend/app/api/v1/__init__.py, requirements.txt, and Dockerfile.backend. No
+existing AI storage schema, model, dataset, or domain report route was changed.
+The owner later requested frontend testing; added a separate JSON Report
+Generator frontend page and a loopback-only opt-in identity runner for local UI
+testing. Production use still requires a trusted identity resolver and a report
+retention policy.

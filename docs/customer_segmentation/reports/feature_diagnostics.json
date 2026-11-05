@@ -10,12 +10,12 @@
     "engineered_feature_count": 12,
     "high_correlation_after_behaviour_transforms": [
       {
-        "absolute_correlation": 0.9634096297162792,
+        "absolute_correlation": 0.963409629716279,
         "feature_a": "weekend_to_weekday_ratio",
         "feature_b": "daily_energy_cv"
       },
       {
-        "absolute_correlation": 0.9773175768047574,
+        "absolute_correlation": 0.9773175768047572,
         "feature_a": "monthly_energy_cv",
         "feature_b": "monthly_peak_to_average"
       }
@@ -28,7 +28,7 @@
         "feature_b": "median_energy_kwh"
       },
       {
-        "absolute_correlation": 0.9895770890011463,
+        "absolute_correlation": 0.9895770890011464,
         "feature_a": "mean_energy_kwh",
         "feature_b": "stddev_energy_kwh"
       },
@@ -73,7 +73,7 @@
         "feature_b": "stddev_energy_kwh"
       },
       {
-        "absolute_correlation": 0.9944783812052769,
+        "absolute_correlation": 0.994478381205277,
         "feature_a": "median_energy_kwh",
         "feature_b": "p95_energy_kwh"
       },
@@ -123,37 +123,37 @@
         "feature_b": "weekday_mean_hourly_energy_kwh"
       },
       {
-        "absolute_correlation": 0.9592758555548285,
+        "absolute_correlation": 0.9592758555548286,
         "feature_a": "stddev_energy_kwh",
         "feature_b": "weekend_mean_hourly_energy_kwh"
       },
       {
-        "absolute_correlation": 0.997235161442209,
+        "absolute_correlation": 0.9972351614422089,
         "feature_a": "stddev_energy_kwh",
         "feature_b": "mean_daily_stddev_kwh"
       },
       {
-        "absolute_correlation": 0.9581459534218243,
+        "absolute_correlation": 0.9581459534218241,
         "feature_a": "stddev_energy_kwh",
         "feature_b": "daily_energy_stddev_kwh"
       },
       {
-        "absolute_correlation": 0.9895770890011466,
+        "absolute_correlation": 0.9895770890011467,
         "feature_a": "stddev_energy_kwh",
         "feature_b": "mean_daily_energy_kwh"
       },
       {
-        "absolute_correlation": 0.9976477428317596,
+        "absolute_correlation": 0.9976477428317598,
         "feature_a": "p95_energy_kwh",
         "feature_b": "peak_energy_kwh"
       },
       {
-        "absolute_correlation": 0.9959090649137404,
+        "absolute_correlation": 0.9959090649137405,
         "feature_a": "p95_energy_kwh",
         "feature_b": "weekday_mean_hourly_energy_kwh"
       },
       {
-        "absolute_correlation": 0.9714275283746301,
+        "absolute_correlation": 0.9714275283746302,
         "feature_a": "p95_energy_kwh",
         "feature_b": "weekend_mean_hourly_energy_kwh"
       },
@@ -163,12 +163,12 @@
         "feature_b": "mean_daily_stddev_kwh"
       },
       {
-        "absolute_correlation": 0.9571737923326052,
+        "absolute_correlation": 0.9571737923326054,
         "feature_a": "p95_energy_kwh",
         "feature_b": "daily_energy_stddev_kwh"
       },
       {
-        "absolute_correlation": 0.9968926629451108,
+        "absolute_correlation": 0.9968926629451111,
         "feature_a": "p95_energy_kwh",
         "feature_b": "mean_daily_energy_kwh"
       },
@@ -243,7 +243,7 @@
         "feature_b": "mean_daily_energy_kwh"
       },
       {
-        "absolute_correlation": 0.9773175768047574,
+        "absolute_correlation": 0.9773175768047572,
         "feature_a": "monthly_energy_cv",
         "feature_b": "monthly_peak_to_average"
       }
@@ -275,12 +275,12 @@
     "engineered_feature_count": 12,
     "high_correlation_after_behaviour_transforms": [
       {
-        "absolute_correlation": 0.9895666261557525,
+        "absolute_correlation": 0.9895666261557523,
         "feature_a": "coefficient_of_variation",
         "feature_b": "morning_energy_share"
       },
       {
-        "absolute_correlation": 0.9875742076023796,
+        "absolute_correlation": 0.9875742076023792,
         "feature_a": "coefficient_of_variation",
         "feature_b": "p95_to_average_ratio"
       },
@@ -295,7 +295,7 @@
         "feature_b": "afternoon_energy_share"
       },
       {
-        "absolute_correlation": 0.9760143526225786,
+        "absolute_correlation": 0.976014352622579,
         "feature_a": "morning_energy_share",
         "feature_b": "p95_to_average_ratio"
       },
@@ -344,7 +344,7 @@
         "feature_b": "weekend_mean_hourly_energy_kwh"
       },
       {
-        "absolute_correlation": 0.9991502897550316,
+        "absolute_correlation": 0.9991502897550318,
         "feature_a": "mean_energy_kwh",
         "feature_b": "mean_daily_stddev_kwh"
       },
@@ -384,7 +384,7 @@
         "feature_b": "weekend_mean_hourly_energy_kwh"
       },
       {
-        "absolute_correlation": 0.9967920121849619,
+        "absolute_correlation": 0.996792012184962,
         "feature_a": "median_energy_kwh",
         "feature_b": "mean_daily_stddev_kwh"
       },
@@ -474,7 +474,7 @@
         "feature_b": "weekend_mean_hourly_energy_kwh"
       },
       {
-        "absolute_correlation": 0.9986632631965852,
+        "absolute_correlation": 0.9986632631965854,
         "feature_a": "peak_energy_kwh",
         "feature_b": "mean_daily_stddev_kwh"
       },
@@ -509,7 +509,7 @@
         "feature_b": "evening_energy_share"
       },
       {
-        "absolute_correlation": 0.9895666261557525,
+        "absolute_correlation": 0.9895666261557526,
         "feature_a": "morning_energy_share",
         "feature_b": "coefficient_of_variation"
       },
@@ -524,7 +524,7 @@
         "feature_b": "weekend_mean_hourly_energy_kwh"
       },
       {
-        "absolute_correlation": 0.9993263110991296,
+        "absolute_correlation": 0.9993263110991297,
         "feature_a": "weekday_mean_hourly_energy_kwh",
         "feature_b": "mean_daily_stddev_kwh"
       },
@@ -539,7 +539,7 @@
         "feature_b": "mean_daily_energy_kwh"
       },
       {
-        "absolute_correlation": 0.9962526182221785,
+        "absolute_correlation": 0.9962526182221786,
         "feature_a": "weekend_mean_hourly_energy_kwh",
         "feature_b": "mean_daily_stddev_kwh"
       },
@@ -564,12 +564,12 @@
         "feature_b": "monthly_peak_to_average"
       },
       {
-        "absolute_correlation": 0.9990714792592658,
+        "absolute_correlation": 0.9990714792592659,
         "feature_a": "mean_daily_stddev_kwh",
         "feature_b": "daily_energy_stddev_kwh"
       },
       {
-        "absolute_correlation": 0.9991502897550311,
+        "absolute_correlation": 0.9991502897550314,
         "feature_a": "mean_daily_stddev_kwh",
         "feature_b": "mean_daily_energy_kwh"
       },
@@ -611,7 +611,7 @@
     "engineered_feature_count": 12,
     "high_correlation_after_behaviour_transforms": [
       {
-        "absolute_correlation": 0.956586905160976,
+        "absolute_correlation": 0.9565869051609759,
         "feature_a": "coefficient_of_variation",
         "feature_b": "p95_to_average_ratio"
       },
@@ -621,12 +621,12 @@
         "feature_b": "daily_energy_cv"
       },
       {
-        "absolute_correlation": 0.9475260178481877,
+        "absolute_correlation": 0.9475260178481875,
         "feature_a": "coefficient_of_variation",
         "feature_b": "monthly_energy_cv"
       },
       {
-        "absolute_correlation": 0.916487672996343,
+        "absolute_correlation": 0.9164876729963429,
         "feature_a": "coefficient_of_variation",
         "feature_b": "monthly_peak_to_average"
       },
@@ -646,7 +646,7 @@
         "feature_b": "daily_energy_cv"
       },
       {
-        "absolute_correlation": 0.9758878326014915,
+        "absolute_correlation": 0.9758878326014917,
         "feature_a": "p95_to_average_ratio",
         "feature_b": "monthly_energy_cv"
       },
@@ -680,17 +680,17 @@
     ],
     "high_correlation_raw_pairs": [
       {
-        "absolute_correlation": 0.9972801139943188,
+        "absolute_correlation": 0.9972801139943187,
         "feature_a": "mean_energy_kwh",
         "feature_b": "median_energy_kwh"
       },
       {
-        "absolute_correlation": 0.978608557826211,
+        "absolute_correlation": 0.9786085578262113,
         "feature_a": "mean_energy_kwh",
         "feature_b": "stddev_energy_kwh"
       },
       {
-        "absolute_correlation": 0.9906979847649193,
+        "absolute_correlation": 0.9906979847649194,
         "feature_a": "mean_energy_kwh",
         "feature_b": "p95_energy_kwh"
       },
@@ -715,7 +715,7 @@
         "feature_b": "mean_daily_stddev_kwh"
       },
       {
-        "absolute_correlation": 0.9582208523622474,
+        "absolute_correlation": 0.9582208523622476,
         "feature_a": "mean_energy_kwh",
         "feature_b": "daily_energy_stddev_kwh"
       },
@@ -730,7 +730,7 @@
         "feature_b": "stddev_energy_kwh"
       },
       {
-        "absolute_correlation": 0.9783140951138714,
+        "absolute_correlation": 0.9783140951138711,
         "feature_a": "median_energy_kwh",
         "feature_b": "p95_energy_kwh"
       },
@@ -740,7 +740,7 @@
         "feature_b": "peak_energy_kwh"
       },
       {
-        "absolute_correlation": 0.9980991580349585,
+        "absolute_correlation": 0.9980991580349583,
         "feature_a": "median_energy_kwh",
         "feature_b": "weekday_mean_hourly_energy_kwh"
       },
@@ -750,7 +750,7 @@
         "feature_b": "weekend_mean_hourly_energy_kwh"
       },
       {
-        "absolute_correlation": 0.9748489317104652,
+        "absolute_correlation": 0.9748489317104653,
         "feature_a": "median_energy_kwh",
         "feature_b": "mean_daily_stddev_kwh"
       },
@@ -765,22 +765,22 @@
         "feature_b": "mean_daily_energy_kwh"
       },
       {
-        "absolute_correlation": 0.9969054121617538,
+        "absolute_correlation": 0.996905412161754,
         "feature_a": "stddev_energy_kwh",
         "feature_b": "p95_energy_kwh"
       },
       {
-        "absolute_correlation": 0.9953046783382081,
+        "absolute_correlation": 0.9953046783382083,
         "feature_a": "stddev_energy_kwh",
         "feature_b": "peak_energy_kwh"
       },
       {
-        "absolute_correlation": 0.975915694439943,
+        "absolute_correlation": 0.9759156944399431,
         "feature_a": "stddev_energy_kwh",
         "feature_b": "weekday_mean_hourly_energy_kwh"
       },
       {
-        "absolute_correlation": 0.9841376255453774,
+        "absolute_correlation": 0.9841376255453775,
         "feature_a": "stddev_energy_kwh",
         "feature_b": "weekend_mean_hourly_energy_kwh"
       },
@@ -790,7 +790,7 @@
         "feature_b": "mean_daily_stddev_kwh"
       },
       {
-        "absolute_correlation": 0.9949711082776652,
+        "absolute_correlation": 0.9949711082776653,
         "feature_a": "stddev_energy_kwh",
         "feature_b": "daily_energy_stddev_kwh"
       },
@@ -800,7 +800,7 @@
         "feature_b": "mean_daily_energy_kwh"
       },
       {
-        "absolute_correlation": 0.99537847520618,
+        "absolute_correlation": 0.9953784752061801,
         "feature_a": "p95_energy_kwh",
         "feature_b": "peak_energy_kwh"
       },
@@ -810,7 +810,7 @@
         "feature_b": "weekday_mean_hourly_energy_kwh"
       },
       {
-        "absolute_correlation": 0.9940657532347885,
+        "absolute_correlation": 0.9940657532347886,
         "feature_a": "p95_energy_kwh",
         "feature_b": "weekend_mean_hourly_energy_kwh"
       },
@@ -820,12 +820,12 @@
         "feature_b": "mean_daily_stddev_kwh"
       },
       {
-        "absolute_correlation": 0.9877970836912688,
+        "absolute_correlation": 0.9877970836912691,
         "feature_a": "p95_energy_kwh",
         "feature_b": "daily_energy_stddev_kwh"
       },
       {
-        "absolute_correlation": 0.9906979847649219,
+        "absolute_correlation": 0.9906979847649221,
         "feature_a": "p95_energy_kwh",
         "feature_b": "mean_daily_energy_kwh"
       },
@@ -880,7 +880,7 @@
         "feature_b": "mean_daily_stddev_kwh"
       },
       {
-        "absolute_correlation": 0.954620314492957,
+        "absolute_correlation": 0.9546203144929573,
         "feature_a": "weekday_mean_hourly_energy_kwh",
         "feature_b": "daily_energy_stddev_kwh"
       },
@@ -890,12 +890,12 @@
         "feature_b": "mean_daily_energy_kwh"
       },
       {
-        "absolute_correlation": 0.9920716674218064,
+        "absolute_correlation": 0.9920716674218061,
         "feature_a": "weekend_mean_hourly_energy_kwh",
         "feature_b": "mean_daily_stddev_kwh"
       },
       {
-        "absolute_correlation": 0.9658425232431291,
+        "absolute_correlation": 0.9658425232431294,
         "feature_a": "weekend_mean_hourly_energy_kwh",
         "feature_b": "daily_energy_stddev_kwh"
       },
@@ -905,17 +905,17 @@
         "feature_b": "mean_daily_energy_kwh"
       },
       {
-        "absolute_correlation": 0.9475260178481877,
+        "absolute_correlation": 0.9475260178481875,
         "feature_a": "coefficient_of_variation",
         "feature_b": "monthly_energy_cv"
       },
       {
-        "absolute_correlation": 0.916487672996343,
+        "absolute_correlation": 0.9164876729963429,
         "feature_a": "coefficient_of_variation",
         "feature_b": "monthly_peak_to_average"
       },
       {
-        "absolute_correlation": 0.9862298898363369,
+        "absolute_correlation": 0.986229889836337,
         "feature_a": "mean_daily_stddev_kwh",
         "feature_b": "daily_energy_stddev_kwh"
       },
@@ -925,7 +925,7 @@
         "feature_b": "mean_daily_energy_kwh"
       },
       {
-        "absolute_correlation": 0.9582208523622533,
+        "absolute_correlation": 0.9582208523622534,
         "feature_a": "daily_energy_stddev_kwh",
         "feature_b": "mean_daily_energy_kwh"
       },
@@ -1067,7 +1067,7 @@
         "feature_b": "mean_daily_stddev_kwh"
       },
       {
-        "absolute_correlation": 0.9773482550672653,
+        "absolute_correlation": 0.9773482550672655,
         "feature_a": "median_energy_kwh",
         "feature_b": "mean_daily_energy_kwh"
       },
@@ -1107,7 +1107,7 @@
         "feature_b": "mean_daily_energy_kwh"
       },
       {
-        "absolute_correlation": 0.9968598637195933,
+        "absolute_correlation": 0.9968598637195935,
         "feature_a": "p95_energy_kwh",
         "feature_b": "peak_energy_kwh"
       },
@@ -1117,7 +1117,7 @@
         "feature_b": "weekday_mean_hourly_energy_kwh"
       },
       {
-        "absolute_correlation": 0.9542931490691052,
+        "absolute_correlation": 0.9542931490691053,
         "feature_a": "p95_energy_kwh",
         "feature_b": "weekend_mean_hourly_energy_kwh"
       },

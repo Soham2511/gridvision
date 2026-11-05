@@ -54,8 +54,8 @@ export interface CommercialBuilding {
   idfKw?: string | null;
   latitude?: number | null;
   longitude?: number | null;
-  recentDemandKwh: number;
-  predictedDemandKwh: number;
+  recentDemandKwh: number | null;
+  predictedDemandKwh: number | null;
   absErrorKwh: number;
   pctError: number;
   lastTimestamp: string;
@@ -95,6 +95,8 @@ export interface PairedCommercialForecast {
 
 export interface ResidentialMeter {
   householdId: string;
+  objectId?: number | string;
+  meterId?: string;
   dailyKwh: number;
   actualCycleKwhSoFar: number;
   targetRemainingKwh: number;
@@ -116,6 +118,8 @@ export interface HouseholdConsumptionPoint {
 
 export interface HouseholdOverview {
   householdId: string;
+  objectId?: number | string;
+  meterId?: string;
   userName: string;
   currentDailyUsageKwh: number;
   dailyAvgKwh: number;
@@ -132,7 +136,7 @@ export interface RegionalSite {
   siteId: string;
   buildingCount: number;
   totalDemandKwh: number;
-  predictedDemandKwh: number;
+  predictedDemandKwh: number | null;
   peakHourKwh: number;
   shareOfTotalPct: number;
   season: string;
@@ -384,8 +388,10 @@ export interface CustomerBillModel {
   domain: string;
   task: string;
   description: string;
-  status: 'configured' | 'unavailable';
+  status: 'configured' | 'unavailable' | 'provenance_unverified';
   error?: string;
+  reason?: string;
+  provenanceStatus?: 'verified' | 'unverified';
   provider: string;
   modelVersion: string;
   selectedModel: string;
@@ -414,11 +420,13 @@ export interface RegisteredModel {
   domain: string;
   task: string;
   description: string;
-  status: 'configured' | 'unavailable';
+  status: 'configured' | 'unavailable' | 'provenance_unverified';
   provider: string;
   modelVersion: string;
   selectedModel: string;
   error?: string;
+  reason?: string;
+  provenanceStatus?: 'verified' | 'unverified';
   runSummary?: string;
   dataset?: CustomerBillModel['dataset'];
   testMetrics?: CustomerBillModel['testMetrics'];

@@ -12,11 +12,20 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 COPY requirements.txt ./requirements.txt
 COPY scripts/filter_requirements.py ./scripts/filter_requirements.py
-RUN python scripts/filter_requirements.py requirements.txt /tmp/backend-requirements.txt --groups backend model-serving commercial-agent commercial-optimizer commercial-rag-ocr commercial-rag-docling commercial-rag-neo4j \
-    && pip install --no-cache-dir -r /tmp/backend-requirements.txt
+RUN python scripts/filter_requirements.py requirements.txt /tmp/backend-requirements.txt --groups backend model-serving anomaly-assistant government-assistant agent report-generator commercial-agent commercial-optimizer commercial-rag-ocr commercial-rag-docling commercial-rag-neo4j \
+    && pip install --default-timeout=1000 --retries 10 --no-cache-dir -r /tmp/backend-requirements.txt
 COPY backend/app ./app
+COPY ai/residential/backend/app ./app
+COPY backend/report_generator ./report_generator
+COPY data_retrieval_agent ./data_retrieval_agent
 COPY ai ./ai
 COPY docs/ai_commercial ./docs/ai_commercial
+COPY ai/anamoly ./ai/anamoly
+COPY ai/govt ./ai/govt
+RUN mkdir -p ./ai/Govt_interpretion+redistribution_plan/assistant ./ai/Govt_interpretion+redistribution_plan/docs
+COPY ai/Govt_interpretion+redistribution_plan/__init__.py ai/Govt_interpretion+redistribution_plan/paths.py ai/Govt_interpretion+redistribution_plan/redistribution.py ./ai/Govt_interpretion+redistribution_plan/
+COPY ai/Govt_interpretion+redistribution_plan/assistant/*.py ./ai/Govt_interpretion+redistribution_plan/assistant/
+COPY ai/Govt_interpretion+redistribution_plan/docs/QUERY_EXAMPLES.md ./ai/Govt_interpretion+redistribution_plan/docs/QUERY_EXAMPLES.md
 COPY training ./training
 COPY backend/run.py ./run.py
 

@@ -2,17 +2,21 @@
 
 from __future__ import annotations
 
+import gc
 import json
+import logging
 import os
 import shutil
+import tempfile
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+logger = logging.getLogger(__name__)
+
 import duckdb
-import numpy as np
-import pandas as pd
+import pyarrow.compute as pc
 import pyarrow.parquet as pq
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -29,13 +33,12 @@ SOURCE_PATH = Path(
 BRONZE_PATH = DATA_ROOT / "bronze" / SOURCE_PATH.name
 SILVER_PATH = DATA_ROOT / "silver" / "customer_silver.parquet"
 GOLD_PATH = DATA_ROOT / "gold" / "customer_gold.parquet"
-SAMPLE_CUSTOMER_BUILDINGS = int(os.getenv("CUSTOMER_SAMPLE_BUILDINGS", "100"))
-RANDOM_SEED = int(os.getenv("CUSTOMER_SAMPLE_SEED", "42"))
 MIN_MONTH_COVERAGE = float(os.getenv("CUSTOMER_MIN_MONTH_COVERAGE", "0.95"))
 TARIFF_INR_PER_KWH = float(os.getenv("CUSTOMER_TARIFF_INR_PER_KWH", "10.0"))
-DUCKDB_MEMORY_LIMIT = os.getenv("CUSTOMER_DUCKDB_MEMORY_LIMIT", "2GB")
+DUCKDB_MEMORY_LIMIT = os.getenv("CUSTOMER_DUCKDB_MEMORY_LIMIT", "4GB")
 DUCKDB_THREADS = max(1, int(os.getenv("CUSTOMER_DUCKDB_THREADS", "2")))
-PROFILE_SCAN_BATCH_SIZE = 65536
+FILTER_BATCH_SIZE = 65536
+GOLD_PARTITION_COUNT = max(1, int(os.getenv("CUSTOMER_GOLD_PARTITIONS", "64")))
 DUCKDB_TEMP_DIR = Path(
     os.getenv(
         "CUSTOMER_DUCKDB_TEMP_DIR",
@@ -54,6 +57,7 @@ def _connect() -> duckdb.DuckDBPyConnection:
     DUCKDB_TEMP_DIR.mkdir(parents=True, exist_ok=True)
     connection = duckdb.connect()
     connection.execute(f"SET threads = {DUCKDB_THREADS}")
+    connection.execute("SET preserve_insertion_order = false")
     connection.execute(f"SET memory_limit = '{DUCKDB_MEMORY_LIMIT}'")
     escaped_spill_dir = DUCKDB_TEMP_DIR.as_posix().replace("'", "''")
     connection.execute(f"SET temp_directory = '{escaped_spill_dir}'")
@@ -200,25 +204,25 @@ def _record_dataset(
     }
 
 
-def _atomic_parquet_copy(
-    connection: duckdb.DuckDBPyConnection,
-    query: str,
-    output_path: Path,
-) -> None:
-    """Write a Parquet stage and replace the destination only after validation."""
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    stage_path = output_path.with_name(f"{output_path.stem}.stage.parquet")
-    if stage_path.exists():
-        stage_path.unlink()
-    escaped_path = str(stage_path).replace("'", "''")
-    connection.execute(
-        f"COPY ({query}) TO '{escaped_path}' "
-        "(FORMAT PARQUET, COMPRESSION ZSTD, ROW_GROUP_SIZE 100000)"
-    )
-    if pq.read_metadata(stage_path).num_rows == 0:
-        stage_path.unlink(missing_ok=True)
-        raise RuntimeError(f"Transform produced an empty dataset: {output_path}")
-    stage_path.replace(output_path)
+def _files_match(source: Path, destination: Path) -> bool:
+    """Compare file contents exactly without loading either file into memory."""
+    if source.stat().st_size != destination.stat().st_size:
+        return False
+    if os.path.samefile(source, destination):
+        return True
+    with source.open("rb") as source_file, destination.open("rb") as destination_file:
+        while True:
+            source_chunk = source_file.read(1024 * 1024)
+            destination_chunk = destination_file.read(1024 * 1024)
+            if source_chunk != destination_chunk:
+                return False
+            if not source_chunk:
+                return True
+
+
+def _sql_path(path: Path) -> str:
+    """Return a path as a safely escaped DuckDB SQL string literal."""
+    return "'" + str(path).replace("'", "''") + "'"
 
 
 def create_bronze(
@@ -232,26 +236,27 @@ def create_bronze(
         raise FileNotFoundError(f"Source Parquet file does not exist: {source}")
     pq.read_metadata(source)
     bronze.parent.mkdir(parents=True, exist_ok=True)
+    copy_mode = "same_file"
     if bronze == source:
         output = bronze
-    elif bronze.exists():
-        if bronze.stat().st_size != source.stat().st_size:
-            raise RuntimeError(
-                f"Existing bronze file differs in size from source: {bronze}"
-            )
+    elif bronze.exists() and _files_match(source, bronze):
         output = bronze
+        copy_mode = "reused"
     else:
         stage_path = bronze.with_name(f"{bronze.name}.stage")
         if stage_path.exists():
             stage_path.unlink()
         try:
             os.link(source, stage_path)
+            copy_mode = "hardlink"
         except OSError:
             shutil.copy2(source, stage_path)
+            copy_mode = "copy"
         stage_path.replace(bronze)
         output = bronze
 
     metadata = pq.read_metadata(output)
+    source_matches = bronze == source or _files_match(source, output)
     quality = _record_dataset(
         dataset_name="customer_bronze",
         stage="bronze",
@@ -268,280 +273,83 @@ def create_bronze(
                 "observed": output.stat().st_size,
                 "expected": source.stat().st_size,
             },
+            "source_content_matches": {
+                "passed": source_matches,
+                "observed": source_matches,
+            },
         },
-        parameters={"source_path": str(source), "copy_mode": "hardlink_or_copy"},
+        parameters={"source_path": str(source), "copy_mode": copy_mode},
     )
     return {"path": str(output), "rows": metadata.num_rows, **quality}
-
-
-def _load_residential_profiles(source: Path) -> pd.DataFrame:
-    """Collect small entity profiles in Arrow batches without a full-file group-by."""
-    profiles_by_id: dict[int, tuple[Any, Any]] = {}
-    parquet_file = pq.ParquetFile(source)
-    for record_batch in parquet_file.iter_batches(
-        columns=[
-            "OBJECTID",
-            "building.type",
-            "SpecificUseType",
-            "GeneralUseType",
-        ],
-        batch_size=PROFILE_SCAN_BATCH_SIZE,
-    ):
-        batch = record_batch.to_pandas()
-        residential = batch[
-            batch["GeneralUseType"]
-            .astype("string")
-            .str.strip()
-            .eq("Residential")
-            .fillna(False)
-        ].copy()
-        entity_ids = pd.to_numeric(
-            residential["OBJECTID"], errors="coerce"
-        )
-        residential = residential.loc[entity_ids.notna()].copy()
-        residential["entity_id"] = entity_ids[entity_ids.notna()].astype("int64")
-        residential = residential.groupby(
-            "entity_id", as_index=False, sort=False
-        ).agg(
-            {
-                "building.type": "first",
-                "SpecificUseType": "first",
-            }
-        )
-
-        for entity_id, building_type, specific_use_type in residential[
-            ["entity_id", "building.type", "SpecificUseType"]
-        ].itertuples(index=False, name=None):
-            entity_key = int(entity_id)
-            existing = profiles_by_id.get(entity_key)
-            if existing is None:
-                profiles_by_id[entity_key] = (
-                    building_type,
-                    specific_use_type,
-                )
-                continue
-            profiles_by_id[entity_key] = (
-                existing[0] if pd.notna(existing[0]) else building_type,
-                existing[1] if pd.notna(existing[1]) else specific_use_type,
-            )
-
-    if not profiles_by_id:
-        return pd.DataFrame(
-            columns=["entity_id", "building_type", "specific_use_type"]
-        )
-    return pd.DataFrame.from_records(
-        [
-            {
-                "entity_id": entity_id,
-                "building_type": building_type,
-                "specific_use_type": specific_use_type,
-            }
-            for entity_id, (building_type, specific_use_type) in profiles_by_id.items()
-        ]
-    )
-
-
-def _proportional_strata_sample(
-    profiles: pd.DataFrame,
-    group_columns: list[str],
-    sample_size: int,
-) -> pd.DataFrame:
-    """Select a deterministic proportional sample, including missing-value strata."""
-    if sample_size >= len(profiles):
-        return profiles.copy()
-    stratum_sizes = profiles.groupby(
-        group_columns, dropna=False, observed=True
-    ).size()
-    quotas_float = stratum_sizes / stratum_sizes.sum() * sample_size
-    quotas = np.floor(quotas_float).astype(int).clip(upper=stratum_sizes.astype(int))
-    remaining = sample_size - int(quotas.sum())
-    remainders = (quotas_float - np.floor(quotas_float)).sort_values(ascending=False)
-    for stratum in remainders.index:
-        if remaining == 0:
-            break
-        if quotas[stratum] < stratum_sizes[stratum]:
-            quotas[stratum] += 1
-            remaining -= 1
-    if remaining:
-        for stratum in stratum_sizes.index:
-            available = int(stratum_sizes[stratum] - quotas[stratum])
-            take = min(available, remaining)
-            quotas[stratum] += take
-            remaining -= take
-            if remaining == 0:
-                break
-    selected: list[pd.DataFrame] = []
-    for stratum, count in quotas.items():
-        if count == 0:
-            continue
-        mask = pd.Series(True, index=profiles.index)
-        for column, value in zip(group_columns, stratum):
-            mask &= profiles[column].isna() if pd.isna(value) else profiles[column].eq(value)
-        selected.append(profiles.loc[mask].nsmallest(int(count), "_stable_hash"))
-    result = pd.concat(selected, ignore_index=True)
-    if len(result) != sample_size or result["entity_id"].nunique() != sample_size:
-        raise RuntimeError(
-            f"Expected {sample_size} unique sampled entities; received {len(result)}."
-        )
-    return result
 
 
 def create_customer_silver(
     source_path: str | Path = BRONZE_PATH,
     silver_path: str | Path = SILVER_PATH,
-    buildings_per_use: int = SAMPLE_CUSTOMER_BUILDINGS,
-    seed: int = RANDOM_SEED,
 ) -> dict[str, Any]:
-    """Sample residential buildings and preserve their hourly source-shaped rows."""
+    """Filter Bronze to residential rows without changing or grouping the records."""
     source = Path(source_path).resolve()
     silver = Path(silver_path).resolve()
     if not source.is_file():
         raise FileNotFoundError(f"Bronze dataset does not exist: {source}")
-    if buildings_per_use < 1:
-        raise ValueError("buildings_per_use must be a positive integer.")
+    silver.parent.mkdir(parents=True, exist_ok=True)
+    stage_path = silver.with_name(f"{silver.stem}.stage{silver.suffix}")
+    stage_path.unlink(missing_ok=True)
+    parquet_file = pq.ParquetFile(source)
+    use_type_index = parquet_file.schema_arrow.get_field_index("GeneralUseType")
+    if use_type_index < 0:
+        raise ValueError(f"Bronze dataset is missing GeneralUseType: {source}")
 
-    connection = _connect()
+    row_count = 0
     try:
-        profiles = _load_residential_profiles(source)
-        if profiles.empty:
-            raise ValueError("No usable building identifiers exist in the source data.")
-
-        profiles["_stable_hash"] = pd.util.hash_pandas_object(
-            profiles["entity_id"].astype(str).radd(f"{seed}:"),
-            index=False,
-        ).to_numpy(dtype="uint64")
-        selected_ids = _proportional_strata_sample(
-            profiles,
-            ["building_type", "specific_use_type"],
-            min(buildings_per_use, len(profiles)),
-        )[["entity_id"]].drop_duplicates()
-
-        connection.register("selected_entities_df", selected_ids)
-        source_columns_sql = ",\n".join(
-            [
-                'r."OBJECTID"',
-                'ANY_VALUE(r."idf.kw") AS "idf.kw"',
-                'ANY_VALUE(r."id.grid.coarse") AS "id.grid.coarse"',
-                'ANY_VALUE(r."building.area.m2") AS "building.area.m2"',
-                'ANY_VALUE(r."FootprintArea.m2") AS "FootprintArea.m2"',
-                'ANY_VALUE(r."GeneralUseType") AS "GeneralUseType"',
-                'ANY_VALUE(r."SpecificUseType") AS "SpecificUseType"',
-                'ANY_VALUE(r."EffectiveYearBuilt") AS "EffectiveYearBuilt"',
-                'ANY_VALUE(r."building.type") AS "building.type"',
-                'ANY_VALUE(r."vintage") AS "vintage"',
-                'ANY_VALUE(r."usetype") AS "usetype"',
-                'ANY_VALUE(r."id.grid.finer") AS "id.grid.finer"',
-                'ANY_VALUE(r."id.tract") AS "id.tract"',
-                'ANY_VALUE(r."latitude") AS "latitude"',
-                'ANY_VALUE(r."longitude") AS "longitude"',
-                'CAST(r."timestamp" AS TIMESTAMP) AS "timestamp"',
-                'AVG(TRY_CAST(r."normalized_building_energy_kwh" AS DOUBLE)) '
-                'AS "normalized_building_energy_kwh"',
-            ]
-        )
-        query = f"""
-            SELECT {source_columns_sql}
-            FROM read_parquet(?) AS r
-            INNER JOIN selected_entities_df AS chosen
-                ON TRY_CAST(r."OBJECTID" AS BIGINT) = chosen.entity_id
-            WHERE TRIM(r."GeneralUseType") = 'Residential'
-              AND TRY_CAST(r."timestamp" AS TIMESTAMP) IS NOT NULL
-              AND TRY_CAST(r."normalized_building_energy_kwh" AS DOUBLE) >= 0
-            GROUP BY r."OBJECTID", CAST(r."timestamp" AS TIMESTAMP)
-        """
-        stage_path = silver.with_name(f"{silver.stem}.stage.parquet")
-        if stage_path.exists():
-            stage_path.unlink()
-        silver.parent.mkdir(parents=True, exist_ok=True)
-        escaped_stage = str(stage_path).replace("'", "''")
-        escaped_source = str(source).replace("'", "''")
-        query = query.replace("read_parquet(?)", f"read_parquet('{escaped_source}')")
-        connection.execute(
-            f"COPY ({query}) "
-            f"TO '{escaped_stage}' (FORMAT PARQUET, COMPRESSION ZSTD, ROW_GROUP_SIZE 100000)"
-        )
-        row_count = pq.read_metadata(stage_path).num_rows
+        with pq.ParquetWriter(
+            stage_path,
+            schema=parquet_file.schema_arrow,
+            compression="zstd",
+        ) as writer:
+            for batch in parquet_file.iter_batches(batch_size=FILTER_BATCH_SIZE):
+                use_types = batch.column(use_type_index)
+                is_residential = pc.fill_null(
+                    pc.equal(
+                        pc.utf8_trim(use_types, characters=" \t\n\r"),
+                        "Residential",
+                    ),
+                    False,
+                )
+                residential_batch = pc.filter(batch, is_residential)
+                if residential_batch.num_rows:
+                    writer.write_batch(residential_batch)
+                    row_count += residential_batch.num_rows
         if row_count == 0:
-            stage_path.unlink(missing_ok=True)
-            raise RuntimeError("Silver transform created no rows.")
+            raise RuntimeError("Silver filter produced no residential rows.")
         stage_path.replace(silver)
-        silver_sql = str(silver).replace("'", "''")
-        summary = connection.execute(
-            f"""
-            SELECT
-                COUNT(*) AS row_count,
-                COUNT(DISTINCT TRY_CAST("OBJECTID" AS BIGINT)) AS entity_count,
-                COUNT(*) FILTER (WHERE TRY_CAST("OBJECTID" AS BIGINT) IS NULL) AS invalid_entity_rows,
-                COUNT(*) FILTER (WHERE TRY_CAST("timestamp" AS TIMESTAMP) IS NULL) AS invalid_timestamp_rows,
-                COUNT(*) FILTER (WHERE TRY_CAST("normalized_building_energy_kwh" AS DOUBLE) IS NULL) AS invalid_energy_rows,
-                COUNT(*) FILTER (WHERE NOT isfinite(TRY_CAST("normalized_building_energy_kwh" AS DOUBLE))) AS non_finite_energy_rows,
-                COUNT(*) FILTER (WHERE TRY_CAST("normalized_building_energy_kwh" AS DOUBLE) < 0) AS negative_energy_rows,
-                COUNT(*) FILTER (WHERE TRIM("GeneralUseType") != 'Residential') AS non_residential_rows
-            FROM read_parquet('{silver_sql}')
-            """
-        ).fetchone()
-        duplicate_keys = connection.execute(
-            f"""
-            SELECT COUNT(*)
-            FROM (
-                SELECT "OBJECTID", "timestamp"
-                FROM read_parquet('{silver_sql}')
-                GROUP BY "OBJECTID", "timestamp"
-                HAVING COUNT(*) > 1
-            )
-            """
-        ).fetchone()[0]
-        entity_count = int(summary[1])
-        quality = _record_dataset(
-            dataset_name="customer_silver",
-            stage="silver",
-            dataset_path=silver,
-            row_count=int(summary[0]),
-            quality_checks={
-                "non_empty": {"passed": summary[0] > 0, "observed": int(summary[0])},
-                "valid_entity_ids": {
-                    "passed": summary[2] == 0,
-                    "invalid_rows": int(summary[2]),
-                },
-                "valid_timestamps": {
-                    "passed": summary[3] == 0,
-                    "invalid_rows": int(summary[3]),
-                },
-                "valid_energy": {
-                    "passed": summary[4] == 0 and summary[5] == 0 and summary[6] == 0,
-                    "null_or_invalid_rows": int(summary[4]),
-                    "non_finite_rows": int(summary[5]),
-                    "negative_rows": int(summary[6]),
-                },
-                "residential_only": {
-                    "passed": summary[7] == 0,
-                    "non_residential_rows": int(summary[7]),
-                },
-                "unique_entity_timestamp": {
-                    "passed": duplicate_keys == 0,
-                    "duplicate_keys": int(duplicate_keys),
-                },
-                "sample_size_matches": {
-                    "passed": entity_count == len(selected_ids),
-                    "expected_entities": len(selected_ids),
-                    "observed_entities": entity_count,
-                },
-            },
-            parameters={"buildings_per_use": buildings_per_use, "seed": seed},
-            parent_versions={
-                "customer_bronze": (
-                    _latest_dataset_manifest("customer_bronze") or {}
-                ).get("dataset_version", "untracked"),
-            },
-        )
-        return {
-            "path": str(silver),
-            "rows": int(summary[0]),
-            "unique_buildings": entity_count,
-            **quality,
-        }
     finally:
-        connection.close()
+        stage_path.unlink(missing_ok=True)
+
+    quality = _record_dataset(
+        dataset_name="customer_silver",
+        stage="silver",
+        dataset_path=silver,
+        row_count=row_count,
+        quality_checks={
+            "non_empty": {"passed": row_count > 0, "observed": row_count},
+            "residential_only": {
+                "passed": True,
+                "filter": "GeneralUseType = Residential",
+            },
+        },
+        parameters={"filter": "GeneralUseType = Residential"},
+        parent_versions={
+            "customer_bronze": (
+                _latest_dataset_manifest("customer_bronze") or {}
+            ).get("dataset_version", "untracked"),
+        },
+    )
+    return {
+        "path": str(silver),
+        "rows": row_count,
+        **quality,
+    }
 
 
 def build_customer_bill_gold(
@@ -553,47 +361,49 @@ def build_customer_bill_gold(
     output = Path(output_path).resolve()
     if not silver.is_file():
         raise FileNotFoundError(f"Silver dataset does not exist: {silver}")
-    silver_sql = str(silver).replace("'", "''")
     query = f"""
-        WITH hourly AS (
+        WITH observations AS (
             SELECT
                 TRY_CAST("OBJECTID" AS BIGINT) AS entity_id,
-                CAST("timestamp" AS TIMESTAMP) AS observed_at,
-                TRY_CAST("normalized_building_energy_kwh" AS DOUBLE) AS energy_kwh,
-                TRY_CAST("building.area.m2" AS DOUBLE) AS building_area_m2,
-                TRY_CAST("FootprintArea.m2" AS DOUBLE) AS footprint_area_m2,
-                TRY_CAST("EffectiveYearBuilt" AS DOUBLE) AS effective_year_built,
-                TRY_CAST("latitude" AS DOUBLE) AS latitude,
-                TRY_CAST("longitude" AS DOUBLE) AS longitude,
-                "idf.kw" AS idf_kw,
-                TRY_CAST("id.grid.coarse" AS BIGINT) AS id_grid_coarse,
-                TRY_CAST("id.grid.finer" AS DOUBLE) AS id_grid_finer,
-                "id.tract" AS id_tract,
-                "SpecificUseType" AS specific_use_type,
-                "building.type" AS building_type,
-                "vintage" AS vintage,
-                "usetype" AS usetype
-            FROM read_parquet('{silver_sql}')
+                TRY_CAST("timestamp" AS TIMESTAMP) AS observed_at,
+                TRY_CAST("normalized_building_energy_kwh" AS DOUBLE) AS energy_kwh
+            FROM read_parquet(__SILVER_INPUT__)
             WHERE TRIM("GeneralUseType") = 'Residential'
-              AND "timestamp" IS NOT NULL
-              AND "normalized_building_energy_kwh" >= 0
+              AND TRY_CAST("OBJECTID" AS BIGINT) IS NOT NULL
+              AND TRY_CAST("timestamp" AS TIMESTAMP) IS NOT NULL
+              AND TRY_CAST("normalized_building_energy_kwh" AS DOUBLE) >= 0
+              AND isfinite(TRY_CAST("normalized_building_energy_kwh" AS DOUBLE))
+        ), entity_metadata AS (
+            SELECT
+                TRY_CAST("OBJECTID" AS BIGINT) AS entity_id,
+                ANY_VALUE("idf.kw") AS idf_kw,
+                ANY_VALUE(TRY_CAST("id.grid.coarse" AS BIGINT)) AS id_grid_coarse,
+                ANY_VALUE(TRY_CAST("building.area.m2" AS DOUBLE)) AS building_area_m2,
+                ANY_VALUE(TRY_CAST("FootprintArea.m2" AS DOUBLE)) AS footprint_area_m2,
+                ANY_VALUE("SpecificUseType") AS specific_use_type,
+                ANY_VALUE(TRY_CAST("EffectiveYearBuilt" AS DOUBLE)) AS effective_year_built,
+                ANY_VALUE("building.type") AS building_type,
+                ANY_VALUE("vintage") AS vintage,
+                ANY_VALUE("usetype") AS usetype,
+                ANY_VALUE(TRY_CAST("id.grid.finer" AS DOUBLE)) AS id_grid_finer,
+                ANY_VALUE("id.tract") AS id_tract,
+                ANY_VALUE(TRY_CAST("latitude" AS DOUBLE)) AS latitude,
+                ANY_VALUE(TRY_CAST("longitude" AS DOUBLE)) AS longitude
+            FROM read_parquet(__SILVER_INPUT__)
+            WHERE TRIM("GeneralUseType") = 'Residential'
+              AND TRY_CAST("OBJECTID" AS BIGINT) IS NOT NULL
+            GROUP BY entity_id
+        ), hourly AS (
+            SELECT
+                entity_id,
+                observed_at,
+                AVG(energy_kwh) AS energy_kwh
+            FROM observations
+            GROUP BY entity_id, observed_at
         ), monthly AS (
             SELECT
                 entity_id,
                 DATE_TRUNC('month', observed_at)::DATE AS month_start,
-                ANY_VALUE(idf_kw) AS idf_kw,
-                ANY_VALUE(id_grid_coarse) AS id_grid_coarse,
-                ANY_VALUE(building_area_m2) AS building_area_m2,
-                ANY_VALUE(footprint_area_m2) AS footprint_area_m2,
-                ANY_VALUE(specific_use_type) AS specific_use_type,
-                ANY_VALUE(effective_year_built) AS effective_year_built,
-                ANY_VALUE(building_type) AS building_type,
-                ANY_VALUE(vintage) AS vintage,
-                ANY_VALUE(usetype) AS usetype,
-                ANY_VALUE(id_grid_finer) AS id_grid_finer,
-                ANY_VALUE(id_tract) AS id_tract,
-                ANY_VALUE(latitude) AS latitude,
-                ANY_VALUE(longitude) AS longitude,
                 SUM(energy_kwh) AS monthly_kwh,
                 COUNT(*) AS observed_hours,
                 24 * DAY(LAST_DAY(ANY_VALUE(observed_at))) AS expected_hours,
@@ -637,24 +447,125 @@ def build_customer_bill_gold(
                 energy_days_15_21_kwh, hours_days_1_7 + hours_days_8_14 + hours_days_15_21, hours_days_15_21
             FROM base
         )
-        SELECT entity_id, month_start, idf_kw, id_grid_coarse, building_area_m2, footprint_area_m2,
-            specific_use_type, effective_year_built, building_type, vintage, usetype, id_grid_finer,
-            id_tract, latitude, longitude, coverage_ratio, observed_hours, expected_hours,
-            cutoff_day, days_in_month, month_of_year, month_sin, month_cos, prior_month_kwh,
-            prior_month_kwh / NULLIF(building_area_m2, 0) AS prior_month_kwh_per_m2,
-            observed_hours_to_cutoff, cumulative_energy_kwh, recent_7d_energy_kwh,
-            recent_7d_energy_kwh / NULLIF(recent_7d_hours, 0) AS recent_7d_mean_hourly_kwh,
-            cumulative_energy_kwh / NULLIF(observed_hours_to_cutoff, 0) AS mean_hourly_energy_to_cutoff,
-            cumulative_energy_kwh / NULLIF(building_area_m2, 0) AS cumulative_energy_per_m2,
-            cumulative_energy_kwh / cutoff_day * days_in_month AS naive_projected_month_kwh,
-            monthly_kwh AS target_month_kwh, monthly_kwh * {TARIFF_INR_PER_KWH} AS target_bill_inr
-        FROM cutoffs
+        SELECT
+            c.entity_id,
+            c.month_start,
+            m.idf_kw,
+            m.id_grid_coarse,
+            m.building_area_m2,
+            m.footprint_area_m2,
+            m.specific_use_type,
+            m.effective_year_built,
+            m.building_type,
+            m.vintage,
+            m.usetype,
+            m.id_grid_finer,
+            m.id_tract,
+            m.latitude,
+            m.longitude,
+            c.coverage_ratio,
+            c.observed_hours,
+            c.expected_hours,
+            c.cutoff_day,
+            c.days_in_month,
+            c.month_of_year,
+            c.month_sin,
+            c.month_cos,
+            c.prior_month_kwh,
+            c.prior_month_kwh / NULLIF(m.building_area_m2, 0) AS prior_month_kwh_per_m2,
+            c.observed_hours_to_cutoff,
+            c.cumulative_energy_kwh,
+            c.recent_7d_energy_kwh,
+            c.recent_7d_energy_kwh / NULLIF(c.recent_7d_hours, 0) AS recent_7d_mean_hourly_kwh,
+            c.cumulative_energy_kwh / NULLIF(c.observed_hours_to_cutoff, 0) AS mean_hourly_energy_to_cutoff,
+            c.cumulative_energy_kwh / NULLIF(m.building_area_m2, 0) AS cumulative_energy_per_m2,
+            c.cumulative_energy_kwh / c.cutoff_day * c.days_in_month AS naive_projected_month_kwh,
+            c.monthly_kwh AS target_month_kwh,
+            c.monthly_kwh * {TARIFF_INR_PER_KWH} AS target_bill_inr
+        FROM cutoffs c
+        JOIN entity_metadata m USING (entity_id)
     """
-    connection = _connect()
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(
+        prefix=f".{output.stem}.stage-",
+        dir=output.parent,
+    ) as temporary_directory:
+        temporary_root = Path(temporary_directory)
+        input_partitions_path = temporary_root / "input"
+        gold_parts_path = temporary_root / "gold_parts"
+        gold_parts_path.mkdir()
+        stage_path = temporary_root / output.name
+        partition_query = f"""
+            SELECT *,
+                COALESCE(
+                    hash(TRY_CAST("OBJECTID" AS BIGINT)) % {GOLD_PARTITION_COUNT},
+                    {GOLD_PARTITION_COUNT}
+                ) AS "_gold_partition"
+            FROM read_parquet({_sql_path(silver)})
+            WHERE TRIM("GeneralUseType") = 'Residential'
+              AND TRY_CAST("OBJECTID" AS BIGINT) IS NOT NULL
+              AND TRY_CAST("timestamp" AS TIMESTAMP) IS NOT NULL
+              AND TRY_CAST("normalized_building_energy_kwh" AS DOUBLE) >= 0
+              AND isfinite(TRY_CAST("normalized_building_energy_kwh" AS DOUBLE))
+        """
+        partition_conn = _connect()
+        try:
+            partition_conn.execute(
+                f"COPY ({partition_query}) TO {_sql_path(input_partitions_path)} "
+                "(FORMAT PARQUET, PARTITION_BY (_gold_partition), "
+                "COMPRESSION ZSTD, ROW_GROUP_SIZE 100000)"
+            )
+        finally:
+            partition_conn.close()
+
+        gold_parts: list[Path] = []
+        for partition in range(GOLD_PARTITION_COUNT + 1):
+            input_partition = (
+                input_partitions_path
+                / f"_gold_partition={partition}"
+                / "*.parquet"
+            )
+            if not list(input_partition.parent.glob("*.parquet")):
+                continue
+            gold_part = gold_parts_path / f"part-{partition:02d}.parquet"
+            partitioned_query = query.replace(
+                "__SILVER_INPUT__",
+                _sql_path(input_partition),
+            )
+            logger.info("Processing gold partition %s/%s", partition, GOLD_PARTITION_COUNT)
+            part_conn = _connect()
+            try:
+                part_conn.execute(
+                    f"COPY ({partitioned_query}) TO {_sql_path(gold_part)} "
+                    "(FORMAT PARQUET, COMPRESSION ZSTD, ROW_GROUP_SIZE 100000)"
+                )
+            finally:
+                part_conn.close()
+                del part_conn
+                gc.collect()
+            gold_parts.append(gold_part)
+
+        if not gold_parts:
+            raise RuntimeError("Gold transform created no rows.")
+        gold_parts_sql = ", ".join(_sql_path(path) for path in gold_parts)
+        merge_conn = _connect()
+        try:
+            merge_conn.execute(
+                f"COPY (SELECT * FROM read_parquet([{gold_parts_sql}])) "
+                f"TO {_sql_path(stage_path)} "
+                "(FORMAT PARQUET, COMPRESSION ZSTD, ROW_GROUP_SIZE 100000)"
+            )
+        finally:
+            merge_conn.close()
+
+        if pq.read_metadata(stage_path).num_rows == 0:
+            raise RuntimeError(f"Transform produced an empty dataset: {output}")
+        stage_path.replace(output)
+
+    output_sql = _sql_path(output)
+    summary_conn = _connect()
     try:
-        _atomic_parquet_copy(connection, query, output)
-        output_sql = str(output).replace("'", "''")
-        summary = connection.execute(
+        summary = summary_conn.execute(
             f"""
             SELECT
                 COUNT(*) AS row_count,
@@ -667,69 +578,70 @@ def build_customer_bill_gold(
                 MIN(target_month_kwh) AS min_target_kwh,
                 MAX(target_month_kwh) AS max_target_kwh,
                 MIN(coverage_ratio) AS min_coverage_ratio
-            FROM read_parquet('{output_sql}')
+            FROM read_parquet({output_sql})
             """
         ).fetchone()
-        duplicate_keys = connection.execute(
+        duplicate_keys = summary_conn.execute(
             f"""
             SELECT COUNT(*)
             FROM (
                 SELECT entity_id, month_start, cutoff_day
-                FROM read_parquet('{output_sql}')
+                FROM read_parquet({output_sql})
                 GROUP BY entity_id, month_start, cutoff_day
                 HAVING COUNT(*) > 1
             )
             """
         ).fetchone()[0]
-        quality = _record_dataset(
-            dataset_name="customer_gold",
-            stage="gold",
-            dataset_path=output,
-            row_count=int(summary[0]),
-            quality_checks={
-                "non_empty": {"passed": summary[0] > 0, "observed": int(summary[0])},
-                "required_keys_present": {
-                    "passed": summary[2] == 0 and summary[3] == 0,
-                    "null_entity_rows": int(summary[2]),
-                    "null_month_rows": int(summary[3]),
-                },
-                "valid_target": {
-                    "passed": (
-                        summary[4] == 0
-                        and summary[5] == 0
-                        and summary[6] == 0
-                    ),
-                    "null_target_rows": int(summary[4]),
-                    "non_finite_target_rows": int(summary[5]),
-                    "negative_target_rows": int(summary[6]),
-                    "minimum_target_kwh": summary[7],
-                    "maximum_target_kwh": summary[8],
-                },
-                "valid_month_coverage": {
-                    "passed": (
-                        summary[9] is not None
-                        and summary[9] >= MIN_MONTH_COVERAGE
-                    ),
-                    "minimum_observed_coverage": summary[9],
-                    "required_coverage": MIN_MONTH_COVERAGE,
-                },
-                "unique_entity_month_cutoff": {
-                    "passed": duplicate_keys == 0,
-                    "duplicate_keys": int(duplicate_keys),
-                },
-            },
-            parameters={
-                "minimum_month_coverage": MIN_MONTH_COVERAGE,
-                "tariff_inr_per_kwh": TARIFF_INR_PER_KWH,
-            },
-            parent_versions={
-                "customer_silver": (
-                    _latest_dataset_manifest("customer_silver") or {}
-                ).get("dataset_version", "untracked"),
-            },
-        )
     finally:
-        connection.close()
+        summary_conn.close()
+
+    quality = _record_dataset(
+        dataset_name="customer_gold",
+        stage="gold",
+        dataset_path=output,
+        row_count=int(summary[0]),
+        quality_checks={
+            "non_empty": {"passed": summary[0] > 0, "observed": int(summary[0])},
+            "required_keys_present": {
+                "passed": summary[2] == 0 and summary[3] == 0,
+                "null_entity_rows": int(summary[2]),
+                "null_month_rows": int(summary[3]),
+            },
+            "valid_target": {
+                "passed": (
+                    summary[4] == 0
+                    and summary[5] == 0
+                    and summary[6] == 0
+                ),
+                "null_target_rows": int(summary[4]),
+                "non_finite_target_rows": int(summary[5]),
+                "negative_target_rows": int(summary[6]),
+                "minimum_target_kwh": summary[7],
+                "maximum_target_kwh": summary[8],
+            },
+            "valid_month_coverage": {
+                "passed": (
+                    summary[9] is not None
+                    and summary[9] >= MIN_MONTH_COVERAGE
+                ),
+                "minimum_observed_coverage": summary[9],
+                "required_coverage": MIN_MONTH_COVERAGE,
+            },
+            "unique_entity_month_cutoff": {
+                "passed": duplicate_keys == 0,
+                "duplicate_keys": int(duplicate_keys),
+            },
+        },
+        parameters={
+            "minimum_month_coverage": MIN_MONTH_COVERAGE,
+            "tariff_inr_per_kwh": TARIFF_INR_PER_KWH,
+        },
+        parent_versions={
+            "customer_silver": (
+                _latest_dataset_manifest("customer_silver") or {}
+            ).get("dataset_version", "untracked"),
+        },
+    )
     return {
         "path": str(output),
         "rows": pq.read_metadata(output).num_rows,
