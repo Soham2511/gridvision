@@ -63,6 +63,30 @@ class AIApplicationStore:
                     );
                     CREATE INDEX IF NOT EXISTS ai_notifications_recipient_idx
                         ON ai_notifications(recipient_context, created_at);
+                    CREATE TABLE IF NOT EXISTS anomaly_workflow_executions (
+                        execution_id TEXT PRIMARY KEY,
+                        event_id TEXT UNIQUE NOT NULL,
+                        run_id TEXT NOT NULL,
+                        persona TEXT NOT NULL,
+                        customer_id TEXT,
+                        overall_status TEXT NOT NULL,
+                        json_status TEXT NOT NULL,
+                        report_status TEXT NOT NULL,
+                        email_status TEXT NOT NULL,
+                        notification_status TEXT NOT NULL,
+                        report_id TEXT,
+                        pdf_artifact_id TEXT,
+                        notification_id TEXT,
+                        email_recipient TEXT,
+                        error_message TEXT,
+                        retry_count INTEGER DEFAULT 0,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
+                    );
+                    CREATE INDEX IF NOT EXISTS anomaly_workflow_executions_run_idx
+                        ON anomaly_workflow_executions(run_id);
+                    CREATE INDEX IF NOT EXISTS anomaly_workflow_executions_event_idx
+                        ON anomaly_workflow_executions(event_id);
                     """
                 )
             import os
@@ -181,3 +205,143 @@ class AIApplicationStore:
                 return dict(row) if row else None
         except sqlite3.Error as exc:
             raise ApplicationStoreError("Unable to update notification.") from exc
+
+    def delete_notification(self, recipient_context: str, notification_id: str) -> bool:
+        try:
+            with closing(self._connect()) as connection, connection:
+                cursor = connection.execute(
+                    "DELETE FROM ai_notifications WHERE notification_id=? AND (recipient_context=? OR recipient_context LIKE ?)",
+                    (notification_id, recipient_context, f"{recipient_context}%"),
+                )
+                return cursor.rowcount > 0
+        except sqlite3.Error as exc:
+            raise ApplicationStoreError("Unable to delete notification.") from exc
+
+    def clear_all_notifications(self, recipient_context: str) -> int:
+        try:
+            with closing(self._connect()) as connection, connection:
+                cursor = connection.execute(
+                    "DELETE FROM ai_notifications WHERE recipient_context=? OR recipient_context LIKE ?",
+                    (recipient_context, f"{recipient_context}%"),
+                )
+                return cursor.rowcount
+        except sqlite3.Error as exc:
+            raise ApplicationStoreError("Unable to clear notifications.") from exc
+
+    def record_workflow_execution(
+        self,
+        event_id: str,
+        run_id: str,
+        persona: str,
+        customer_id: str | None = None,
+        overall_status: str = "PENDING",
+        json_status: str = "PENDING",
+        report_status: str = "PENDING",
+        email_status: str = "PENDING",
+        notification_status: str = "PENDING",
+    ) -> dict[str, Any]:
+        execution_id = uuid.uuid4().hex
+        now = self._now()
+        try:
+            with closing(self._connect()) as connection, connection:
+                connection.execute(
+                    """INSERT OR IGNORE INTO anomaly_workflow_executions
+                    (execution_id, event_id, run_id, persona, customer_id,
+                     overall_status, json_status, report_status, email_status,
+                     notification_status, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        execution_id,
+                        event_id,
+                        run_id,
+                        persona,
+                        str(customer_id) if customer_id is not None else None,
+                        overall_status,
+                        json_status,
+                        report_status,
+                        email_status,
+                        notification_status,
+                        now,
+                        now,
+                    ),
+                )
+                row = connection.execute(
+                    "SELECT * FROM anomaly_workflow_executions WHERE event_id = ?",
+                    (event_id,),
+                ).fetchone()
+                if row is None:
+                    raise ApplicationStoreError("Unable to persist workflow execution record.")
+                return dict(row)
+        except sqlite3.Error as exc:
+            raise ApplicationStoreError("Unable to persist workflow execution record.") from exc
+
+    def update_workflow_execution(
+        self,
+        event_id: str,
+        **kwargs: Any,
+    ) -> dict[str, Any] | None:
+        valid_fields = {
+            "overall_status",
+            "json_status",
+            "report_status",
+            "email_status",
+            "notification_status",
+            "report_id",
+            "pdf_artifact_id",
+            "notification_id",
+            "email_recipient",
+            "error_message",
+            "retry_count",
+        }
+        updates = {k: v for k, v in kwargs.items() if k in valid_fields}
+        if not updates:
+            return self.get_workflow_execution(event_id)
+
+        now = self._now()
+        updates["updated_at"] = now
+        set_clauses = [f"{k} = ?" for k in updates.keys()]
+        values = list(updates.values()) + [event_id]
+
+        try:
+            with closing(self._connect()) as connection, connection:
+                connection.execute(
+                    f"UPDATE anomaly_workflow_executions SET {', '.join(set_clauses)} WHERE event_id = ?",
+                    values,
+                )
+                row = connection.execute(
+                    "SELECT * FROM anomaly_workflow_executions WHERE event_id = ?",
+                    (event_id,),
+                ).fetchone()
+                return dict(row) if row else None
+        except sqlite3.Error as exc:
+            raise ApplicationStoreError("Unable to update workflow execution record.") from exc
+
+    def get_workflow_execution(self, event_id: str) -> dict[str, Any] | None:
+        try:
+            with closing(self._connect()) as connection:
+                row = connection.execute(
+                    "SELECT * FROM anomaly_workflow_executions WHERE event_id = ?",
+                    (event_id,),
+                ).fetchone()
+                return dict(row) if row else None
+        except sqlite3.Error as exc:
+            raise ApplicationStoreError("Unable to read workflow execution record.") from exc
+
+    def list_workflow_executions(
+        self, run_id: str | None = None, limit: int = 50
+    ) -> list[dict[str, Any]]:
+        try:
+            with closing(self._connect()) as connection:
+                if run_id:
+                    rows = connection.execute(
+                        "SELECT * FROM anomaly_workflow_executions WHERE run_id = ? ORDER BY created_at DESC LIMIT ?",
+                        (run_id, max(1, min(200, limit))),
+                    ).fetchall()
+                else:
+                    rows = connection.execute(
+                        "SELECT * FROM anomaly_workflow_executions ORDER BY created_at DESC LIMIT ?",
+                        (max(1, min(200, limit)),),
+                    ).fetchall()
+                return [dict(row) for row in rows]
+        except sqlite3.Error as exc:
+            raise ApplicationStoreError("Unable to list workflow executions.") from exc

@@ -40,10 +40,17 @@ class PDFReportRenderer:
         self,
         report: ReportDocument,
         analysis: MonthlyConsumptionAnalysis | None = None,
+        anomaly_payload: dict[str, Any] | None = None,
     ) -> bytes:
-        """Render a report document or delegated monthly consumption report to PDF."""
+        """Render a report document, delegated monthly consumption report, or anomaly report to PDF."""
+        if anomaly_payload is not None:
+            return self.render_anomaly_report(anomaly_payload, report_id=report.report_id)
+
         if analysis is not None:
             return self.render_consumption_report(analysis, report_id=report.report_id)
+
+        if hasattr(report, "_anomaly_payload") and getattr(report, "_anomaly_payload") is not None:
+            return self.render_anomaly_report(getattr(report, "_anomaly_payload"), report_id=report.report_id)
 
         # Check if the ReportDocument contains a consumption report
         is_consumption = (
@@ -777,3 +784,391 @@ class PDFReportRenderer:
             ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
         ]))
         return table
+
+    def render_anomaly_report(
+        self,
+        payload: dict[str, Any],
+        report_id: str | None = None,
+    ) -> bytes:
+        """Render a professional, customer-specific Anomaly Rectification PDF report."""
+        try:
+            from reportlab.lib import colors
+            from reportlab.lib.pagesizes import A4
+            from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+            from reportlab.platypus import (
+                Paragraph,
+                SimpleDocTemplate,
+                Spacer,
+                Table,
+                TableStyle,
+            )
+        except ImportError as exc:
+            raise PDFRenderError("PDF support is not installed") from exc
+
+        event_id = str(payload.get("event_id", "N/A"))
+        run_id = str(payload.get("run_id", "N/A"))
+        persona = str(payload.get("persona", "household")).capitalize()
+        customer_id = payload.get("customer_id")
+        customer_name = str(payload.get("customer_name") or (f"Consumer ID {customer_id}" if customer_id else "Authorized Stakeholder"))
+        company_name = str(payload.get("company_name", "GridVision Energy Intelligence"))
+
+        anomaly_type = str(payload.get("anomaly_type") or payload.get("dominant_anomaly_type") or "Anomaly Event")
+        severity_info = payload.get("severity") or {}
+        sev_score = float(severity_info.get("score", 0.0))
+        sev_level = str(severity_info.get("level", "MEDIUM")).upper()
+
+        details = payload.get("event_details") or {}
+        start_time = str(details.get("start_time", "N/A"))
+        end_time = str(details.get("end_time", "N/A"))
+        duration_hours = float(details.get("duration_hours", 0.0))
+        affected_count = int(details.get("affected_customer_count", 1))
+        scope = str(details.get("scope", "SINGLE_CUSTOMER"))
+        coords = details.get("coordinates") or {}
+        lat = coords.get("latitude") if isinstance(coords, dict) else getattr(coords, "latitude", None)
+        lon = coords.get("longitude") if isinstance(coords, dict) else getattr(coords, "longitude", None)
+        coords_str = f"{lat:.4f}, {lon:.4f}" if lat is not None and lon is not None else "N/A"
+
+        causes = payload.get("probable_causes") or []
+        actions = payload.get("corrective_actions") or []
+        preventions = payload.get("preventive_recommendations") or []
+        citations = payload.get("guidance_citations") or []
+        limitations = payload.get("limitations") or []
+        gen_timestamp = str(payload.get("generated_at", datetime.now(timezone.utc).isoformat()))
+
+        # Determine severity badge styling
+        if sev_level == "CRITICAL":
+            sev_bg = colors.HexColor("#FEF2F2")
+            sev_border = colors.HexColor("#DC2626")
+            sev_text = colors.HexColor("#991B1B")
+        elif sev_level == "HIGH":
+            sev_bg = colors.HexColor("#FFF7ED")
+            sev_border = colors.HexColor("#EA580C")
+            sev_text = colors.HexColor("#9A3412")
+        elif sev_level == "MEDIUM":
+            sev_bg = colors.HexColor("#FFFBEB")
+            sev_border = colors.HexColor("#D97706")
+            sev_text = colors.HexColor("#92400E")
+        else:
+            sev_bg = colors.HexColor("#F0FDFA")
+            sev_border = colors.HexColor("#0D9488")
+            sev_text = colors.HexColor("#0F766E")
+
+        buffer = io.BytesIO()
+        margin = 36.0  # 0.5 in
+        usable_width = A4[0] - 2 * margin
+
+        doc = SimpleDocTemplate(
+            buffer,
+            pagesize=A4,
+            leftMargin=margin,
+            rightMargin=margin,
+            topMargin=margin,
+            bottomMargin=margin,
+            title=f"GridVision Anomaly Report - {event_id}",
+            author="GridVision Energy Intelligence",
+        )
+
+        styles = getSampleStyleSheet()
+
+        style_banner_title = ParagraphStyle(
+            name="GVAnomBannerTitle",
+            parent=styles["Normal"],
+            fontName="Helvetica-Bold",
+            fontSize=13.5,
+            leading=16.5,
+            textColor=colors.white,
+        )
+        style_section_heading = ParagraphStyle(
+            name="GVAnomSectionHeading",
+            parent=styles["Normal"],
+            fontName="Helvetica-Bold",
+            fontSize=10,
+            leading=13,
+            textColor=COLOR_NAVY,
+            spaceAfter=2,
+        )
+        style_body = ParagraphStyle(
+            name="GVAnomBody",
+            parent=styles["Normal"],
+            fontName="Helvetica",
+            fontSize=7.2,
+            leading=9.5,
+            textColor=COLOR_TEXT_MAIN,
+        )
+        style_body_bold = ParagraphStyle(
+            name="GVAnomBodyBold",
+            parent=styles["Normal"],
+            fontName="Helvetica-Bold",
+            fontSize=7.2,
+            leading=9.5,
+            textColor=COLOR_NAVY,
+        )
+        style_card_label = ParagraphStyle(
+            name="GVAnomCardLabel",
+            parent=styles["Normal"],
+            fontName="Helvetica-Bold",
+            fontSize=6.5,
+            leading=8,
+            textColor=COLOR_TEXT_MUTED,
+        )
+        style_card_val = ParagraphStyle(
+            name="GVAnomCardVal",
+            parent=styles["Normal"],
+            fontName="Helvetica-Bold",
+            fontSize=11,
+            leading=13,
+            textColor=COLOR_NAVY,
+        )
+        style_card_sub = ParagraphStyle(
+            name="GVAnomCardSub",
+            parent=styles["Normal"],
+            fontName="Helvetica",
+            fontSize=6.5,
+            leading=8,
+            textColor=COLOR_TEAL,
+        )
+        style_badge = ParagraphStyle(
+            name="GVAnomBadge",
+            parent=styles["Normal"],
+            fontName="Helvetica-Bold",
+            fontSize=8.5,
+            leading=10.5,
+            alignment=1,
+            textColor=sev_text,
+        )
+        style_subtle = ParagraphStyle(
+            name="GVAnomSubtle",
+            parent=styles["Normal"],
+            fontName="Helvetica",
+            fontSize=6.5,
+            leading=8.5,
+            textColor=COLOR_TEXT_MUTED,
+        )
+
+        story = []
+
+        # 1. Top Branding Banner
+        banner_content = [
+            [
+                Paragraph("<b>GRIDVISION</b><br/><font color='#00A396' size='7.5'>ENERGY INTELLIGENCE PLATFORM</font>", style_banner_title),
+                Paragraph("<para align='right'><b>ANOMALY INCIDENT & RECTIFICATION REPORT</b><br/><font color='#94A3B8' size='7'>Automated Engineering Incident Brief</font></para>", style_banner_title),
+            ]
+        ]
+        banner_table = Table(banner_content, colWidths=[usable_width * 0.45, usable_width * 0.55])
+        banner_table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), COLOR_NAVY),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("LEFTPADDING", (0, 0), (-1, -1), 8),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 8),
+            ("TOPPADDING", (0, 0), (-1, -1), 6),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ]))
+        story.append(banner_table)
+        story.append(Spacer(1, 4))
+
+        # 2. Metadata / Context Strip
+        customer_display = f"ID: {customer_id}" if customer_id else "System Aggregate"
+        meta_table_content = [
+            [
+                Paragraph(f"<b>Recipient / Account:</b> {self._paragraph(customer_name)} ({customer_display})", style_body),
+                Paragraph(f"<b>Persona Tier:</b> {self._paragraph(persona)}", style_body),
+                Paragraph("<b>Severity Level:</b>", style_body_bold),
+            ],
+            [
+                Paragraph(f"<b>Event ID:</b> {self._paragraph(event_id)}  |  <b>Model Run:</b> {self._paragraph(run_id[:16])}...", style_body),
+                Paragraph(f"<b>Issued:</b> {self._paragraph(gen_timestamp[:19].replace('T', ' '))}", style_body),
+                Paragraph(f"<b>{sev_level} ({sev_score:.2f})</b>", style_badge),
+            ]
+        ]
+        meta_table = Table(meta_table_content, colWidths=[usable_width * 0.50, usable_width * 0.32, usable_width * 0.18])
+        meta_table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), COLOR_BG),
+            ("BOX", (0, 0), (-1, -1), 0.5, COLOR_BORDER),
+            ("INNERGRID", (0, 0), (1, -1), 0.3, COLOR_BORDER),
+            ("BACKGROUND", (2, 0), (2, 1), sev_bg),
+            ("BOX", (2, 0), (2, 1), 1.0, sev_border),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("TOPPADDING", (0, 0), (-1, -1), 3),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+            ("LEFTPADDING", (0, 0), (-1, -1), 5),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+        ]))
+        story.append(meta_table)
+        story.append(Spacer(1, 5))
+
+        # 3. KPI Cards
+        card_w = usable_width / 4.0
+        kpi_cells = [
+            [
+                Paragraph("INCIDENT SEVERITY", style_card_label),
+                Paragraph("AFFECTED SCOPE", style_card_label),
+                Paragraph("DURATION", style_card_label),
+                Paragraph("ANOMALY CATEGORY", style_card_label),
+            ],
+            [
+                Paragraph(f"{sev_level}", style_card_val),
+                Paragraph(f"{scope.replace('_', ' ').title()}", style_card_val),
+                Paragraph(f"{duration_hours:.2f} hrs", style_card_val),
+                Paragraph(f"{anomaly_type[:18]}", style_card_val),
+            ],
+            [
+                Paragraph(f"Normalized Score: {sev_score:.3f}", style_card_sub),
+                Paragraph(f"{affected_count} meter(s) impacted", style_card_sub),
+                Paragraph(f"{start_time[:10]}", style_card_sub),
+                Paragraph("Model Verified", style_card_sub),
+            ]
+        ]
+        kpi_table = Table(kpi_cells, colWidths=[card_w] * 4)
+        kpi_table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F8FAFC")),
+            ("BOX", (0, 0), (0, -1), 0.5, COLOR_BORDER),
+            ("BOX", (1, 0), (1, -1), 0.5, COLOR_BORDER),
+            ("BOX", (2, 0), (2, -1), 0.5, COLOR_BORDER),
+            ("BOX", (3, 0), (3, -1), 0.5, COLOR_BORDER),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("TOPPADDING", (0, 0), (-1, -1), 2.5),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 2.5),
+            ("LEFTPADDING", (0, 0), (-1, -1), 5),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+        ]))
+        story.append(kpi_table)
+        story.append(Spacer(1, 6))
+
+        # 4. Incident Details Table
+        story.append(Paragraph("1. Incident Details & Scope", style_section_heading))
+        details_rows = [
+            [Paragraph("<b>Parameter</b>", style_body_bold), Paragraph("<b>Recorded Value</b>", style_body_bold), Paragraph("<b>Engineering Context</b>", style_body_bold)],
+            [Paragraph("Start Time", style_body), Paragraph(self._paragraph(start_time), style_body), Paragraph("Anomaly onset timestamp", style_subtle)],
+            [Paragraph("End Time", style_body), Paragraph(self._paragraph(end_time), style_body), Paragraph("Anomaly cessation timestamp", style_subtle)],
+            [Paragraph("Duration", style_body), Paragraph(f"{duration_hours:.2f} hours", style_body), Paragraph("Total duration of abnormal window", style_subtle)],
+            [Paragraph("Primary Anomaly Type", style_body), Paragraph(self._paragraph(anomaly_type), style_body), Paragraph("Dominant algorithmic classification", style_subtle)],
+            [Paragraph("Impacted Scope", style_body), Paragraph(f"{scope} ({affected_count} customer(s))", style_body), Paragraph("Localized spatial containment area", style_subtle)],
+        ]
+        if coords_str != "N/A":
+            details_rows.append([Paragraph("Geo Coordinates", style_body), Paragraph(self._paragraph(coords_str), style_body), Paragraph("H3 cluster centroid", style_subtle)])
+
+        details_table = Table(details_rows, colWidths=[usable_width * 0.28, usable_width * 0.42, usable_width * 0.30])
+        details_table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), COLOR_BG),
+            ("BOX", (0, 0), (-1, -1), 0.5, COLOR_BORDER),
+            ("INNERGRID", (0, 0), (-1, -1), 0.3, COLOR_BORDER),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("TOPPADDING", (0, 0), (-1, -1), 2),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+            ("LEFTPADDING", (0, 0), (-1, -1), 5),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+        ]))
+        story.append(details_table)
+        story.append(Spacer(1, 6))
+
+        # 5. Probable Causes (Root Cause Analysis)
+        story.append(Paragraph("2. Root Cause Analysis (Physics & Operational Evidence)", style_section_heading))
+        cause_items = [[Paragraph(f"• <b>Cause {i+1}:</b> {self._paragraph(c)}", style_body)] for i, c in enumerate(causes)] or [[Paragraph("No specific probable causes recorded.", style_body)]]
+        causes_table = Table(cause_items, colWidths=[usable_width])
+        causes_table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F1F5F9")),
+            ("BOX", (0, 0), (-1, -1), 0.5, COLOR_BORDER),
+            ("INNERGRID", (0, 0), (-1, -1), 0.3, COLOR_BORDER),
+            ("TOPPADDING", (0, 0), (-1, -1), 2.5),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 2.5),
+            ("LEFTPADDING", (0, 0), (-1, -1), 5),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+        ]))
+        story.append(causes_table)
+        story.append(Spacer(1, 6))
+
+        # 6. Corrective Actions (Immediate Operational Plan)
+        story.append(Paragraph("3. Immediate Corrective Action Plan", style_section_heading))
+        action_items = [[Paragraph(f"<b>Step {i+1}:</b> {self._paragraph(a)}", style_body)] for i, a in enumerate(actions)] or [[Paragraph("No immediate corrective actions required.", style_body)]]
+        actions_table = Table(action_items, colWidths=[usable_width])
+        actions_table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#EFF6FF")),
+            ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#93C5FD")),
+            ("INNERGRID", (0, 0), (-1, -1), 0.3, colors.HexColor("#BFDBFE")),
+            ("TOPPADDING", (0, 0), (-1, -1), 2.5),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 2.5),
+            ("LEFTPADDING", (0, 0), (-1, -1), 5),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+        ]))
+        story.append(actions_table)
+        story.append(Spacer(1, 6))
+
+        # 7. Preventive Recommendations
+        story.append(Paragraph("4. Long-Term Preventive & Reliability Recommendations", style_section_heading))
+        prev_items = [[Paragraph(f"• <b>Rec {i+1}:</b> {self._paragraph(p)}", style_body)] for i, p in enumerate(preventions)] or [[Paragraph("Standard grid monitoring protocols remain active.", style_body)]]
+        prev_table = Table(prev_items, colWidths=[usable_width])
+        prev_table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#F0FDF4")),
+            ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#86EFAC")),
+            ("INNERGRID", (0, 0), (-1, -1), 0.3, colors.HexColor("#BBF7D0")),
+            ("TOPPADDING", (0, 0), (-1, -1), 2.5),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 2.5),
+            ("LEFTPADDING", (0, 0), (-1, -1), 5),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+        ]))
+        story.append(prev_table)
+        story.append(Spacer(1, 6))
+
+        # 8. Guidance Citations (if any)
+        if citations:
+            story.append(Paragraph("5. Technical Standards & Regulatory References", style_section_heading))
+            cit_rows = [[Paragraph("<b>Standard / Regulation</b>", style_body_bold), Paragraph("<b>Publishing Body</b>", style_body_bold), Paragraph("<b>Clause / Section</b>", style_body_bold)]]
+            for cit in citations:
+                cit_title = cit.get("title") if isinstance(cit, dict) else getattr(cit, "title", str(cit))
+                cit_pub = (cit.get("publisher") if isinstance(cit, dict) else getattr(cit, "publisher", "")) or "Standard Body"
+                cit_clause = (cit.get("clause") if isinstance(cit, dict) else getattr(cit, "clause", "")) or "Applicable Section"
+                cit_rows.append([Paragraph(self._paragraph(cit_title), style_body), Paragraph(self._paragraph(cit_pub), style_body), Paragraph(self._paragraph(cit_clause), style_body)])
+            cit_table = Table(cit_rows, colWidths=[usable_width * 0.45, usable_width * 0.30, usable_width * 0.25])
+            cit_table.setStyle(TableStyle([
+                ("BACKGROUND", (0, 0), (-1, 0), COLOR_BG),
+                ("BOX", (0, 0), (-1, -1), 0.5, COLOR_BORDER),
+                ("INNERGRID", (0, 0), (-1, -1), 0.3, COLOR_BORDER),
+                ("TOPPADDING", (0, 0), (-1, -1), 2),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+                ("LEFTPADDING", (0, 0), (-1, -1), 5),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+            ]))
+            story.append(cit_table)
+            story.append(Spacer(1, 6))
+
+        # 9. Engineering Disclaimers & Methodology Notice
+        story.append(Paragraph("6. Engineering Notes & Data Provenance", style_section_heading))
+        lim_text = " ".join(limitations) if limitations else "Report automatically derived from GridVision machine learning inference and validated sensor telemetry. Not a substitute for certified on-site electrical inspection."
+        notice_cell = [[Paragraph(f"<b>Notice:</b> {self._paragraph(lim_text)}", style_subtle)]]
+        notice_table = Table(notice_cell, colWidths=[usable_width])
+        notice_table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#FFFBEB")),
+            ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#FCD34D")),
+            ("TOPPADDING", (0, 0), (-1, -1), 3),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+            ("LEFTPADDING", (0, 0), (-1, -1), 5),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+        ]))
+        story.append(notice_table)
+
+        # Running header and footer
+        def draw_decorations(canvas, document):
+            canvas.saveState()
+            canvas.setFont("Helvetica", 7.0)
+            canvas.setFillColor(COLOR_TEXT_MUTED)
+            canvas.drawString(margin, 14, f"GridVision Energy Intelligence · Automated Anomaly Rectification Brief · Event {event_id}")
+            canvas.drawRightString(A4[0] - margin, 14, f"Page {document.page}")
+            if document.page > 1:
+                canvas.setFont("Helvetica-Bold", 7.0)
+                canvas.setFillColor(COLOR_NAVY)
+                canvas.drawString(margin, A4[1] - 20, "GRIDVISION")
+                canvas.setFont("Helvetica", 7.0)
+                canvas.setFillColor(COLOR_TEXT_MUTED)
+                canvas.drawString(margin + 55, A4[1] - 20, f"· Anomaly Rectification Report · {customer_name}")
+                canvas.drawRightString(A4[0] - margin, A4[1] - 20, f"Event: {event_id}")
+                canvas.setStrokeColor(COLOR_BORDER)
+                canvas.setLineWidth(0.5)
+                canvas.line(margin, A4[1] - 24, A4[0] - margin, A4[1] - 24)
+            canvas.restoreState()
+
+        try:
+            doc.build(story, onFirstPage=draw_decorations, onLaterPages=draw_decorations)
+        except Exception as exc:
+            raise PDFRenderError(f"PDF anomaly report rendering failed: {exc}") from exc
+
+        return buffer.getvalue()

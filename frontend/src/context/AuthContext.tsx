@@ -36,7 +36,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (isMounted) {
           setUser(currentUser);
         }
-      } catch (err) {
+      } catch {
         // Try token refresh
         try {
           await authService.refresh();

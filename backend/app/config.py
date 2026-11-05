@@ -245,10 +245,24 @@ class BaseConfig:
         os.getenv("COMMERCIAL_FORECAST_MODEL_PATH", PROJECT_ROOT / "models" / "commercial" / "building_forecast.joblib")
     )
     GOVERNMENT_FORECAST_DATA_PATH = Path(
-        os.getenv("GOVERNMENT_FORECAST_DATA_PATH", PROJECT_ROOT / "data" / "airflow" / "government" / "features.parquet")
+        os.getenv(
+            "GOVERNMENT_FORECAST_DATA_PATH",
+            (
+                PROJECT_ROOT / "data" / "airflow" / "government" / "training_ready_2018.parquet"
+                if (PROJECT_ROOT / "data" / "airflow" / "government" / "training_ready_2018.parquet").exists()
+                else PROJECT_ROOT / "data" / "airflow" / "government" / "features.parquet"
+            ),
+        )
     )
     GOVERNMENT_FORECAST_MODEL_PATH = Path(
-        os.getenv("GOVERNMENT_FORECAST_MODEL_PATH", PROJECT_ROOT / "models" / "government" / "hybrid_model.joblib")
+        os.getenv(
+            "GOVERNMENT_FORECAST_MODEL_PATH",
+            (
+                PROJECT_ROOT / "data" / "airflow" / "government" / "hybrid_grid_2018.joblib"
+                if (PROJECT_ROOT / "data" / "airflow" / "government" / "hybrid_grid_2018.joblib").exists()
+                else PROJECT_ROOT / "models" / "government" / "hybrid_model.joblib"
+            ),
+        )
     )
     SEGMENTATION_OUTPUT_DIR = Path(
         os.getenv(
@@ -338,7 +352,10 @@ class ProductionConfig(BaseConfig):
 
     DEBUG = False
     TESTING = False
-    DEVELOPMENT_AUTH_ENABLED = False
+    DEVELOPMENT_AUTH_ENABLED = (
+        os.getenv("DEVELOPMENT_AUTH_ENABLED", "false").lower() == "true"
+        or os.getenv("AI_DEMO_MODE", "true").lower() == "true"
+    )
     SECRET_KEY = os.getenv("SECRET_KEY")
 
     def __init__(self) -> None:

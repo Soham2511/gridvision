@@ -18,13 +18,18 @@ import { getCategoryIcon } from './ComplaintCard';
 interface ComplaintDetailModalProps {
   complaint: Complaint | null;
   onClose: () => void;
+  onStatusUpdate?: (complaintId: string, newStatus: string) => Promise<void>;
+  isGovernment?: boolean;
 }
 
 export const ComplaintDetailModal: React.FC<ComplaintDetailModalProps> = ({
   complaint,
   onClose,
+  onStatusUpdate,
+  isGovernment = false,
 }) => {
   const [copied, setCopied] = useState(false);
+  const [updatingStatus, setUpdatingStatus] = useState(false);
 
   if (!complaint) return null;
 
@@ -715,9 +720,97 @@ export const ComplaintDetailModal: React.FC<ComplaintDetailModalProps> = ({
             background: 'var(--gv-bg-surface-subtle)',
             borderTop: '1px solid var(--gv-border-subtle)',
             display: 'flex',
-            justifyContent: 'flex-end',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            gap: '0.75rem',
           }}
         >
+          {isGovernment && onStatusUpdate ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#475569' }}>
+                Resolution Action:
+              </span>
+              <button
+                type="button"
+                disabled={updatingStatus}
+                onClick={async () => {
+                  setUpdatingStatus(true);
+                  try {
+                    await onStatusUpdate(complaint.id, 'RESOLVED');
+                  } finally {
+                    setUpdatingStatus(false);
+                  }
+                }}
+                style={{
+                  padding: '0.45rem 0.85rem',
+                  borderRadius: '6px',
+                  background: '#16A34A',
+                  color: '#FFFFFF',
+                  fontWeight: 700,
+                  fontSize: '0.75rem',
+                  border: 'none',
+                  cursor: updatingStatus ? 'wait' : 'pointer',
+                  opacity: updatingStatus ? 0.6 : 1,
+                }}
+              >
+                ✓ Mark as Resolved
+              </button>
+              <button
+                type="button"
+                disabled={updatingStatus}
+                onClick={async () => {
+                  setUpdatingStatus(true);
+                  try {
+                    await onStatusUpdate(complaint.id, 'REJECTED');
+                  } finally {
+                    setUpdatingStatus(false);
+                  }
+                }}
+                style={{
+                  padding: '0.45rem 0.85rem',
+                  borderRadius: '6px',
+                  background: '#DC2626',
+                  color: '#FFFFFF',
+                  fontWeight: 700,
+                  fontSize: '0.75rem',
+                  border: 'none',
+                  cursor: updatingStatus ? 'wait' : 'pointer',
+                  opacity: updatingStatus ? 0.6 : 1,
+                }}
+              >
+                ✕ Mark as Rejected
+              </button>
+              <button
+                type="button"
+                disabled={updatingStatus}
+                onClick={async () => {
+                  setUpdatingStatus(true);
+                  try {
+                    await onStatusUpdate(complaint.id, 'REGISTERED');
+                  } finally {
+                    setUpdatingStatus(false);
+                  }
+                }}
+                style={{
+                  padding: '0.45rem 0.85rem',
+                  borderRadius: '6px',
+                  background: '#D97706',
+                  color: '#FFFFFF',
+                  fontWeight: 700,
+                  fontSize: '0.75rem',
+                  border: 'none',
+                  cursor: updatingStatus ? 'wait' : 'pointer',
+                  opacity: updatingStatus ? 0.6 : 1,
+                }}
+              >
+                ⏱ Set as Pending
+              </button>
+            </div>
+          ) : (
+            <div />
+          )}
+
           <button
             onClick={onClose}
             style={{

@@ -299,7 +299,7 @@ def test_assistant_chat_for_unmetered_user(client: FlaskClient):
     res = client.post(
         "/api/v1/assistant/chat",
         headers={"Authorization": f"Bearer {token}"},
-        json={"prompt": "hello", "persona": "household", "entity_id": "2235404", "history": []},
+        json={"prompt": "hello", "persona": "household", "entity_id": BaseConfig.INITIAL_RESIDENTIAL_OBJECTID, "history": []},
     )
     assert res.status_code == 200
     data = res.get_json()["data"]

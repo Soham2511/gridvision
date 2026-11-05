@@ -12,12 +12,10 @@ import { AiAssistantPage } from '../../../ai/residential/frontend/src/pages/AiAs
 import { OverviewPage } from '../pages/OverviewPage';
 import { DemandForecastingPage } from '../pages/DemandForecastingPage';
 import { PeakDemandPage } from '../pages/PeakDemandPage';
-import { AnomalyDetectionPage } from '../pages/AnomalyDetectionPage';
 import { CustomerAnalyticsPage } from '../pages/CustomerAnalyticsPage';
 import { EnergyInsightsPage } from '../pages/EnergyInsightsPage';
 import { ProfilePage } from '../pages/ProfilePage';
-import { CustomerBillModelPage } from '../pages/CustomerBillModelPage';
-import { ModelWorkbenchPage } from '../pages/ModelWorkbenchPage';
+import { AnomalyDetectionPage } from '../pages/AnomalyDetectionPage';
 import { GovernmentSegmentationPage } from '../pages/GovernmentSegmentationPage';
 import { ComplaintCentrePage } from '../../../ai/residential/frontend/src/pages/ComplaintCentrePage';
 import { usePersona } from '../context';
@@ -66,19 +64,20 @@ export const AppRoutes: React.FC = () => {
         <Route path="/complaints" element={<Navigate to="/app/complaints" replace />} />
         <Route path="/app/customers" element={<PersonaCustomerSegmentationPage />} />
         <Route path="/app/government/segmentation" element={<Navigate to="/app/customers" replace />} />
+        <Route path="/app/anomalies" element={<AnomalyDetectionPage />} />
         <Route path="/app/health" element={<Navigate to="/health" replace />} />
         <Route path="/app/assistant" element={<AiAssistantPage />} />
         <Route path="/assistant" element={<Navigate to="/app/assistant" replace />} />
         <Route path="/app/reports" element={<ReportsPage />} />
         <Route path="/app/notifications" element={<NotificationsPage />} />
-        <Route path="/models" element={<ModelWorkbenchPage />} />
-        <Route path="/models/customer" element={<CustomerBillModelPage />} />
+        <Route path="/models" element={<Navigate to="/health?tab=forecast" replace />} />
+        <Route path="/models/customer" element={<Navigate to="/health?tab=bill-prediction" replace />} />
 
         {/* Deep Grid Analytics Suite */}
         <Route path="/overview" element={<OverviewPage />} />
         <Route path="/forecasting" element={<DemandForecastingPage />} />
         <Route path="/peak-demand" element={<PeakDemandPage />} />
-        <Route path="/anomalies" element={<AnomalyDetectionPage />} />
+        <Route path="/anomalies" element={<Navigate to="/app/anomalies" replace />} />
         <Route path="/customers" element={<CustomerAnalyticsPage />} />
         <Route path="/insights" element={<EnergyInsightsPage />} />
         <Route path="/profile" element={<ProfilePage />} />

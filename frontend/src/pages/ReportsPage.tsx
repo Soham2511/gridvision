@@ -31,7 +31,8 @@ export const ReportsPage: React.FC = () => {
     setEntityLoading(true);
     void modelService.getCustomerRecords(200, 0).then((page) => {
       if (cancelled) return;
-      const ids = [...new Set(page.items.map((record) => record.entityId))];
+      const benchmarkIds = ['2254213', '293861', '537421', '679900'];
+      const ids = [...new Set([...benchmarkIds, ...page.items.map((record) => record.entityId)])];
       if (ids.length && !ids.includes(activeEntity)) setActiveEntity(ids[0]);
     }).catch(() => {
       if (!cancelled) setError('Household building IDs could not be loaded from the profile source.');

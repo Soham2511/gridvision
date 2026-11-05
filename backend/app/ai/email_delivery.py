@@ -204,3 +204,58 @@ def send_report_email(
             "The SMTP server rejected the send or a network error occurred. "
             "Check SMTP configuration and server logs."
         ) from exc
+
+
+def send_status_email(
+    *,
+    config: dict[str, Any],
+    recipient: str,
+    subject: str,
+    body: str,
+) -> bool:
+    """Send a status notification email using SMTP if configured."""
+    host = str(config.get("REPORT_EMAIL_SMTP_HOST", "")).strip()
+    sender = str(config.get("REPORT_EMAIL_FROM_ADDRESS", "")).strip()
+
+    if not host or not sender:
+        logger.info(
+            "SMTP not configured (host='%s', sender='%s'). Status email logged for %s: %s",
+            host, sender, recipient, subject,
+        )
+        return False
+
+    try:
+        port = int(config.get("REPORT_EMAIL_SMTP_PORT", 587))
+    except (TypeError, ValueError):
+        port = 587
+
+    username = str(config.get("REPORT_EMAIL_SMTP_USERNAME", "")).strip()
+    password = str(config.get("REPORT_EMAIL_SMTP_PASSWORD", "")).replace(" ", "").strip()
+
+    message = EmailMessage()
+    message["Subject"] = subject
+    message["From"] = sender
+    message["To"] = recipient
+    message.set_content(body)
+
+    tls_context = ssl.create_default_context()
+
+    try:
+        if port == 465:
+            with smtplib.SMTP_SSL(host, port, timeout=15, context=tls_context) as client:
+                if username and password:
+                    client.login(username, password)
+                client.send_message(message)
+        else:
+            with smtplib.SMTP(host, port, timeout=15) as client:
+                client.ehlo()
+                client.starttls(context=tls_context)
+                client.ehlo()
+                if username and password:
+                    client.login(username, password)
+                client.send_message(message)
+        logger.info("Complaint status email sent successfully to %s", recipient)
+        return True
+    except Exception as exc:
+        logger.warning("SMTP status email delivery failed for %s: %s", recipient, exc)
+        return False

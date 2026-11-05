@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 class CustomerSegment(str, Enum):
     RESIDENTIAL = "RESIDENTIAL"
     COMMERCIAL = "COMMERCIAL"
+    GOVERNMENT = "GOVERNMENT"
 
 
 class ComplaintStatus(str, Enum):
@@ -23,6 +24,8 @@ class ComplaintStatus(str, Enum):
     INVALID = "INVALID"
     SCORING = "SCORING"
     REGISTERED = "REGISTERED"
+    RESOLVED = "RESOLVED"
+    REJECTED = "REJECTED"
     PROCESSING_FAILED = "PROCESSING_FAILED"
 
 

@@ -21,6 +21,18 @@ from app.api.error_handlers import (
 )
 from training.commercial_forecast.features import FEATURE_COLUMNS, prepare_features
 
+# Backward-compatibility shim for models pickled with scikit-learn 1.6.x deserialized on scikit-learn 1.7+
+try:
+    import sklearn.compose._column_transformer as _ct
+
+    if not hasattr(_ct, "_RemainderColsList"):
+        class _RemainderColsList(list):
+            pass
+
+        _ct._RemainderColsList = _RemainderColsList
+except Exception:
+    pass
+
 
 class TrainedForecastProvider(BaseModelProvider):
     """Serve historical forecast replays and delegate customer bills to MLflow."""
@@ -186,13 +198,26 @@ class TrainedForecastProvider(BaseModelProvider):
                 f"Unsupported commercial historical time range: {time_range}"
             )
         numeric_id = None
+        commercial_alias_map = {
+            "Panther_office_1": 466,
+            "Bull_assembly_3": 50073,
+            "Eagle_education_2": 126397,
+            "Fox_retail_1": 136456,
+            "Panther_parking_1": 151840,
+        }
         if entity_id is not None:
-            try:
-                numeric_id = int(entity_id)
-            except (TypeError, ValueError) as exc:
-                raise InvalidInputError(
-                    f"Invalid commercial building ID: {entity_id}"
-                ) from exc
+            clean_eid = str(entity_id).strip()
+            if clean_eid in commercial_alias_map:
+                numeric_id = commercial_alias_map[clean_eid]
+            elif clean_eid.lower() in ("all", "all buildings", "commercial", "none", ""):
+                numeric_id = None
+            else:
+                try:
+                    numeric_id = int(clean_eid)
+                except (TypeError, ValueError) as exc:
+                    raise InvalidInputError(
+                        f"Invalid commercial building ID: {entity_id}"
+                    ) from exc
 
         if numeric_id is None:
             period_filter = ""
@@ -337,17 +362,36 @@ class TrainedForecastProvider(BaseModelProvider):
         actuals, _ = self._get_government_observations()
         selected_grid = None
         if entity_id is not None:
-            try:
-                selected_grid = int(entity_id)
-            except (TypeError, ValueError) as exc:
-                raise InvalidInputError(
-                    f"Invalid Government grid ID: {entity_id}"
-                ) from exc
-            actuals = actuals.loc[actuals["grid_id"] == selected_grid]
-            if actuals.empty:
-                raise ResourceNotFoundError(
-                    f"Government grid {selected_grid} has no historical observations."
-                )
+            clean_entity = str(entity_id).strip()
+            # Normalize aggregate / system-wide aliases
+            if clean_entity.lower() in (
+                "bear & aggregate",
+                "bear and aggregate",
+                "aggregate",
+                "all",
+                "system-wide",
+                "system",
+                "all grids",
+                "grid aggregate",
+                "none",
+                "",
+            ):
+                selected_grid = None
+            elif clean_entity in {"Bear": 50, "Bull": 64, "Eagle": 65, "Fox": 51, "Panther": 63, "Peacock": 77}:
+                selected_grid = {"Bear": 50, "Bull": 64, "Eagle": 65, "Fox": 51, "Panther": 63, "Peacock": 77}[clean_entity]
+            else:
+                try:
+                    selected_grid = int(clean_entity)
+                except (TypeError, ValueError) as exc:
+                    raise InvalidInputError(
+                        f"Invalid Government grid ID: {entity_id}"
+                    ) from exc
+            if selected_grid is not None:
+                actuals = actuals.loc[actuals["grid_id"] == selected_grid]
+                if actuals.empty:
+                    raise ResourceNotFoundError(
+                        f"Government grid {selected_grid} has no historical observations."
+                    )
         latest_timestamp = pd.Timestamp(actuals["target_timestamp"].max())
         first_timestamp = (
             latest_timestamp.normalize()
@@ -539,10 +583,21 @@ class TrainedForecastProvider(BaseModelProvider):
         if building_id == "regional":
             return self.get_regional_commercial_dashboard(time_range)
 
-        try:
-            numeric_id = int(building_id)
-        except (TypeError, ValueError) as exc:
-            raise InvalidInputError(f"Invalid commercial building ID: {building_id}") from exc
+        commercial_alias_map = {
+            "Panther_office_1": 466,
+            "Bull_assembly_3": 50073,
+            "Eagle_education_2": 126397,
+            "Fox_retail_1": 136456,
+            "Panther_parking_1": 151840,
+        }
+        clean_bid = str(building_id).strip()
+        if clean_bid in commercial_alias_map:
+            numeric_id = commercial_alias_map[clean_bid]
+        else:
+            try:
+                numeric_id = int(clean_bid)
+            except (TypeError, ValueError) as exc:
+                raise InvalidInputError(f"Invalid commercial building ID: {building_id}") from exc
 
         building = next(
             (item for item in self.get_commercial_buildings() if item["buildingId"] == str(numeric_id)),
@@ -1613,12 +1668,19 @@ class TrainedForecastProvider(BaseModelProvider):
         if view_type not in {"overall", "region"}:
             raise InvalidInputError(f"Unsupported Government view type: {view_type}")
         if view_type == "region":
-            try:
-                selected_grid = int(region_id) if region_id is not None else None
-            except (TypeError, ValueError) as exc:
-                raise InvalidInputError(f"Invalid Government grid ID: {region_id}") from exc
-            if selected_grid is None:
-                raise InvalidInputError("A Government grid ID is required for regional view.")
+            clean_region = str(region_id).strip() if region_id is not None else ""
+            if clean_region.lower() in ("bear & aggregate", "bear and aggregate", "aggregate", "all", "system-wide", "system", "none", ""):
+                selected_grid = None
+                view_type = "overall"
+            elif clean_region in {"Bear": 50, "Bull": 64, "Eagle": 65, "Fox": 51, "Panther": 63, "Peacock": 77}:
+                selected_grid = {"Bear": 50, "Bull": 64, "Eagle": 65, "Fox": 51, "Panther": 63, "Peacock": 77}[clean_region]
+            else:
+                try:
+                    selected_grid = int(clean_region) if clean_region else None
+                except (TypeError, ValueError) as exc:
+                    raise InvalidInputError(f"Invalid Government grid ID: {region_id}") from exc
+                if selected_grid is None:
+                    raise InvalidInputError("A Government grid ID is required for regional view.")
         else:
             selected_grid = None
 
@@ -1837,20 +1899,33 @@ class TrainedForecastProvider(BaseModelProvider):
     ) -> list[dict[str, Any]]:
         sector = sector.lower()
         if sector == "government":
-            try:
-                grid_id = int(entity_id)
-            except (TypeError, ValueError) as exc:
-                raise InvalidInputError(
-                    f"Invalid Government grid ID: {entity_id}"
-                ) from exc
+            clean_entity = str(entity_id).strip() if entity_id else ""
+            if clean_entity.lower() in ("bear & aggregate", "bear and aggregate", "aggregate", "all", "system-wide", "system", "none", ""):
+                grid_id = None
+            elif clean_entity in {"Bear": 50, "Bull": 64, "Eagle": 65, "Fox": 51, "Panther": 63, "Peacock": 77}:
+                grid_id = {"Bear": 50, "Bull": 64, "Eagle": 65, "Fox": 51, "Panther": 63, "Peacock": 77}[clean_entity]
+            else:
+                try:
+                    grid_id = int(clean_entity)
+                except (TypeError, ValueError) as exc:
+                    raise InvalidInputError(
+                        f"Invalid Government grid ID: {entity_id}"
+                    ) from exc
             if not 1 <= horizon_count <= 24:
                 raise InvalidInputError(
                     "Government forecast horizons must be between 1 and 24 hours."
                 )
             forecasts = self._predict_government_24h()
-            grid_forecasts = forecasts.loc[
-                forecasts["grid_id"] == grid_id
-            ].sort_values("target_timestamp")
+            if grid_id is not None:
+                grid_forecasts = forecasts.loc[
+                    forecasts["grid_id"] == grid_id
+                ].sort_values("target_timestamp")
+            else:
+                grid_forecasts = (
+                    forecasts.groupby("target_timestamp", as_index=False)["prediction"]
+                    .sum()
+                    .sort_values("target_timestamp")
+                )
             if grid_forecasts.empty:
                 raise ResourceNotFoundError(
                     f"No Government forecast is available for grid {grid_id}."

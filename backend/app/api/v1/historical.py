@@ -49,6 +49,19 @@ def get_historical_analysis():
     if persona.casefold() == "government" and not current_app.testing:
         require_approved_source("government_2018", "Government 2018 dataset")
         provider = current_app.extensions["commercial_history_provider"]
+        clean_eid = str(entity_id).strip() if entity_id else ""
+        if clean_eid.lower() in (
+            "bear & aggregate",
+            "bear and aggregate",
+            "aggregate",
+            "all",
+            "system-wide",
+            "system",
+            "all grids",
+            "none",
+            "",
+        ):
+            entity_id = None
         try:
             data = provider.get_government_historical_insights(
                 time_range=time_range, entity_id=entity_id

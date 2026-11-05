@@ -25,6 +25,7 @@ from report_generator.services.analytics_service import DeterministicAnalyticsEn
 from report_generator.services.consumption_analytics import (
     ConsumptionReportCalculator,
     MonthlyConsumptionAnalysis,
+    is_anomaly_report,
     is_consumption_report,
 )
 from report_generator.services.html_renderer import HTMLReportRenderer
@@ -192,6 +193,48 @@ class JSONReportGenerator:
                 logger.info(
                     "report_generation_complete",
                     extra={"event": {"report_id": report_id, "status": status, "format_count": 1 + int(pdf_id is not None), "type": "consumption"}},
+                )
+                return {
+                    "report_id": report_id,
+                    "title": report.title,
+                    "status": status,
+                    "generated_at": generated_at.isoformat(),
+                    "html_url": f"/api/v1/report-generator/reports/{report_id}/html",
+                    "pdf_url": f"/api/v1/report-generator/reports/{report_id}/pdf" if pdf_id else None,
+                }
+
+            if is_anomaly_report(request.data):
+                report = self._anomaly_document(report_id, generated_at, request.data)
+                html_content = self.html_renderer.render(report)
+                if len(html_content) > self.settings.max_artifact_bytes:
+                    raise ReportGenerationError("HTML report exceeds the configured size limit", "REPORT_ARTIFACT_TOO_LARGE", 413)
+                self.artifact_store.initialize()
+                html_id = self.artifact_store.store(html_content)
+                pdf_id = None
+                error_code = None
+                status = "complete"
+                if "pdf" in request.output_formats:
+                    try:
+                        pdf_content = self.pdf_renderer.render_anomaly_report(request.data, report_id=report_id)
+                        if len(pdf_content) > self.settings.max_artifact_bytes:
+                            raise PDFRenderError("PDF report exceeds configured size limit")
+                        pdf_id = self.artifact_store.store(pdf_content)
+                    except Exception:
+                        status = "partial"
+                        error_code = "PDF_RENDER_FAILED"
+                self.repository.finish(
+                    report_id,
+                    owner_key,
+                    title=report.title,
+                    status=status,
+                    html_artifact_id=html_id,
+                    pdf_artifact_id=pdf_id,
+                    error_code=error_code,
+                    limitations=report.limitations,
+                )
+                logger.info(
+                    "report_generation_complete",
+                    extra={"event": {"report_id": report_id, "status": status, "format_count": 1 + int(pdf_id is not None), "type": "anomaly_rectification"}},
                 )
                 return {
                     "report_id": report_id,
@@ -518,4 +561,107 @@ class JSONReportGenerator:
             ],
         )
         setattr(doc, "_analysis", analysis)
+        return doc
+
+    def _anomaly_document(
+        self, report_id: str, generated_at: datetime, payload: dict[str, Any]
+    ) -> ReportDocument:
+        event_id = str(payload.get("event_id", "N/A"))
+        customer_id = payload.get("customer_id")
+        customer_name = str(payload.get("customer_name") or (f"Consumer ID {customer_id}" if customer_id else "Authorized Stakeholder"))
+        anomaly_type = str(payload.get("anomaly_type") or payload.get("dominant_anomaly_type") or "Anomaly Event")
+        severity_info = payload.get("severity") or {}
+        sev_level = str(severity_info.get("level", "MEDIUM")).upper()
+        sev_score = float(severity_info.get("score", 0.0))
+        details = payload.get("event_details") or {}
+        scope = str(details.get("scope", "SINGLE_CUSTOMER"))
+        start_time = str(details.get("start_time", "N/A"))
+        end_time = str(details.get("end_time", "N/A"))
+        duration_hours = float(details.get("duration_hours", 0.0))
+        affected_count = int(details.get("affected_customer_count", 1))
+
+        causes = payload.get("probable_causes") or []
+        actions = payload.get("corrective_actions") or []
+        preventions = payload.get("preventive_recommendations") or []
+        limitations = payload.get("limitations") or ["Derived deterministically from GridVision model inference."]
+
+        title = f"Anomaly Incident & Rectification Report: {event_id}"
+        subtitle = f"{sev_level} Severity ({sev_score:.2f}) · {customer_name} · {anomaly_type}"
+        summary = (
+            f"Automated incident brief for anomaly event {event_id} ({anomaly_type}). "
+            f"Assessed at {sev_level} severity with normalized score {sev_score:.3f}. "
+            f"Duration: {duration_hours:.2f} hours affecting {affected_count} consumer(s) in scope {scope}."
+        )
+
+        metrics = [
+            ReportMetric(
+                name="Severity Score",
+                value=f"{sev_score:.3f} ({sev_level})",
+                units="normalized [0-1]",
+                source_fields=["severity.score", "severity.level"],
+                methodology="Model confidence and reconstruction error thresholding",
+            ),
+            ReportMetric(
+                name="Event Duration",
+                value=f"{duration_hours:.2f}",
+                units="hours",
+                source_fields=["event_details.duration_hours"],
+                methodology="Temporal span between first and last anomalous observations",
+            ),
+            ReportMetric(
+                name="Affected Meters",
+                value=str(affected_count),
+                units="meters",
+                source_fields=["event_details.affected_customer_count"],
+                methodology="Spatial H3 cluster aggregation",
+            ),
+        ]
+
+        sections = [
+            ReportSection(
+                title="1. Incident Overview & Localized Scope",
+                order=1,
+                content=[
+                    f"Anomaly Event ID: {event_id}",
+                    f"Primary Anomaly Classification: {anomaly_type}",
+                    f"Incident Window: {start_time} to {end_time} ({duration_hours:.2f} hours)",
+                    f"Geographic & Grid Scope: {scope} ({affected_count} customer meter(s))",
+                ],
+                observations=[
+                    f"Severity classified as {sev_level} based on anomalous load variance."
+                ],
+            ),
+            ReportSection(
+                title="2. Probable Causes (Physics & Operational Evidence)",
+                order=2,
+                content=[f"Cause {i+1}: {c}" for i, c in enumerate(causes)] or ["No specific probable causes recorded."],
+                observations=causes[:3],
+            ),
+            ReportSection(
+                title="3. Immediate Corrective Action Plan",
+                order=3,
+                content=[f"Step {i+1}: {a}" for i, a in enumerate(actions)] or ["No immediate corrective actions required."],
+                observations=actions[:3],
+            ),
+            ReportSection(
+                title="4. Long-Term Preventive & Resilience Recommendations",
+                order=4,
+                content=[f"Recommendation {i+1}: {p}" for i, p in enumerate(preventions)] or ["Routine maintenance schedule recommended."],
+                observations=preventions[:3],
+            ),
+        ]
+
+        doc = ReportDocument(
+            report_id=report_id,
+            generated_at=generated_at,
+            title=title,
+            subtitle=subtitle,
+            executive_summary=summary,
+            metrics=metrics,
+            sections=sections,
+            observations=[],
+            conclusion="Immediate field verification recommended for identified causes according to Action Plan steps.",
+            limitations=limitations,
+        )
+        setattr(doc, "_anomaly_payload", payload)
         return doc

@@ -1,4 +1,4 @@
-export type CustomerSegment = 'RESIDENTIAL' | 'COMMERCIAL';
+export type CustomerSegment = 'RESIDENTIAL' | 'COMMERCIAL' | 'GOVERNMENT';
 
 export type ComplaintStatus =
   | 'SUBMITTED'
@@ -6,6 +6,8 @@ export type ComplaintStatus =
   | 'INVALID'
   | 'SCORING'
   | 'REGISTERED'
+  | 'RESOLVED'
+  | 'REJECTED'
   | 'PROCESSING_FAILED';
 
 export type ValidationOutcome = 'INVALID' | 'PLAUSIBLE' | 'INCONCLUSIVE';
