@@ -26,6 +26,26 @@ export interface NotificationRecord {
   created_at: string;
 }
 
+export const extractReportIdFromNotification = (item: NotificationRecord): string | null => {
+  if (item.event_key) {
+    const keyMatch = item.event_key.match(/(?:report[-:]|:report:)([a-f0-9]+)/i);
+    if (keyMatch) return keyMatch[1];
+  }
+  if (item.body) {
+    const bodyMatch = item.body.match(/\/reports\/([a-f0-9]+)\/download\/pdf/i);
+    if (bodyMatch) return bodyMatch[1];
+  }
+  return null;
+};
+
+export const cleanNotificationBody = (body: string): string => {
+  if (!body) return '';
+  return body
+    .replace(/\s*Download PDF Report:\s*\/api\/v1\/ai\/reports\/[a-f0-9]+\/download\/pdf\b/gi, '')
+    .replace(/\s*\/api\/v1\/ai\/reports\/[a-f0-9]+\/download\/pdf\b/gi, '')
+    .trim();
+};
+
 class AILayerService {
   createReport(persona: string, entityId?: string) {
     const reportType = persona === 'government' ? 'government_analytics' : 'monthly_consumption';
@@ -67,6 +87,21 @@ class AILayerService {
   markRead(notificationId: string, persona: string, entityId?: string) {
     return apiClient.post<NotificationRecord>(
       `/ai/notifications/${encodeURIComponent(notificationId)}/read`,
+      {},
+      { persona, building_id: entityId },
+    );
+  }
+
+  deleteNotification(notificationId: string, persona: string, entityId?: string) {
+    return apiClient.delete<{ deleted: boolean; notification_id: string }>(
+      `/ai/notifications/${encodeURIComponent(notificationId)}`,
+      { persona, building_id: entityId },
+    );
+  }
+
+  clearAllNotifications(persona: string, entityId?: string) {
+    return apiClient.post<{ cleared: number }>(
+      '/ai/notifications/clear',
       {},
       { persona, building_id: entityId },
     );

@@ -37,15 +37,19 @@ class ReportService:
     @staticmethod
     def render_pdf(title: str, payload: dict[str, Any], sources: list[dict[str, Any]]) -> bytes:
         data_block = payload.get("data") if isinstance(payload, dict) else None
-        if isinstance(data_block, dict):
+        target_dict = data_block if isinstance(data_block, dict) else (payload if isinstance(payload, dict) else None)
+        if isinstance(target_dict, dict):
             try:
                 from report_generator.services.consumption_analytics import (
                     ConsumptionReportCalculator,
+                    is_anomaly_report,
                     is_consumption_report,
                 )
                 from report_generator.services.pdf_renderer import PDFReportRenderer
-                if is_consumption_report(data_block):
-                    analysis = ConsumptionReportCalculator.calculate(data_block)
+                if is_anomaly_report(target_dict):
+                    return PDFReportRenderer().render_anomaly_report(target_dict)
+                if is_consumption_report(target_dict):
+                    analysis = ConsumptionReportCalculator.calculate(target_dict)
                     return PDFReportRenderer().render_consumption_report(analysis)
             except Exception:
                 pass

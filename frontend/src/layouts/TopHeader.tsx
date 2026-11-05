@@ -2,11 +2,17 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { usePersona } from '../context';
 import { useAuth } from '../context/AuthContext';
-import { aiLayerService, NotificationRecord } from '../services/aiLayerService';
+import {
+  aiLayerService,
+  cleanNotificationBody,
+  extractReportIdFromNotification,
+  NotificationRecord,
+} from '../services/aiLayerService';
 import {
   Bell,
   Calendar,
   ChevronDown,
+  Download,
   X,
   Layers,
   LogOut,
@@ -72,6 +78,20 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
       return;
     }
     await refreshNotifications();
+  };
+
+  const handleDownloadReport = async (reportId: string) => {
+    try {
+      const blob = await aiLayerService.downloadReport(reportId, 'pdf', persona, entityId);
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `gridvision-anomaly-report-${reportId}.pdf`;
+      anchor.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 0);
+    } catch {
+      // no-op
+    }
   };
 
   const isPlatformScope =
@@ -283,42 +303,73 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
               </div>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.55rem' }}>
-                {notifications.filter((notification) => !notification.read_at).slice(0, 5).map((n) => (
-                  <div
-                    key={n.notification_id}
-                    style={{
-                      padding: '0.6rem 0.75rem',
-                      borderRadius: 'var(--gv-radius-md)',
-                      background: 'var(--gv-bg-surface-subtle)',
-                      borderLeft: `3px solid ${
-                        n.notification_type === 'anomaly' || n.notification_type === 'danger'
-                          ? 'var(--gv-status-danger)'
-                          : n.notification_type === 'warning'
-                          ? 'var(--gv-color-energy-amber)'
-                          : 'var(--gv-color-smart-teal)'
-                      }`,
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.2rem' }}>
-                      <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--gv-text-primary)' }}>
-                        {n.title}
-                      </span>
-                      <span style={{ fontSize: '0.65rem', color: 'var(--gv-text-muted)' }}>
-                        {new Date(n.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </span>
-                    </div>
-                    <p style={{ fontSize: '0.72rem', color: 'var(--gv-text-secondary)', lineHeight: 1.35 }}>
-                      {n.body}
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => void markNotificationRead(n.notification_id)}
-                      style={{ fontSize: '0.68rem', color: 'var(--gv-color-grid-blue)', marginTop: '0.35rem', background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
+                {notifications.filter((notification) => !notification.read_at).slice(0, 5).map((n) => {
+                  const reportId = extractReportIdFromNotification(n);
+                  const displayBody = cleanNotificationBody(n.body);
+
+                  return (
+                    <div
+                      key={n.notification_id}
+                      style={{
+                        padding: '0.6rem 0.75rem',
+                        borderRadius: 'var(--gv-radius-md)',
+                        background: 'var(--gv-bg-surface-subtle)',
+                        borderLeft: `3px solid ${
+                          n.notification_type === 'anomaly' || n.notification_type === 'danger' || n.notification_type === 'anomaly_alert'
+                            ? 'var(--gv-status-danger)'
+                            : n.notification_type === 'warning'
+                            ? 'var(--gv-color-energy-amber)'
+                            : 'var(--gv-color-smart-teal)'
+                        }`,
+                      }}
                     >
-                      Dismiss
-                    </button>
-                  </div>
-                ))}
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.2rem' }}>
+                        <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--gv-text-primary)' }}>
+                          {n.title}
+                        </span>
+                        <span style={{ fontSize: '0.65rem', color: 'var(--gv-text-muted)' }}>
+                          {new Date(n.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </div>
+                      {displayBody && (
+                        <p style={{ fontSize: '0.72rem', color: 'var(--gv-text-secondary)', lineHeight: 1.35 }}>
+                          {displayBody}
+                        </p>
+                      )}
+                      <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center', marginTop: '0.35rem' }}>
+                        {reportId && (
+                          <button
+                            type="button"
+                            onClick={() => void handleDownloadReport(reportId)}
+                            style={{
+                              fontSize: '0.68rem',
+                              fontWeight: 600,
+                              color: '#ffffff',
+                              background: 'var(--gv-color-smart-teal)',
+                              border: 'none',
+                              borderRadius: 'var(--gv-radius-sm)',
+                              padding: '0.2rem 0.5rem',
+                              cursor: 'pointer',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: '0.25rem',
+                            }}
+                          >
+                            <Download size={11} />
+                            Download PDF
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => void markNotificationRead(n.notification_id)}
+                          style={{ fontSize: '0.68rem', color: 'var(--gv-color-grid-blue)', background: 'none', border: 'none', padding: 0, cursor: 'pointer' }}
+                        >
+                          Dismiss
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
                 {unreadCount === 0 && <p className="gv-text-subtle">No new alerts or activity.</p>}
               </div>
 

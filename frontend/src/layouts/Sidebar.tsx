@@ -16,10 +16,8 @@ import {
   Building2,
   Map,
   PieChart,
-  ShieldAlert,
   FileText,
   Bell,
-  Cpu,
   LifeBuoy,
 } from 'lucide-react';
 
@@ -58,15 +56,6 @@ export const Sidebar: React.FC = () => {
       label: 'Historical Insights',
       icon: <BarChart2 size={18} />,
     },
-    {
-      path: '/anomalies',
-      label: currentPersona === 'government'
-        ? 'Anomaly Monitoring'
-        : currentPersona === 'commercial'
-        ? 'Building Alerts'
-        : 'Anomaly Alerts',
-      icon: <ShieldAlert size={18} />,
-    },
     ...(currentPersona === 'government'
       ? [
           {
@@ -76,15 +65,11 @@ export const Sidebar: React.FC = () => {
           },
         ]
       : []),
-    ...(currentPersona === 'household' || !currentPersona
-      ? [
-          {
-            path: '/app/complaints',
-            label: 'Complaint Centre',
-            icon: <LifeBuoy size={18} />,
-          },
-        ]
-      : []),
+    {
+      path: '/app/complaints',
+      label: 'Complaint Centre',
+      icon: <LifeBuoy size={18} />,
+    },
     {
       path: '/app/assistant',
       label: 'AI Assistant',
@@ -92,11 +77,6 @@ export const Sidebar: React.FC = () => {
     },
     { path: '/app/reports', label: 'Reports', icon: <FileText size={18} /> },
     { path: '/app/notifications', label: 'Notifications', icon: <Bell size={18} /> },
-    {
-      path: '/models',
-      label: 'Models',
-      icon: <Cpu size={18} />,
-    },
     {
       path: '/profile',
       label: currentPersona === 'government' ? 'Profile' : 'Building Profile',

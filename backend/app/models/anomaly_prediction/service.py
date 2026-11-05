@@ -291,13 +291,38 @@ class AnomalyPredictionService:
                 }
             },
         )
+        events = self.analysis_store.events(manifest["analysis_id"])["items"]
+        if events:
+            try:
+                from flask import current_app, has_app_context
+                if has_app_context():
+                    store = current_app.extensions.get("ai_application_store")
+                    private_store = current_app.extensions.get("ai_private_storage")
+                    if store and private_store:
+                        from app.services.anomaly_workflow_service import AnomalyWorkflowService
+                        workflow_svc = AnomalyWorkflowService(
+                            store=store,
+                            private_store=private_store,
+                            config=current_app.config,
+                        )
+                        workflow_svc.process_run_events(
+                            run_id=manifest["analysis_id"],
+                            events=events,
+                            persona=request.get("persona", "household"),
+                        )
+            except Exception as exc:
+                logger.warning(
+                    "anomaly_workflow_auto_trigger_failed",
+                    extra={"event": {"run_id": manifest["analysis_id"], "error": str(exc)}},
+                )
+
         return {
             "run_id": manifest["analysis_id"],
             "status": completed["status"],
             "request": completed["request"],
             "metadata": completed.get("metadata", {}),
             "metrics": completed.get("metrics", {}),
-            "events": self.analysis_store.events(manifest["analysis_id"])["items"],
+            "events": events,
             "anomaly_windows": self.analysis_store.anomaly_windows(
                 manifest["analysis_id"], limit=1000
             )["items"],

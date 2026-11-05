@@ -166,6 +166,19 @@ def is_consumption_report(data: Any) -> bool:
     return (has_daily or has_hourly) and (has_period or persona)
 
 
+def is_anomaly_report(data: Any) -> bool:
+    """Check whether a given dataset represents an anomaly rectification report."""
+    if not isinstance(data, dict):
+        return False
+    if "event_id" in data and ("probable_causes" in data or "corrective_actions" in data):
+        return True
+    if data.get("report_type") in {"anomaly_rectification", "anomaly_report", "anomaly_event"}:
+        return True
+    if "event_details" in data and "severity" in data:
+        return True
+    return False
+
+
 class ConsumptionReportCalculator:
     """Performs deterministic calculations for all seven sections of the report."""
 

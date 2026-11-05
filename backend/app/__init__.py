@@ -23,7 +23,18 @@ def _extend_residential_package_path(
     candidate_text = str(candidate)
     if candidate.is_dir() and candidate_text not in package_path:
         package_path.append(candidate_text)
-from pathlib import Path
+
+# Backward-compatibility shim for models pickled with scikit-learn 1.6.x deserialized on scikit-learn 1.7+
+try:
+    import sklearn.compose._column_transformer as _ct
+
+    if not hasattr(_ct, "_RemainderColsList"):
+        class _RemainderColsList(list):
+            pass
+
+        _ct._RemainderColsList = _RemainderColsList
+except Exception:
+    pass
 
 from flask import Flask, Response, g, jsonify, request
 from flask_cors import CORS

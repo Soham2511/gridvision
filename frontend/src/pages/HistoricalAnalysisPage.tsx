@@ -51,8 +51,13 @@ const PersonaHistoricalAnalysisPage: React.FC = () => {
     setHistoryError(null);
     setHistoricalData(null);
 
+    const reqEntity =
+      persona === 'government' && (!activeEntity || activeEntity.toLowerCase().includes('aggregate'))
+        ? undefined
+        : activeEntity;
+
     analyticsService
-      .getHistoricalInsights(persona, timeRange, activeEntity)
+      .getHistoricalInsights(persona, timeRange, reqEntity)
       .then((res) => {
         if (isMounted) {
           setHistoricalData(res);
