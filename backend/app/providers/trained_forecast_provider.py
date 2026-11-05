@@ -179,6 +179,136 @@ class TrainedForecastProvider(BaseModelProvider):
             ]
         return self._commercial_entities
 
+    def get_commercial_building(self, building_id: str) -> dict[str, Any] | None:
+        """Return metadata for a single commercial building from Gold or Silver datasets."""
+        clean_id = str(building_id).strip()
+        try:
+            numeric_id = int(clean_id)
+        except (ValueError, TypeError):
+            return None
+
+        # 1. Match from cached commercial entities
+        for item in self.get_commercial_buildings():
+            if item["buildingId"] == str(numeric_id):
+                return item
+
+        # 2. Query commercial_data (commercial_gold) directly for numeric_id
+        try:
+            rows = self._query(
+                self.commercial_data,
+                f"""SELECT OBJECTID, any_value("id.grid.coarse") AS grid_id,
+                          any_value(GeneralUseType) AS use_type,
+                          any_value(SpecificUseType) AS specific_use_type,
+                          any_value("building.type") AS building_type,
+                          any_value("building.area.m2") AS area,
+                          any_value("FootprintArea.m2") AS footprint_area,
+                          any_value(EffectiveYearBuilt) AS year_built,
+                          any_value("idf.kw") AS idf_kw,
+                          any_value(latitude) AS latitude,
+                          any_value(longitude) AS longitude,
+                          max(target_timestamp) AS last_timestamp
+                   FROM read_parquet({{path}})
+                   WHERE OBJECTID = {numeric_id}
+                   GROUP BY OBJECTID""",
+            )
+            if not rows.empty:
+                row = rows.iloc[0]
+                return {
+                    "buildingId": str(int(row.OBJECTID)),
+                    "siteId": f"Grid {int(row.grid_id)}",
+                    "id.grid.coarse": int(row.grid_id),
+                    "coarseGridId": int(row.grid_id),
+                    "primarySpaceUsage": str(row.use_type or "Commercial"),
+                    "specificSpaceUsage": row.specific_use_type,
+                    "buildingType": row.building_type,
+                    "sqm": float(row.area or 0),
+                    "footprintAreaM2": (
+                        float(row.footprint_area)
+                        if pd.notna(row.footprint_area)
+                        else None
+                    ),
+                    "yearBuilt": int(row.year_built or 0),
+                    "idfKw": row.idf_kw,
+                    "latitude": (
+                        float(row.latitude) if pd.notna(row.latitude) else None
+                    ),
+                    "longitude": (
+                        float(row.longitude) if pd.notna(row.longitude) else None
+                    ),
+                    "recentDemandKwh": None,
+                    "predictedDemandKwh": None,
+                    "lastTimestamp": (
+                        pd.Timestamp(row.last_timestamp).isoformat()
+                        if pd.notna(row.last_timestamp)
+                        else None
+                    ),
+                }
+        except Exception:
+            pass
+
+        # 3. Fallback: query commercial_silver or sample dataset if available
+        candidates = [
+            Path("data/silver/commercial_silver.parquet"),
+            Path("/data/silver/commercial_silver.parquet"),
+            Path("data/sample/training_sample_50000.parquet"),
+        ]
+        for candidate_path in candidates:
+            if candidate_path.is_file():
+                try:
+                    rows = self._query(
+                        candidate_path,
+                        f"""SELECT OBJECTID, any_value("id.grid.coarse") AS grid_id,
+                                  any_value(GeneralUseType) AS use_type,
+                                  any_value(SpecificUseType) AS specific_use_type,
+                                  any_value("building.type") AS building_type,
+                                  any_value("building.area.m2") AS area,
+                                  any_value("FootprintArea.m2") AS footprint_area,
+                                  any_value(EffectiveYearBuilt) AS year_built,
+                                  any_value("idf.kw") AS idf_kw,
+                                  any_value(latitude) AS latitude,
+                                  any_value(longitude) AS longitude,
+                                  max(timestamp) AS last_timestamp
+                           FROM read_parquet({{path}})
+                           WHERE OBJECTID = {numeric_id}
+                           GROUP BY OBJECTID""",
+                    )
+                    if not rows.empty:
+                        row = rows.iloc[0]
+                        return {
+                            "buildingId": str(int(row.OBJECTID)),
+                            "siteId": f"Grid {int(row.grid_id)}",
+                            "id.grid.coarse": int(row.grid_id),
+                            "coarseGridId": int(row.grid_id),
+                            "primarySpaceUsage": str(row.use_type or "Commercial"),
+                            "specificSpaceUsage": row.specific_use_type,
+                            "buildingType": row.building_type,
+                            "sqm": float(row.area or 0),
+                            "footprintAreaM2": (
+                                float(row.footprint_area)
+                                if pd.notna(row.footprint_area)
+                                else None
+                            ),
+                            "yearBuilt": int(row.year_built or 0),
+                            "idfKw": row.idf_kw,
+                            "latitude": (
+                                float(row.latitude) if pd.notna(row.latitude) else None
+                            ),
+                            "longitude": (
+                                float(row.longitude) if pd.notna(row.longitude) else None
+                            ),
+                            "recentDemandKwh": None,
+                            "predictedDemandKwh": None,
+                            "lastTimestamp": (
+                                pd.Timestamp(row.last_timestamp).isoformat()
+                                if pd.notna(row.last_timestamp)
+                                else None
+                            ),
+                        }
+                except Exception:
+                    continue
+
+        return None
+
     @staticmethod
     def _commercial_range_days(time_range: str) -> int:
         ranges = {"1D": 1, "7D": 7, "1M": 30, "3M": 90, "1Y": 365}

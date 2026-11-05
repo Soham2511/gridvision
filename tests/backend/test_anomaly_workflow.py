@@ -221,3 +221,57 @@ def test_api_workflow_trigger_and_download(tmp_path: Path):
     )
     assert download_resp.status_code == 200
     assert download_resp.data.startswith(b"%PDF-")
+
+
+def test_workflow_service_multiple_runs_same_event_id(tmp_path: Path):
+    """Verify that multiple analysis runs with the same event_id (e.g. EVT_000001) both execute and send emails."""
+    store = AIApplicationStore(tmp_path / "app.sqlite")
+    store.initialize()
+    priv = PrivateFileStore(tmp_path / "private")
+    priv.initialize()
+
+    config = {
+        "REPORT_EMAIL_SMTP_HOST": "smtp.gmail.com",
+        "REPORT_EMAIL_DEFAULT_RECIPIENT": "kanak.nagar64@gmail.com",
+    }
+    sent_emails = []
+
+    def fake_send_report_email(**kwargs):
+        sent_emails.append(kwargs)
+
+    with patch("app.services.anomaly_workflow_service.send_report_email", side_effect=fake_send_report_email):
+        service = AnomalyWorkflowService(store, priv, config)
+
+        # Run 1
+        res1 = service.process_event(
+            event=SAMPLE_EVENT,
+            run={"run_id": "RUN_001"},
+            persona="household",
+            entity_id=546503,
+        )
+        assert res1["overall_status"] == "COMPLETED"
+        assert res1["email_status"] == "SUCCESS"
+        assert len(sent_emails) == 1
+
+        # Run 2 with the SAME event_id ('EVT_TEST_001') but different run_id ('RUN_002')
+        res2 = service.process_event(
+            event=SAMPLE_EVENT,
+            run={"run_id": "RUN_002"},
+            persona="household",
+            entity_id=546503,
+        )
+        assert res2["overall_status"] == "COMPLETED"
+        assert res2["email_status"] == "SUCCESS"
+        assert res2["execution_id"] != res1["execution_id"]
+        assert len(sent_emails) == 2  # Run 2 sent its own email!
+
+        # Deduplication within Run 2
+        res2_dup = service.process_event(
+            event=SAMPLE_EVENT,
+            run={"run_id": "RUN_002"},
+            persona="household",
+            entity_id=546503,
+        )
+        assert res2_dup["execution_id"] == res2["execution_id"]
+        assert len(sent_emails) == 2  # Deduplicated within run 2, no extra email
+

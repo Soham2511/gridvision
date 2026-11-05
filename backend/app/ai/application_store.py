@@ -65,7 +65,7 @@ class AIApplicationStore:
                         ON ai_notifications(recipient_context, created_at);
                     CREATE TABLE IF NOT EXISTS anomaly_workflow_executions (
                         execution_id TEXT PRIMARY KEY,
-                        event_id TEXT UNIQUE NOT NULL,
+                        event_id TEXT NOT NULL,
                         run_id TEXT NOT NULL,
                         persona TEXT NOT NULL,
                         customer_id TEXT,
@@ -81,7 +81,8 @@ class AIApplicationStore:
                         error_message TEXT,
                         retry_count INTEGER DEFAULT 0,
                         created_at TEXT NOT NULL,
-                        updated_at TEXT NOT NULL
+                        updated_at TEXT NOT NULL,
+                        UNIQUE(event_id, run_id)
                     );
                     CREATE INDEX IF NOT EXISTS anomaly_workflow_executions_run_idx
                         ON anomaly_workflow_executions(run_id);
@@ -266,9 +267,14 @@ class AIApplicationStore:
                     ),
                 )
                 row = connection.execute(
-                    "SELECT * FROM anomaly_workflow_executions WHERE event_id = ?",
-                    (event_id,),
+                    "SELECT * FROM anomaly_workflow_executions WHERE event_id = ? AND run_id = ?",
+                    (event_id, run_id),
                 ).fetchone()
+                if row is None:
+                    row = connection.execute(
+                        "SELECT * FROM anomaly_workflow_executions WHERE event_id = ?",
+                        (event_id,),
+                    ).fetchone()
                 if row is None:
                     raise ApplicationStoreError("Unable to persist workflow execution record.")
                 return dict(row)
@@ -278,6 +284,7 @@ class AIApplicationStore:
     def update_workflow_execution(
         self,
         event_id: str,
+        run_id: str | None = None,
         **kwargs: Any,
     ) -> dict[str, Any] | None:
         valid_fields = {
@@ -295,34 +302,44 @@ class AIApplicationStore:
         }
         updates = {k: v for k, v in kwargs.items() if k in valid_fields}
         if not updates:
-            return self.get_workflow_execution(event_id)
+            return self.get_workflow_execution(event_id, run_id=run_id)
 
         now = self._now()
         updates["updated_at"] = now
         set_clauses = [f"{k} = ?" for k in updates.keys()]
-        values = list(updates.values()) + [event_id]
+        where_clause = "WHERE event_id = ? AND run_id = ?" if run_id else "WHERE event_id = ?"
+        where_values = [event_id, run_id] if run_id else [event_id]
+        values = list(updates.values()) + where_values
 
         try:
             with closing(self._connect()) as connection, connection:
                 connection.execute(
-                    f"UPDATE anomaly_workflow_executions SET {', '.join(set_clauses)} WHERE event_id = ?",
+                    f"UPDATE anomaly_workflow_executions SET {', '.join(set_clauses)} {where_clause}",
                     values,
                 )
                 row = connection.execute(
-                    "SELECT * FROM anomaly_workflow_executions WHERE event_id = ?",
-                    (event_id,),
+                    f"SELECT * FROM anomaly_workflow_executions {where_clause} ORDER BY created_at DESC LIMIT 1",
+                    where_values,
                 ).fetchone()
                 return dict(row) if row else None
         except sqlite3.Error as exc:
             raise ApplicationStoreError("Unable to update workflow execution record.") from exc
 
-    def get_workflow_execution(self, event_id: str) -> dict[str, Any] | None:
+    def get_workflow_execution(
+        self, event_id: str, run_id: str | None = None
+    ) -> dict[str, Any] | None:
         try:
             with closing(self._connect()) as connection:
-                row = connection.execute(
-                    "SELECT * FROM anomaly_workflow_executions WHERE event_id = ?",
-                    (event_id,),
-                ).fetchone()
+                if run_id:
+                    row = connection.execute(
+                        "SELECT * FROM anomaly_workflow_executions WHERE event_id = ? AND run_id = ?",
+                        (event_id, run_id),
+                    ).fetchone()
+                else:
+                    row = connection.execute(
+                        "SELECT * FROM anomaly_workflow_executions WHERE event_id = ? ORDER BY created_at DESC LIMIT 1",
+                        (event_id,),
+                    ).fetchone()
                 return dict(row) if row else None
         except sqlite3.Error as exc:
             raise ApplicationStoreError("Unable to read workflow execution record.") from exc

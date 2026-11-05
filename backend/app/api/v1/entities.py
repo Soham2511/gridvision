@@ -41,14 +41,17 @@ def get_commercial_building(building_id: str):
         require_approved_source("commercial_gold", "Commercial Gold dataset")
         provider = current_app.extensions["commercial_history_provider"]
         try:
-            bldg = next(
-                (
-                    item
-                    for item in provider.get_commercial_buildings()
-                    if item["buildingId"] == building_id
-                ),
-                None,
-            )
+            if hasattr(provider, "get_commercial_building"):
+                bldg = provider.get_commercial_building(building_id)
+            else:
+                bldg = next(
+                    (
+                        item
+                        for item in provider.get_commercial_buildings()
+                        if item["buildingId"] == building_id
+                    ),
+                    None,
+                )
             provenance = provider.get_commercial_source_metadata()
         except Exception as exc:
             raise AppError(

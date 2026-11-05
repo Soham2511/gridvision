@@ -119,6 +119,12 @@ export const ProfilePage: React.FC = () => {
   const [buildingProfileLoading, setBuildingProfileLoading] = useState(false);
   const [buildingError, setBuildingError] = useState<string | null>(null);
   const [switchNotice, setSwitchNotice] = useState<string | null>(null);
+  const [buildingIdInput, setBuildingIdInput] = useState('');
+  const [verifyingBuildingId, setVerifyingBuildingId] = useState(false);
+  const [buildingIdVerification, setBuildingIdVerification] = useState<{
+    message: string;
+    valid: boolean;
+  } | null>(null);
 
   useEffect(() => {
     if (currentPersona !== 'household' && currentPersona !== 'commercial') return;
@@ -203,6 +209,87 @@ export const ProfilePage: React.FC = () => {
       cancelled = true;
     };
   }, [currentPersona, activeEntity]);
+
+  useEffect(() => {
+    if (currentPersona !== 'commercial' || !activeEntity) return;
+    if (commercialBuildings.some((b) => b.buildingId === activeEntity)) return;
+
+    let cancelled = false;
+    analyticsService
+      .getCommercialBuilding(activeEntity)
+      .then((bldg) => {
+        if (!cancelled && bldg && bldg.buildingId) {
+          setCommercialBuildings((prev) =>
+            prev.some((b) => b.buildingId === bldg.buildingId) ? prev : [bldg, ...prev]
+          );
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [currentPersona, activeEntity, commercialBuildings]);
+
+  const verifyAndSelectEntity = async () => {
+    const targetId = buildingIdInput.trim();
+    setBuildingIdVerification(null);
+    setBuildingError(null);
+    if (!targetId) {
+      setBuildingIdVerification({
+        message: `Please enter a numeric ${isComm ? 'building' : 'resident / meter'} ID.`,
+        valid: false,
+      });
+      return;
+    }
+
+    setVerifyingBuildingId(true);
+    try {
+      if (currentPersona === 'commercial') {
+        const bldg = await analyticsService.getCommercialBuilding(targetId);
+        if (!bldg || !bldg.buildingId) {
+          throw new Error(`Commercial building '${targetId}' not found.`);
+        }
+        setCommercialBuildings((prev) =>
+          prev.some((b) => b.buildingId === bldg.buildingId) ? prev : [bldg, ...prev]
+        );
+        setActiveEntity(bldg.buildingId);
+        setBuildingIdVerification({
+          message: `Building ${bldg.buildingId} (${bldg.buildingType || bldg.primarySpaceUsage || 'Commercial'}) verified and selected.`,
+          valid: true,
+        });
+        setSwitchNotice(
+          `Active building changed to ${bldg.buildingId}. Dashboard, telemetry, and notifications updated.`
+        );
+        window.setTimeout(() => setSwitchNotice(null), 4000);
+      } else {
+        const profile = await modelService.getResidentialBuildingProfile(targetId);
+        if (!profile || !profile.entityId) {
+          throw new Error(`Resident / Meter '${targetId}' not found in Customer records.`);
+        }
+        setResidentialEntityIds((prev) =>
+          prev.includes(String(profile.entityId)) ? prev : [...prev, String(profile.entityId)]
+        );
+        setActiveEntity(String(profile.entityId));
+        setResidentialBuildingProfile(profile);
+        setBuildingIdVerification({
+          message: `Resident / Meter ${profile.entityId} verified and selected.`,
+          valid: true,
+        });
+        setSwitchNotice(
+          `Active resident changed to ${profile.entityId}. Dashboard, telemetry, and notifications updated.`
+        );
+        window.setTimeout(() => setSwitchNotice(null), 4000);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'Verification failed.';
+      setBuildingIdVerification({
+        message: `${isComm ? 'Building' : 'Resident / Meter'} ${targetId} could not be verified: ${msg}`,
+        valid: false,
+      });
+    } finally {
+      setVerifyingBuildingId(false);
+    }
+  };
 
   const selectedCommercialBuilding = commercialBuildings.find(
     (building) => building.buildingId === activeEntity
@@ -445,15 +532,17 @@ export const ProfilePage: React.FC = () => {
               </p>
             </div>
             {(isComm || currentPersona === 'household') && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.85rem', flexWrap: 'wrap' }}>
                 <label style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', color: '#0F172A', fontSize: '0.86rem', fontWeight: 700 }}>
-                  <span>{isComm ? 'Switch Facility / Building:' : 'Switch Active Resident / Meter:'}</span>
+                  <span>{isComm ? 'Select Building:' : 'Select Resident / Meter:'}</span>
                   <select
                     aria-label={isComm ? 'Select building ID' : 'Select residential meter ID'}
                     value={activeEntity}
                     onChange={(event) => {
                       const newId = event.target.value;
                       setActiveEntity(newId);
+                      setBuildingIdInput(newId);
+                      setBuildingIdVerification(null);
                       setSwitchNotice(`Active ${isComm ? 'building' : 'user'} changed to ${newId}. Dashboard, telemetry, and notifications updated.`);
                       window.setTimeout(() => setSwitchNotice(null), 4000);
                     }}
@@ -466,7 +555,7 @@ export const ProfilePage: React.FC = () => {
                       padding: '0.55rem 0.85rem',
                       fontSize: '0.85rem',
                       fontWeight: 700,
-                      minWidth: '220px',
+                      minWidth: '200px',
                       cursor: 'pointer',
                     }}
                   >
@@ -490,9 +579,68 @@ export const ProfilePage: React.FC = () => {
                     ))}
                   </select>
                 </label>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', color: '#0F172A', fontSize: '0.86rem', fontWeight: 700 }}>
+                    <span>Type an ID:</span>
+                    <input
+                      aria-label={isComm ? 'Type commercial building ID' : 'Type residential meter ID'}
+                      inputMode="numeric"
+                      value={buildingIdInput}
+                      onChange={(event) => {
+                        setBuildingIdInput(event.target.value);
+                        setBuildingIdVerification(null);
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter') {
+                          event.preventDefault();
+                          void verifyAndSelectEntity();
+                        }
+                      }}
+                      placeholder={isComm ? 'e.g. 466, 50073, 2487692' : 'e.g. 546503, 382'}
+                      style={{
+                        border: '1.5px solid #CBD5E1',
+                        borderRadius: '8px',
+                        background: '#FFFFFF',
+                        color: '#0F172A',
+                        padding: '0.55rem 0.75rem',
+                        fontSize: '0.85rem',
+                        fontWeight: 600,
+                        minWidth: '160px',
+                      }}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    className="gv-button gv-button-secondary"
+                    onClick={() => void verifyAndSelectEntity()}
+                    disabled={verifyingBuildingId || !buildingIdInput.trim()}
+                    style={{ padding: '0.55rem 0.95rem', fontSize: '0.85rem', fontWeight: 600, cursor: 'pointer' }}
+                  >
+                    {verifyingBuildingId ? 'Verifying…' : 'Verify ID'}
+                  </button>
+                </div>
               </div>
             )}
           </div>
+          {buildingIdVerification && (
+            <div
+              role={buildingIdVerification.valid ? 'status' : 'alert'}
+              style={{
+                backgroundColor: buildingIdVerification.valid ? '#ECFDF5' : '#FEF2F2',
+                border: `1px solid ${buildingIdVerification.valid ? '#A7F3D0' : '#FECACA'}`,
+                color: buildingIdVerification.valid ? '#065F46' : '#991B1B',
+                padding: '0.75rem 1rem',
+                borderRadius: '8px',
+                fontSize: '0.85rem',
+                fontWeight: 600,
+                marginBottom: '1rem',
+              }}
+            >
+              {buildingIdVerification.valid ? '✓ ' : '✕ '}
+              {buildingIdVerification.message}
+            </div>
+          )}
           {switchNotice && (
             <div
               role="status"
