@@ -42,6 +42,14 @@ class ForecastService:
         return self.data_provider.get_regional_sites()
 
     def get_commercial_building(self, building_id: str) -> dict[str, Any] | None:
+        if hasattr(self.model_provider, "get_commercial_building"):
+            bldg = self.model_provider.get_commercial_building(building_id)
+            if bldg is not None:
+                return bldg
+        if hasattr(self.data_provider, "get_commercial_building"):
+            bldg = self.data_provider.get_commercial_building(building_id)
+            if bldg is not None:
+                return bldg
         return next((row for row in self.get_commercial_buildings() if row["buildingId"] == building_id), None)
 
     def get_regional_site(self, site_id: str) -> dict[str, Any] | None:

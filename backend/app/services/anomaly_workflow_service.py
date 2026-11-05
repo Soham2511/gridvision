@@ -75,13 +75,14 @@ class AnomalyWorkflowService:
         self.private_store.initialize()
 
         # Step 0: Deduplication Check
-        existing = self.store.get_workflow_execution(event_id)
-        if existing and existing.get("overall_status") == "COMPLETED":
+        existing = self.store.get_workflow_execution(event_id, run_id=run_id)
+        if existing and existing.get("overall_status") == "COMPLETED" and existing.get("email_status") == "SUCCESS":
             logger.info(
                 "anomaly_workflow_deduplicated",
                 extra={
                     "event": {
                         "event_id": event_id,
+                        "run_id": run_id,
                         "status": "COMPLETED",
                         "message": "Event already processed; returning cached execution.",
                     }
@@ -93,6 +94,7 @@ class AnomalyWorkflowService:
         if existing:
             self.store.update_workflow_execution(
                 event_id,
+                run_id=run_id,
                 overall_status="IN_PROGRESS",
                 retry_count=retry_count,
             )
@@ -118,7 +120,7 @@ class AnomalyWorkflowService:
         # Step 1: Rectification JSON Diagnosis Generation
         # -------------------------------------------------------------
         try:
-            self.store.update_workflow_execution(event_id, json_status="IN_PROGRESS")
+            self.store.update_workflow_execution(event_id, run_id=run_id, json_status="IN_PROGRESS")
             payload_model = RectificationAgent.generate_rectification_payload(
                 event=event,
                 run=run,
@@ -127,7 +129,7 @@ class AnomalyWorkflowService:
                 customer_email=customer_email,
             )
             payload_dict = payload_model.model_dump()
-            self.store.update_workflow_execution(event_id, json_status="SUCCESS")
+            self.store.update_workflow_execution(event_id, run_id=run_id, json_status="SUCCESS")
             logger.info(
                 "anomaly_workflow_json_success",
                 extra={
@@ -143,6 +145,7 @@ class AnomalyWorkflowService:
             logger.error("anomaly_workflow_json_failed", extra={"event": {"event_id": event_id, "error": str(exc)}})
             self.store.update_workflow_execution(
                 event_id,
+                run_id=run_id,
                 json_status="FAILED",
                 overall_status="FAILED",
                 error_message=err_msg,
@@ -153,7 +156,7 @@ class AnomalyWorkflowService:
         # Step 2: Report Agent PDF and HTML Generation
         # -------------------------------------------------------------
         try:
-            self.store.update_workflow_execution(event_id, report_status="IN_PROGRESS")
+            self.store.update_workflow_execution(event_id, run_id=run_id, report_status="IN_PROGRESS")
             pdf_bytes = self.pdf_renderer.render_anomaly_report(payload_dict)
             pdf_artifact_id = self.private_store.store(pdf_bytes)
 
@@ -194,12 +197,13 @@ class AnomalyWorkflowService:
                     "rectification": payload_dict,
                 },
                 artifact_id=html_artifact_id,
-                idempotency_key=f"anomaly_report:{event_id}",
+                idempotency_key=f"anomaly_report:{run_id}:{event_id}",
             )
             report_id = report_record["report_id"]
 
             self.store.update_workflow_execution(
                 event_id,
+                run_id=run_id,
                 report_status="SUCCESS",
                 report_id=report_id,
                 pdf_artifact_id=pdf_artifact_id,
@@ -213,6 +217,7 @@ class AnomalyWorkflowService:
             logger.error("anomaly_workflow_report_failed", extra={"event": {"event_id": event_id, "error": str(exc)}})
             self.store.update_workflow_execution(
                 event_id,
+                run_id=run_id,
                 report_status="FAILED",
                 overall_status="FAILED",
                 error_message=err_msg,
@@ -226,11 +231,13 @@ class AnomalyWorkflowService:
         recipient = (
             customer_email
             or str(self._get_config_value("REPORT_EMAIL_DEFAULT_RECIPIENT", "")).strip()
+            or str(self._get_config_value("REPORT_EMAIL_FROM_ADDRESS", "")).strip()
+            or str(self._get_config_value("REPORT_EMAIL_SMTP_USERNAME", "")).strip()
         )
         smtp_host = str(self._get_config_value("REPORT_EMAIL_SMTP_HOST", "")).strip()
 
         if recipient and re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", recipient) and smtp_host:
-            self.store.update_workflow_execution(event_id, email_status="IN_PROGRESS", email_recipient=recipient)
+            self.store.update_workflow_execution(event_id, run_id=run_id, email_status="IN_PROGRESS", email_recipient=recipient)
             delivered = False
             last_email_err: Exception | None = None
             for attempt in range(1, self.max_email_retries + 1):
@@ -256,7 +263,7 @@ class AnomalyWorkflowService:
                     )
                     delivered = True
                     email_status = "SUCCESS"
-                    self.store.update_workflow_execution(event_id, email_status="SUCCESS")
+                    self.store.update_workflow_execution(event_id, run_id=run_id, email_status="SUCCESS")
                     logger.info(
                         "anomaly_workflow_email_success",
                         extra={"event": {"event_id": event_id, "recipient": recipient, "attempt": attempt}},
@@ -279,6 +286,7 @@ class AnomalyWorkflowService:
                 )
                 self.store.update_workflow_execution(
                     event_id,
+                    run_id=run_id,
                     email_status="FAILED",
                     error_message=f"Email delivery failed after {self.max_email_retries} attempts: {last_email_err}",
                 )
@@ -287,13 +295,13 @@ class AnomalyWorkflowService:
                 "anomaly_workflow_email_skipped",
                 extra={"event": {"event_id": event_id, "reason": "No valid recipient or SMTP unconfigured"}},
             )
-            self.store.update_workflow_execution(event_id, email_status="SKIPPED")
+            self.store.update_workflow_execution(event_id, run_id=run_id, email_status="SKIPPED")
 
         # -------------------------------------------------------------
         # Step 4: Persistent Website Notification
         # -------------------------------------------------------------
         try:
-            self.store.update_workflow_execution(event_id, notification_status="IN_PROGRESS")
+            self.store.update_workflow_execution(event_id, run_id=run_id, notification_status="IN_PROGRESS")
             notif_title = f"Anomaly Alert: {payload_model.dominant_anomaly_type} ({payload_model.severity.level})"
             meter_info = f"Meter #{resolved_customer}" if resolved_customer else "Grid Sensor"
             notif_body = (
@@ -304,13 +312,14 @@ class AnomalyWorkflowService:
 
             notif = self.store.notify(
                 recipient_context=target_context,
-                event_key=f"anomaly-event:{event_id}:report:{report_id}",
+                event_key=f"anomaly-event:{run_id}:{event_id}:report:{report_id}",
                 notification_type="anomaly_alert",
                 title=notif_title,
                 body=notif_body,
             )
             self.store.update_workflow_execution(
                 event_id,
+                run_id=run_id,
                 notification_status="SUCCESS",
                 notification_id=notif["notification_id"],
             )
@@ -323,6 +332,7 @@ class AnomalyWorkflowService:
             logger.error("anomaly_workflow_notification_failed", extra={"event": {"event_id": event_id, "error": str(exc)}})
             self.store.update_workflow_execution(
                 event_id,
+                run_id=run_id,
                 notification_status="FAILED",
                 overall_status="FAILED",
                 error_message=err_msg,
@@ -337,7 +347,7 @@ class AnomalyWorkflowService:
         else:
             overall_status = "PARTIAL"
 
-        final_record = self.store.update_workflow_execution(event_id, overall_status=overall_status)
+        final_record = self.store.update_workflow_execution(event_id, run_id=run_id, overall_status=overall_status)
         logger.info(
             "anomaly_workflow_finished",
             extra={
@@ -393,10 +403,10 @@ class AnomalyWorkflowService:
                 })
         return results
 
-    def get_execution(self, event_id: str) -> dict[str, Any] | None:
+    def get_execution(self, event_id: str, run_id: str | None = None) -> dict[str, Any] | None:
         """Fetch tracking record for a given anomaly event."""
         self.store.initialize()
-        return self.store.get_workflow_execution(event_id)
+        return self.store.get_workflow_execution(event_id, run_id=run_id)
 
     def list_executions(self, run_id: str | None = None, limit: int = 50) -> list[dict[str, Any]]:
         """List execution records with optional run_id filtering."""

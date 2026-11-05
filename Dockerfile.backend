@@ -30,4 +30,4 @@ COPY training ./training
 COPY backend/run.py ./run.py
 
 EXPOSE 5000
-CMD ["waitress-serve", "--host=0.0.0.0", "--port=5000", "run:app"]
+CMD ["waitress-serve", "--host=0.0.0.0", "--port=5000", "--channel-timeout=300", "--threads=6", "run:app"]
