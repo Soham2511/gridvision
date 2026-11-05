@@ -43,8 +43,11 @@ class ResolveReferenceParameterTool(BaseTool):
 
     name: str = "resolve_reference_parameter"
     description: str = (
-        "Look up an exact, verified numerical engineering or regulatory parameter from the authoritative reference database. "
-        "Returns the exact numerical value, unit of measurement, effective dates, and legal source provenance."
+        "Resolve a known technical/reference identifier to an approved value, unit, jurisdiction, "
+        "and source. Use when a calculation needs an exact registered tariff, lighting, appliance, "
+        "or grid parameter; provide the identifier and category, not a free-form question. For "
+        "BEE appliance specs use lookup_appliance_benchmark, and for official text use "
+        "search_regulatory_documents."
     )
     args_schema: Type[BaseModel] = ResolveReferenceParameterInput
     resolver: Optional[ReferenceResolver] = None
@@ -118,8 +121,11 @@ class LookupApplianceBenchmarkTool(BaseTool):
 
     name: str = "lookup_appliance_benchmark"
     description: str = (
-        "Look up verified Bureau of Energy Efficiency (BEE) technical specifications for household appliances, "
-        "including rated input power, cooling capacity, ISEER efficiency rating, and annual kWh consumption."
+        "Look up registered Bureau of Energy Efficiency benchmark specifications for an appliance "
+        "type and star rating, such as AC, refrigerator, ceiling fan, or water heater. Use when "
+        "the customer asks for verified rating limits, rated power, ISEER/efficiency, or annual "
+        "energy benchmarks. Returns verified reference data when available; it does not identify "
+        "a particular product or its market price."
     )
     args_schema: Type[BaseModel] = LookupApplianceBenchmarkInput
     resolver: Optional[ReferenceResolver] = None
@@ -166,7 +172,11 @@ class LookupGridEmissionFactorTool(BaseTool):
     """Resolves the verified Central Electricity Authority (CEA) grid carbon emission factor."""
 
     name: str = "lookup_grid_emission_factor"
-    description: str = "Retrieve the official CEA baseline grid carbon emission factor (0.82 kg CO2/kWh) for computing avoided emissions."
+    description: str = (
+        "Retrieve the verified CEA electricity-grid carbon intensity for a jurisdiction. Use "
+        "when calculating emissions or avoided CO2 from kWh; do not use for household bill, "
+        "tariff, or usage questions. Returns kg CO2 per kWh and source."
+    )
     args_schema: Type[BaseModel] = LookupGridEmissionFactorInput
     resolver: Optional[ReferenceResolver] = None
 

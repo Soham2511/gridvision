@@ -80,6 +80,13 @@ export const DemandForecastingPage: React.FC = () => {
         setPairedNotice('Demo provider output is hidden. Connect verified commercial and government models to view forecasts.');
       } else if (result.paired_horizon.length === 0) {
         setPairedNotice('No paired forecast history is available for this building and grid.');
+      } else {
+        const availableHours = new Set(result.paired_horizon.map((point) => point.horizon_hours));
+        const missingHours = Array.from({ length: 24 }, (_, index) => index + 1)
+          .filter((hour) => !availableHours.has(hour));
+        if (missingHours.length > 0) {
+          setPairedNotice(`Partial paired forecast: no matching hourly point is available for hour(s) ${missingHours.join(', ')}. Available paired hours are shown.`);
+        }
       }
     } catch (err) {
       if (requestId !== pairedRequestId.current) return;
@@ -556,13 +563,15 @@ export const DemandForecastingPage: React.FC = () => {
           <div role="status" aria-live="polite" style={{ padding: '2rem', textAlign: 'center' }}>Loading commercial and government forecasts…</div>
         ) : sector === 'commercial' && pairedError ? (
           <ErrorState title="Paired forecast unavailable" message={pairedError} onRetry={() => void loadCommercialPair(selectedBldgId)} />
-        ) : sector === 'commercial' && (pairedNotice || commercialSeries.length === 0) ? (
+        ) : sector === 'commercial' && commercialSeries.length === 0 ? (
           <div role="status" style={{ padding: '2rem', textAlign: 'center' }}>
             <p>{pairedNotice ?? 'No paired forecast history is available for this building and grid.'}</p>
           </div>
         ) : sector !== 'commercial' && timeSeries.length === 0 ? (
           <div role="status" style={{ padding: '2rem', textAlign: 'center' }}>No forecast history is available.</div>
         ) : (
+        <>
+        {sector === 'commercial' && pairedNotice && <div role="status" className="gv-card">{pairedNotice}</div>}
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={sector === 'commercial' ? commercialSeries : timeSeries} margin={{ top: 15, right: 25, left: 0, bottom: 0 }}>
             <defs>
@@ -599,6 +608,7 @@ export const DemandForecastingPage: React.FC = () => {
             {sector === 'commercial' && <Line type="monotone" dataKey="totalGridDemandPrediction" name={`Government total-grid model · ${pairedForecast?.government_forecast.model.model_name}`} stroke="var(--gv-color-grid-blue)" strokeWidth={2.5} strokeDasharray="3 4" dot={{ r: 4, fill: 'var(--gv-color-grid-blue)' }} connectNulls={false} />}
           </ComposedChart>
         </ResponsiveContainer>
+        </>
         )}
       </ChartCard>
 

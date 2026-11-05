@@ -30,6 +30,7 @@ class AssistantService:
         *,
         route_government_queries: bool = True,
         llm_provider: Any = None,
+        residential_llm_provider: Any = None,
         tariff_rate: float = 10.0,
         authorized_meters: list[str] | None = None,
         temperature: float = 0.2,
@@ -48,13 +49,14 @@ class AssistantService:
         )
         self._anomaly_assistant: AnomalyAssistant | None = None
         self.llm_provider = llm_provider
+        self.residential_llm_provider = residential_llm_provider or llm_provider
         self.prediction_service = prediction_service
         self.residential_orchestrator = None
         try:
             from app.services.assistant.orchestrator import ResidentialAssistantOrchestrator
             self.residential_orchestrator = ResidentialAssistantOrchestrator(
                 data_provider=data_provider,
-                llm_provider=llm_provider,
+                llm_provider=self.residential_llm_provider,
                 tariff_rate=tariff_rate,
                 authorized_meters=authorized_meters,
                 temperature=temperature,
@@ -110,10 +112,17 @@ class AssistantService:
                     user_id=principal or user_id,
                     conversation_id=conversation_id,
                 )
-                if res and res.get("status") not in ("error", None):
+                if res:
                     return res
             except Exception as exc:
-                logger.warning("Residential orchestrator encountered error, falling back: %s", exc)
+                logger.warning("Residential orchestrator encountered an error: %s", exc)
+                return {
+                    "answer": "The residential assistant could not complete this request. No unverified answer was generated.",
+                    "persona": persona,
+                    "entityId": entity_id,
+                    "status": "error",
+                    "isLlmGenerated": False,
+                }
         return self._answer_anomaly_query(
             prompt=prompt,
             persona=persona,

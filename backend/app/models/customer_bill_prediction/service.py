@@ -108,9 +108,14 @@ class CustomerBillPredictionService:
                 "Customer bill model artifact checksum does not match its metadata."
             )
 
-        training_package = self.artifact_path.parents[1] / "training"
-        if training_package.is_dir() and str(training_package) not in sys.path:
-            sys.path.insert(0, str(training_package))
+        training_package_candidates = (
+            self.artifact_path.parents[1] / "training",
+            self.artifact_path.parents[2] / "training",
+        )
+        for training_package in training_package_candidates:
+            if training_package.is_dir() and str(training_package) not in sys.path:
+                sys.path.insert(0, str(training_package))
+                break
         try:
             artifact = joblib.load(self.artifact_path)
         except (OSError, ImportError, AttributeError, ValueError) as exc:

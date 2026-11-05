@@ -39,6 +39,9 @@ from app.interfaces.assistant.tools.comparison_tools import (
 from app.interfaces.assistant.tools.consumption_tools import (
     QueryConsumptionHistoryTool,
 )
+from app.interfaces.assistant.tools.complaint_tools import (
+    GetResidentialComplaintCategoriesTool,
+)
 from app.interfaces.assistant.tools.customer_context_tools import (
     GetCustomerApplianceInventoryTool,
     GetCustomerPremisesProfileTool,
@@ -90,7 +93,7 @@ def create_residential_tools(
     The LLM has zero authority to supply or modify the meter ID; it is injected server-side.
     If include_knowledge_tools=True, adds Document RAG, Structured Reference, and Customer Context tools.
     tool_scope allows dynamic pruning ('all', 'telemetry_and_billing', 'regulatory_and_standards',
-    'planning_and_upgrades', 'balanced_core') to reduce prompt tokens and latency while preserving full AI capabilities.
+    'planning_and_upgrades', 'balanced_core', 'complaint_guidance') to reduce prompt tokens and latency while preserving full AI capabilities.
     """
     if tool_scope == "context_only":
         return []
@@ -167,6 +170,8 @@ def create_residential_tools(
         )
 
     if include_knowledge_tools:
+        all_tools.append(GetResidentialComplaintCategoriesTool())
+
         # Customer operational context tools
         all_tools.append(GetCustomerPremisesProfileTool(authorized_meter_id=authorized_meter_id))
         all_tools.append(GetCustomerApplianceInventoryTool(authorized_meter_id=authorized_meter_id))
@@ -202,8 +207,6 @@ def create_residential_tools(
                 "resolve_reference_parameter",
                 "lookup_appliance_benchmark",
                 "lookup_grid_emission_factor",
-                "plan_house_energy",
-                "analyze_appliance_scenario",
             },
             "planning_and_upgrades": {
                 "plan_house_energy",
@@ -226,12 +229,14 @@ def create_residential_tools(
                 "query_consumption_history",
                 "resolve_reference_parameter",
             },
+            "complaint_guidance": {
+                "get_residential_complaint_categories",
+            },
         }
-        allowed_names = scope_map.get(tool_scope, set())
-        if allowed_names:
-            selected_tools = [t for t in all_tools if t.name in allowed_names]
-        else:
-            selected_tools = all_tools
+        if tool_scope not in scope_map:
+            raise ValueError(f"Unsupported residential assistant tool scope: {tool_scope!r}")
+        allowed_names = scope_map[tool_scope]
+        selected_tools = [t for t in all_tools if t.name in allowed_names]
 
     logger.info(
         "Registered %d residential LangChain tools (scope='%s') for authorized meter '%s'",

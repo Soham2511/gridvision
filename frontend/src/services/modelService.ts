@@ -48,6 +48,8 @@ class ModelService {
     model: { model_name: string; model_version: string; provider: string; evaluation_status: string };
     entity_id: string;
     horizon: Array<{ timestamp: string; horizon_hours: number; prediction: number; actual?: number }>;
+    is_partial?: boolean;
+    missing_horizon_hours?: number[];
   }> {
     return apiClient.post(`/models/${encodeURIComponent(modelId)}/predict`, {
       entity_id: entityId,

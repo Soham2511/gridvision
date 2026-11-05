@@ -436,11 +436,20 @@ def predict_forecast_model(model_id: str):
     status = provider.get_forecast_model_info(sector)
     if status.get("is_demo"):
         raise AppError("The registered champion model is unavailable.", code="MODEL_UNAVAILABLE", status_code=503)
-    return success_response({
+    forecast_horizon = provider.predict_horizon(sector, entity_id, horizon)
+    response = {
         "model": status,
         "entity_id": entity_id,
-        "horizon": provider.predict_horizon(sector, entity_id, horizon),
-    })
+        "horizon": forecast_horizon,
+    }
+    if sector == "commercial":
+        available_hours = {point["horizon_hours"] for point in forecast_horizon}
+        missing_hours = [
+            hour for hour in range(1, horizon + 1) if hour not in available_hours
+        ]
+        response["is_partial"] = bool(missing_hours)
+        response["missing_horizon_hours"] = missing_hours
+    return success_response(response)
 
 
 @bp.route("/models/anomaly-prediction/runs", methods=["GET"])

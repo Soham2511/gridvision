@@ -175,6 +175,11 @@ services:
       MLFLOW_TRACKING_URI: http://mlflow:5001
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-${GRIDVISION_OLLAMA_BASE_URL:-http://host.docker.internal:11434}}
       OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3:8b}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GROQ_API_KEY_2: ${GROQ_API_KEY_2:-}
+      GROQ_BASE_URL: ${GROQ_BASE_URL:-https://api.groq.com/openai/v1}
+      GROQ_MODEL: ${GROQ_MODEL:-openai/gpt-oss-20b}
+      RESIDENTIAL_GROQ_FALLBACK_MODELS: ${RESIDENTIAL_GROQ_FALLBACK_MODELS:-openai/gpt-oss-20b,qwen/qwen3.8-27b,openai/gpt-oss-120b,allam-2-7b,meta-llama/llama-prompt-guard-2-22m,meta-llama/llama-prompt-guard-2-86m}
       ASSISTANT_TIMEOUT_SECONDS: ${ASSISTANT_TIMEOUT_SECONDS:-180}
       ASSISTANT_COMPLEX_TIMEOUT_SECONDS: ${ASSISTANT_COMPLEX_TIMEOUT_SECONDS:-300}
       DATABASE_URL: ${DATABASE_URL:-sqlite:////data/reference.db}
@@ -264,6 +269,8 @@ services:
       - ./models/segmentation:/models/segmentation:ro
       - ./models/commercial:/models/commercial:ro
       - ./models/customer_bill_prediction.metadata.json:/models/customer_bill_prediction.metadata.json:ro
+      - ./models/customer_bill_prediction:/models/customer_bill_prediction:ro
+      - ./training/customer_bill:/models/training/customer_bill:ro
       - ${GRIDVISION_LOG_DIR:-./logs}:/logs
     ports:
       - "127.0.0.1:${GRIDVISION_BACKEND_HOST_PORT:-5000}:5000"

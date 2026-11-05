@@ -43,12 +43,12 @@ class DuckDBAnalyticalAdapter:
         where_clauses = ['"OBJECTID" = ?', '"normalized_building_energy_kwh" >= 0']
 
         if start_date:
-            where_clauses.append('"timestamp" >= ?')
+            where_clauses.append('CAST("timestamp" AS TIMESTAMP) >= ?::TIMESTAMP')
             params.append(start_date)
 
         if end_date:
             # Inclusive end-of-day filter
-            where_clauses.append('"timestamp" <= ?')
+            where_clauses.append('CAST("timestamp" AS TIMESTAMP) <= ?::TIMESTAMP')
             # If date only (e.g. 2018-05-31), include up to 23:59:59
             end_bound = f"{end_date} 23:59:59" if len(end_date) == 10 else end_date
             params.append(end_bound)

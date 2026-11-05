@@ -102,10 +102,23 @@ class BaseConfig:
     )
     OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3:8b")
 
-    # Inactive Groq Settings (Retained for manual switch-back)
+    # Residential assistant Groq settings; other personas keep their own providers.
     GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+    GROQ_API_KEY_2 = os.getenv("GROQ_API_KEY_2", "")
     GROQ_BASE_URL = os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1")
-    GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
+    GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-20b")
+    RESIDENTIAL_GROQ_FALLBACK_MODELS = tuple(
+        dict.fromkeys(
+            model.strip()
+            for model in os.getenv(
+                "RESIDENTIAL_GROQ_FALLBACK_MODELS",
+                "openai/gpt-oss-20b,qwen/qwen3.8-27b,openai/gpt-oss-120b,"
+                "allam-2-7b,meta-llama/llama-prompt-guard-2-22m,"
+                "meta-llama/llama-prompt-guard-2-86m",
+            ).split(",")
+            if model.strip()
+        )
+    )
     ASSISTANT_TEMPERATURE = float(os.getenv("ASSISTANT_TEMPERATURE", "0.2"))
     ASSISTANT_MAX_TOKENS = int(os.getenv("ASSISTANT_MAX_TOKENS", "800"))
     ASSISTANT_TIMEOUT_SECONDS = float(os.getenv("ASSISTANT_TIMEOUT_SECONDS", "60.0"))

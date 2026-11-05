@@ -245,6 +245,16 @@ def create_app(config_class: type[BaseConfig] | None = None) -> Flask:
         base_url=app.config.get("OLLAMA_BASE_URL", "http://localhost:11434"),
         model=app.config.get("OLLAMA_MODEL", "qwen3:8b"),
     )
+    residential_llm_provider = (
+        llm_provider
+        if app.testing
+        else GroqLLMAdapter(
+            api_key=app.config.get("GROQ_API_KEY", ""),
+            base_url=app.config.get("GROQ_BASE_URL", "https://api.groq.com/openai/v1"),
+            model=app.config.get("GROQ_MODEL", "openai/gpt-oss-20b"),
+            fallback_models=app.config.get("RESIDENTIAL_GROQ_FALLBACK_MODELS"),
+        )
+    )
 
     # Instantiate business services
     health_svc = HealthService(data_provider, model_provider)
@@ -273,6 +283,7 @@ def create_app(config_class: type[BaseConfig] | None = None) -> Flask:
         anomaly_service=anomaly_prediction_svc,
         route_government_queries=not app.testing,
         llm_provider=llm_provider,
+        residential_llm_provider=residential_llm_provider,
         tariff_rate=app.config.get("CUSTOMER_TARIFF_INR_PER_KWH", 10.0),
         authorized_meters=app.config.get("AUTHORIZED_RESIDENTIAL_METERS"),
         temperature=app.config.get("ASSISTANT_TEMPERATURE", 0.2),

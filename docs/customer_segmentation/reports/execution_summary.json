@@ -1,6 +1,6 @@
 {
-  "airflow_run_id": "manual__2026-11-04T00:00:00+00:00",
-  "completed_at_utc": "2026-11-04T11:54:39.637622+00:00",
+  "airflow_run_id": "manual__2026-11-03T00:00:00+00:00",
+  "completed_at_utc": "2026-11-03T10:58:16.222814+00:00",
   "dag_id": "government_customer_segmentation",
   "feature_generation": {
     "eligible_buildings": 5034,
@@ -24,37 +24,37 @@
       "target_segment_concentration": 0.4
     }
   },
-  "logical_date": "2026-11-04 00:00:00+00:00",
+  "logical_date": "2026-11-03 00:00:00+00:00",
   "mlflow": {
     "experiment": "gridvision-government-customer-segmentation",
     "models": [
       {
         "model_category": "Commercial",
         "registered_model_name": "gridvision-government-customer-segmentation-commercial",
-        "version": "1"
+        "version": "2"
       },
       {
         "model_category": "Industrial",
         "registered_model_name": "gridvision-government-customer-segmentation-industrial",
-        "version": "1"
+        "version": "2"
       },
       {
         "model_category": "Residential",
         "registered_model_name": "gridvision-government-customer-segmentation-residential",
-        "version": "1"
+        "version": "2"
       },
       {
         "model_category": "SHARED_SMALL_CATEGORIES",
         "registered_model_name": "gridvision-government-customer-segmentation-shared_small_categories",
-        "version": "1"
+        "version": "2"
       }
     ],
-    "run_id": "723251e32c0a45ae84431640d0d6ed98"
+    "run_id": "0a6d046a980647b98956c717d6bbe995"
   },
   "models": {
     "assignment_count": 5034,
     "model_count": 4,
-    "model_version": "segmentation-v1-20261104T115317Z",
+    "model_version": "segmentation-v1-20261103T105654Z",
     "models": [
       {
         "algorithm": "kmeans",
@@ -188,7 +188,7 @@
       "SHARED_SMALL_CATEGORIES"
     ],
     "model_dir": "/opt/gridvision/models/segmentation",
-    "model_version": "segmentation-v1-20261104T115317Z",
+    "model_version": "segmentation-v1-20261103T105654Z",
     "output_dir": "/opt/gridvision/data/segmentation",
     "parquet_row_counts": {
       "cluster_daily_profile.parquet": 63,

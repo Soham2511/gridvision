@@ -112,7 +112,7 @@ class ApiClient {
     const timeoutDuration =
       timeoutMs ||
       options?.timeoutMs ||
-      (path.includes('/assistant/chat') ? 75000 : 30000);
+      (path.includes('/assistant/chat') ? 130000 : 30000);
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeoutDuration);
