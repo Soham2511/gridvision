@@ -203,7 +203,11 @@ class AssistantService:
                     "Artifact request follows the previous Government result.",
                 )
             else:
-                route = route_query(prompt, prior_context=prior_context)
+                route = route_query(
+                    prompt,
+                    prior_context=prior_context,
+                    default_assistant="government",
+                )
             logger.info(
                 "government_assistant_route_selected",
                 extra={

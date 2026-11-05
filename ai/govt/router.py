@@ -6,6 +6,7 @@ import argparse
 import importlib
 import json
 import os
+import re
 import sys
 import urllib.error
 import urllib.request
@@ -14,15 +15,6 @@ from pathlib import Path
 from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-ANOMALY_EXAMPLES = PROJECT_ROOT / "ai" / "anamoly" / "demo_queries.txt"
-GOVT_EXAMPLES = (
-    PROJECT_ROOT
-    / "ai"
-    / "Govt_interpretion+redistribution_plan"
-    / "docs"
-    / "QUERY_EXAMPLES.md"
-)
-
 ROUTE_SCHEMA = {
     "type": "object",
     "properties": {
@@ -45,10 +37,21 @@ historical government demand, grid IDs, redistribution plans, synthetic supply,
 surplus/deficit, grid-to-grid transfers, transmission losses, and government
 forecast CSV or image outputs.
 
-Use examples as routing guidance only. A date by itself does not identify a
-domain. If the question gives no usable domain signal and prior context does not
-resolve it, select clarify. Do not answer the user's question or invent facts.
+A date by itself does not identify a domain. If the question gives no usable
+domain signal and prior context does not resolve it, select clarify. Do not
+answer the user's question or invent facts.
 """
+
+ANOMALY_INTENT = re.compile(
+    r"\b(anomal(?:y|ies)|outage|voltage|power quality|root cause|"
+    r"rectification|anomaly detection)\b",
+    re.IGNORECASE,
+)
+GOVERNMENT_INTENT = re.compile(
+    r"\b(government|grid(?:s)?|redistribution|energy demand|demand forecast|"
+    r"historical demand|surplus|deficit|transmission loss(?:es)?|grid transfer)\b",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -57,31 +60,42 @@ class AssistantRoute:
     reason: str
 
 
-def _example_context() -> str:
-    sections: list[str] = []
-    for label, path in (
-        ("Anomaly assistant examples", ANOMALY_EXAMPLES),
-        ("Government assistant examples", GOVT_EXAMPLES),
-    ):
-        try:
-            content = path.read_text(encoding="utf-8")
-        except OSError:
-            content = ""
-        if content:
-            sections.append(f"{label}:\n{content[:5000]}")
-    return "\n\n".join(sections)
-
-
 def route_query(
     query: str,
     *,
     model: str | None = None,
     ollama_url: str | None = None,
     prior_context: str | None = None,
+    default_assistant: str | None = None,
 ) -> AssistantRoute:
-    """Use local Ollama to choose the assistant, grounded in both query guides."""
+    """Route clear intents directly and use Ollama for ambiguous requests."""
     if not query.strip():
         raise ValueError("Please enter a non-empty question.")
+    if default_assistant not in {None, "anomaly", "government", "clarify"}:
+        raise ValueError("default_assistant must be a supported assistant route.")
+
+    # Route explicit domain requests without spending time on a second model
+    # call. The Government page also supplies its persona as the safe default
+    # for ordinary questions that do not mention either domain explicitly.
+    anomaly_intent = ANOMALY_INTENT.search(query)
+    government_intent = GOVERNMENT_INTENT.search(query)
+    if anomaly_intent and not government_intent:
+        return AssistantRoute(
+            "anomaly", "The question explicitly asks about power anomalies."
+        )
+    if government_intent and not anomaly_intent:
+        return AssistantRoute(
+            "government", "The question explicitly asks about government-grid data."
+        )
+    if default_assistant is not None:
+        if anomaly_intent:
+            return AssistantRoute(
+                "anomaly", "The question explicitly asks about power anomalies."
+            )
+        return AssistantRoute(
+            default_assistant, "Using the Government page's configured default route."
+        )
+
     model = model or os.getenv("GRIDVISION_ROUTER_MODEL", "qwen3:8b")
     ollama_url = (
         ollama_url
@@ -89,17 +103,21 @@ def route_query(
         or os.getenv("GRIDVISION_ANOMALY_OLLAMA_BASE_URL")
         or os.getenv("OLLAMA_HOST", "http://localhost:11434")
     ).rstrip("/")
+    # Long README and examples pasted into every request made local routing
+    # needlessly slow (the previous prompt timed out after 120 seconds). Keep
+    # routing inputs compact; the policy and representative intents are already
+    # stated in the system prompt.
     user_payload = {
-        "user_question": query,
-        "prior_context": prior_context or "",
-        "query_examples_and_documentation": _example_context(),
+        "user_question": query[:4000],
+        "prior_context": (prior_context or "")[-1500:],
     }
     payload = json.dumps(
         {
             "model": model,
             "stream": False,
+            "think": False,
             "format": ROUTE_SCHEMA,
-            "options": {"temperature": 0},
+            "options": {"temperature": 0, "num_ctx": 4096, "num_predict": 128},
             "messages": [
                 {"role": "system", "content": ROUTER_SYSTEM_PROMPT},
                 {"role": "user", "content": json.dumps(user_payload, ensure_ascii=False)},
@@ -113,14 +131,14 @@ def route_query(
         method="POST",
     )
     try:
-        with urllib.request.urlopen(request, timeout=120) as response:
+        with urllib.request.urlopen(request, timeout=60) as response:
             body = json.loads(response.read().decode("utf-8"))
         result_text = body.get("message", {}).get("content")
         result = json.loads(result_text) if isinstance(result_text, str) else None
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+        reason = "timed out" if isinstance(exc, TimeoutError) else "failed"
         raise RuntimeError(
-            f"Ollama query routing failed at {ollama_url}. Check that Ollama is running "
-            f"and model {model!r} is available."
+            f"Ollama query routing {reason} at {ollama_url} using model {model!r}: {exc}"
         ) from exc
     if not isinstance(result, dict) or result.get("assistant") not in {
         "anomaly",

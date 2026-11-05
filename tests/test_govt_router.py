@@ -23,7 +23,7 @@ class _OllamaResponse:
         return json.dumps(self.payload).encode("utf-8")
 
 
-def test_route_query_uses_both_domains_examples_and_prior_context(monkeypatch):
+def test_route_query_uses_compact_prompt_and_prior_context(monkeypatch):
     captured: dict[str, object] = {}
 
     def fake_urlopen(request, timeout):
@@ -52,9 +52,30 @@ def test_route_query_uses_both_domains_examples_and_prior_context(monkeypatch):
     payload = captured["payload"]
     assert isinstance(payload, dict)
     user_message = payload["messages"][1]["content"]
-    assert "What anomalies were found" in user_message
-    assert "redistribution" in user_message.lower()
+    assert "Show the plan for the next day" in user_message
     assert "2018-09-24" in user_message
+    assert payload["options"]["num_ctx"] == 4096
+    assert payload["options"]["num_predict"] == 128
+    assert payload["think"] is False
+
+
+def test_government_page_uses_fast_domain_default(monkeypatch):
+    def fail_if_called(*_args, **_kwargs):
+        raise AssertionError("A clear Government-page route should not call Ollama routing")
+
+    monkeypatch.setattr(router.urllib.request, "urlopen", fail_if_called)
+
+    assert router.route_query(
+        "Show the next day's government demand",
+        default_assistant="government",
+    ) == router.AssistantRoute(
+        "government", "The question explicitly asks about government-grid data."
+    )
+    assert router.route_query(
+        "Analyze the latest voltage anomaly",
+        default_assistant="government",
+    ).assistant == "anomaly"
+    assert router.route_query("Show the redistribution plan").assistant == "government"
 
 
 def test_route_query_rejects_unknown_assistant(monkeypatch):
