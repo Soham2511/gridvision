@@ -36,6 +36,7 @@ class IntelligentRouter:
         "tariff_resolution",
         "regulatory_standards_rag",
         "electricity_knowledge_rag",
+        "complaint_center_guidance",
         "house_energy_planning",
         "appliance_lifecycle_analysis",
         "cost_management",
@@ -149,6 +150,8 @@ class IntelligentRouter:
                     "house_energy_planning for planning a home installation; "
                     "appliance_lifecycle_analysis for appliance selection or upgrades; "
                     "cost_management for reducing household energy costs; "
+                    "complaint_center_guidance for requests to report, file, or get help "
+                    "with a residential utility or electrical complaint; "
                     "general_energy_query for other electricity-related requests; "
                     "general_chat for greetings or small talk; irrelevant only when "
                     "unrelated to electricity or GridVision."
@@ -270,6 +273,10 @@ class IntelligentRouter:
                 **common,
             )
         intent_tools = {
+            "complaint_center_guidance": (
+                "complaint_guidance",
+                ["get_residential_complaint_categories"],
+            ),
             "tariff_resolution": (
                 "telemetry_and_billing",
                 ["resolve_reference_parameter", "get_customer_premises_profile"],

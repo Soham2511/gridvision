@@ -37,6 +37,9 @@ from app.domain.complaints.rules import ComplaintValidationPolicy
 from app.infrastructure.database.connection import get_session
 from app.infrastructure.database.models.complaint import ComplaintModel
 from app.services.assistant.agentic_orchestrator import AgenticKnowledgeOrchestrator
+from app.services.assistant.dialogue_state import resolve_dialogue_context
+from app.services.assistant.intelligent_router import IntelligentRouter
+from app.interfaces.assistant.tools.registry import create_residential_tools
 
 
 @pytest.fixture(autouse=True)
@@ -624,25 +627,44 @@ class TestComplaintEndToEndEndpoints:
 
 
 class TestAssistantComplaintRouting:
-    """Tests for conversational assistant intent detection and routing."""
+    """Tests for LLM-routed, read-only Complaint Centre guidance."""
 
-    def test_assistant_routes_complaint_intent_with_category(self):
-        """Assistant detects complaint queries and guides resident to Complaint Centre."""
-        orchestrator = AgenticKnowledgeOrchestrator()
+    def test_complaint_guidance_uses_llm_intent_and_live_catalogue_tool(self):
+        class ComplaintIntentModel:
+            def is_available(self):
+                return True
 
-        # Query about outage
-        reply_outage = orchestrator._check_complaint_intent("I want to complain about a power cut in my house", meter_id="2254213")
-        assert reply_outage is not None
-        assert "Complaint Centre" in reply_outage.answer
-        assert "Power Supply Interruption" in reply_outage.answer
-        assert "/app/complaints" in reply_outage.answer
+            def generate_chat_completion(self, messages, temperature=0.2, max_tokens=800):
+                return '{"intent":"complaint_center_guidance"}'
 
-        # Query about electrical safety hazard
-        reply_safety = orchestrator._check_complaint_intent("There are sparks coming from my switchboard, who do I report to?", meter_id="2254213")
-        assert reply_safety is not None
-        assert "Electrical Safety Concerns" in reply_safety.answer
-        assert "Safety Precaution" in reply_safety.answer or "emergency services" in reply_safety.answer
+        prompt = "The sockets are dead in the kitchen. Where should I report it?"
+        intent = IntelligentRouter.classify_intent(
+            prompt,
+            llm_provider=ComplaintIntentModel(),
+        )
+        plan = IntelligentRouter.create_routing_plan(
+            prompt,
+            resolve_dialogue_context(prompt),
+            classified_intent=intent,
+        )
 
-        # Normal inquiry should not trigger complaint interceptor
-        reply_normal = orchestrator._check_complaint_intent("What was my total electricity usage last week?", meter_id="2254213")
-        assert reply_normal is None
+        assert plan.primary_intent == "complaint_center_guidance"
+        assert plan.requires_tool_execution is True
+        assert plan.recommended_tools == ["get_residential_complaint_categories"]
+
+        tools = create_residential_tools(
+            authorized_meter_id="2254213",
+            include_knowledge_tools=True,
+            tool_scope=plan.resolved_tool_scope,
+        )
+        complaint_tool = next(
+            tool for tool in tools
+            if tool.name == "get_residential_complaint_categories"
+        )
+        categories = json.loads(complaint_tool.invoke({}))
+        outage = next(
+            category for category in categories
+            if category["category_id"] == "power_supply_interruption"
+        )
+        assert outage["label"] == "Power Supply Interruption"
+        assert any(field["field_id"] == "incident_start" for field in outage["fields"])

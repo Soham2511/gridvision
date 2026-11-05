@@ -42,6 +42,7 @@ from app.services.assistant.dialogue_state import (
 )
 from app.services.rag.retriever import HybridDocumentRetriever, RetrievedChunk
 from app.services.reference.resolver import ReferenceResolver
+from app.services.reference.exceptions import ReferenceResolutionError
 
 logger = logging.getLogger("gridvision.services.assistant.agentic")
 
@@ -105,85 +106,6 @@ class AgenticKnowledgeOrchestrator:
 
         return primary_mode, sources
 
-    def _check_complaint_intent(
-        self,
-        prompt: str,
-        meter_id: str,
-        customer_name: Optional[str] = None,
-    ) -> Optional[AssistantResponseContract]:
-        """Recognize complaint filing / grievance reporting intent and route to Complaint Centre."""
-        p = prompt.lower()
-        complaint_triggers = [
-            "complaint", "complain", "grievance", "dispute", "file a report", "lodge a complaint",
-            "raise a complaint", "register a complaint", "report an outage", "report a power cut",
-            "report a fault", "report sparking", "report shock", "burning smell",
-            "report voltage", "faulty meter", "bill dispute", "report to",
-        ]
-        is_complaint = any(t in p for t in complaint_triggers)
-        if not is_complaint:
-            if ("fluctuat" in p or "outage" in p or "power cut" in p or "sparking" in p) and any(w in p for w in ["report", "raise", "file", "register", "action"]):
-                is_complaint = True
-
-        if not is_complaint:
-            return None
-
-        # Determine best matching category
-        if any(w in p for w in ["spark", "smoke", "shock", "burning", "fire", "leakage", "hazard"]):
-            cat_label = "Electrical Safety Concerns"
-            guidance = "describe the exact hazard location, whether active sparking or burning smell is present, and if anyone was affected."
-            safety_banner = (
-                "\n\n> ⚠️ **Urgent Safety Precaution:** If you observe active sparking, burning smells, or electric shock, "
-                "stay clear of the hazard immediately and contact emergency services or a licensed electrical professional."
-            )
-        elif any(w in p for w in ["outage", "blackout", "no power", "power cut", "cut", "interrupted", "tripping"]):
-            cat_label = "Power Supply Interruption"
-            guidance = "specify when the interruption started, whether power is still unavailable, and if the entire household is affected."
-            safety_banner = ""
-        elif any(w in p for w in ["voltage", "fluctuat", "flicker", "surge", "dim lights"]):
-            cat_label = "Voltage Fluctuation & Power Quality"
-            guidance = "mention when the fluctuations started, whether it is continuous or intermittent, and which rooms or appliances are affected."
-            safety_banner = ""
-        elif any(w in p for w in ["meter", "reading", "display", "tamper", "meter faulty"]):
-            cat_label = "Meter & Meter Reading Issues"
-            guidance = "describe the observed discrepancy, when it started, and whether the digital display is readable."
-            safety_banner = ""
-        elif any(w in p for w in ["bill", "tariff", "overcharge", "dispute", "charged twice"]):
-            cat_label = "Billing & Consumption Issues"
-            guidance = "specify the disputed billing cycle month, the billed amount, and why you believe there is a discrepancy."
-            safety_banner = ""
-        elif any(w in p for w in ["solar", "inverter", "pv", "generation drop"]):
-            cat_label = "Solar & Distributed Energy Issues"
-            guidance = "note any inverter fault codes displayed and when the drop in generation was first observed."
-            safety_banner = ""
-        elif any(w in p for w in ["ev", "charger", "charging", "vehicle"]):
-            cat_label = "EV Charging Infrastructure Issues"
-            guidance = "describe your charger rating and whether the breaker trips immediately upon plugging in."
-            safety_banner = ""
-        else:
-            cat_label = "Other Electrical & Utility Issues"
-            guidance = "provide a summary title and detailed description of the service issue."
-            safety_banner = ""
-
-        answer_text = (
-            f"You can register this official issue through the **Complaint Centre** under **{cat_label}**.{safety_banner}\n\n"
-            "**How to register and track:**\n"
-            "1. Open the [Complaint Centre](/app/complaints) tab from the navigation sidebar.\n"
-            f"2. Click **Register a New Complaint** and select **{cat_label}**.\n"
-            f"3. Fill in the required details ({guidance}).\n"
-            "4. Submit for automated AI validation against your meter telemetry.\n\n"
-            "Once submitted, our **Complaint Validator Agent** evaluates the issue against your smart meter records, "
-            "and valid or inconclusive issues proceed to **Severity Scoring** with full tracking in your history."
-        )
-
-        return AssistantResponseContract(
-            answer=answer_text,
-            mode="general_chat",
-            entityId=meter_id,
-            customerName=customer_name,
-            status="success",
-            assumptions=[f"Directed customer to Complaint Centre category: {cat_label}"],
-        )
-
     def process_query(
         self,
         prompt: str,
@@ -193,33 +115,6 @@ class AgenticKnowledgeOrchestrator:
         explicit_mode: Optional[str] = None,
     ) -> AssistantResponseContract:
         """Process query through agentic knowledge routing and return structured response contract."""
-        p_low = prompt.lower()
-        # Early check for Unsupported / Unanswerable query across any mode (Scenario I)
-        if any(k in p_low for k in ["xyz-9999", "alien tech", "nuclear fusion", "unsupported tariff 99", "unverified model"]):
-            return AssistantResponseContract(
-                answer=(
-                    "**Requested Information Unavailable in Verified Knowledge Base:**\n\n"
-                    f"The specified specification or parameter referenced in your query (`{prompt}`) "
-                    "could not be found in our verified reference registries or official standards databases (BEE, CEA, BIS).\n\n"
-                    "> **Safety Directive:** GridVision adheres strictly to verified engineering data and does not "
-                    "estimate or hallucinate unapproved technical specifications or unverified tariff rates.\n\n"
-                    "**Next Steps:**\n"
-                    "- Please provide the official manufacturer model number or gazetted tariff order name.\n"
-                    "- Alternatively, select from registered appliance categories (e.g., BEE 1 to 5-Star Split ACs or Frost-Free Refrigerators)."
-                ),
-                mode="general_chat",
-                entityId=meter_id,
-                customerName=customer_name,
-                status="unsupported",
-                missing_information=["Specific unverified appliance model or tariff rate not in approved reference database."],
-                limitations=["No synthetic or extrapolated numerical data is provided for unregistered models."],
-            )
-
-        # Check for Complaint Filing / Grievance Reporting Intent
-        complaint_guidance = self._check_complaint_intent(prompt, meter_id, customer_name)
-        if complaint_guidance:
-            return complaint_guidance
-
         resolved_state = resolve_dialogue_context(prompt, history=history, explicit_mode=explicit_mode)
         mode = resolved_state.resolved_mode
         effective_prompt = resolved_state.effective_prompt
@@ -347,6 +242,131 @@ class AgenticKnowledgeOrchestrator:
     # Mode 1: General Chat / Standards / Telemetry / Unsupported
 
     # =================================================================
+    def _synthesize_document_answer(
+        self,
+        prompt: str,
+        docs: List[RetrievedChunk],
+        safety_specific: bool,
+    ) -> Optional[str]:
+        """Synthesize a response using only the passages returned by the retriever."""
+        if not self.llm_provider or not self.llm_provider.is_available():
+            return None
+
+        evidence = [
+            {
+                "publisher": doc.publisher,
+                "document_identifier": doc.document_identifier,
+                "heading": doc.heading,
+                "clause_id": doc.clause_id,
+                "page": doc.page_number,
+                "content": doc.content,
+            }
+            for doc in docs
+        ]
+        safety_instruction = (
+            " If the question describes immediate danger, tell the user to move away "
+            "and contact emergency services or a licensed electrical professional. "
+            "Do not provide instructions for handling live electrical hazards."
+            if safety_specific
+            else ""
+        )
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "Answer the user's question using only the supplied retrieved evidence. "
+                    "Do not add technical limits, code requirements, or facts that are not "
+                    "explicitly supported by that evidence. If it does not answer part of "
+                    "the question, say so plainly. Cite a source only using its supplied "
+                    "publisher and document identifier. Keep the answer concise."
+                    + safety_instruction
+                    + "\nRetrieved evidence (JSON): "
+                    + json.dumps(evidence, ensure_ascii=True)
+                ),
+            },
+            {"role": "user", "content": prompt},
+        ]
+        try:
+            answer = self.llm_provider.generate_chat_completion(
+                messages=messages,
+                temperature=0.1,
+                max_tokens=700,
+            )
+            return answer.strip() if isinstance(answer, str) and answer.strip() else None
+        except Exception as exc:
+            logger.warning("Grounded document answer synthesis failed: %s", exc)
+            return None
+
+    def _explain_missing_appliance_reference(
+        self,
+        prompt: str,
+        identifier: str,
+    ) -> Optional[str]:
+        """Explain a failed exact appliance lookup without substituting a generic benchmark."""
+        if not self.llm_provider or not self.llm_provider.is_available():
+            return None
+
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "A lookup in GridVision's approved appliance reference registry found no "
+                    "record for the supplied identifier. Tell the user that an exact verified "
+                    "specification cannot be provided, do not substitute a generic category "
+                    "benchmark as if it applied to this model, and ask for a registered model "
+                    "identifier or permission to discuss category-level benchmarks."
+                ),
+            },
+            {
+                "role": "user",
+                "content": f"Request: {prompt}\nUnresolved identifier: {identifier}",
+            },
+        ]
+        try:
+            answer = self.llm_provider.generate_chat_completion(
+                messages=messages,
+                temperature=0.1,
+                max_tokens=250,
+            )
+            return answer.strip() if isinstance(answer, str) and answer.strip() else None
+        except Exception as exc:
+            logger.warning("Missing appliance reference explanation failed: %s", exc)
+            return None
+
+    def _synthesize_household_data_answer(
+        self,
+        prompt: str,
+        verified_data: Dict[str, Any],
+    ) -> Optional[str]:
+        """Explain household telemetry without inferring missing readings or causes."""
+        if not self.llm_provider or not self.llm_provider.is_available():
+            return None
+
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "Answer using only the verified household telemetry JSON. Do not infer "
+                    "missing measurements, estimate a previous period, or attribute changes "
+                    "to specific appliances or causes unless the data supports that conclusion. "
+                    "Explain when a requested comparison cannot be calculated from the supplied data."
+                    "\nVerified telemetry (JSON): "
+                    + json.dumps(verified_data, ensure_ascii=True, default=str)
+                ),
+            },
+            {"role": "user", "content": prompt},
+        ]
+        try:
+            answer = self.llm_provider.generate_chat_completion(
+                messages=messages,
+                temperature=0.1,
+                max_tokens=500,
+            )
+            return answer.strip() if isinstance(answer, str) and answer.strip() else None
+        except Exception as exc:
+            logger.warning("Grounded household telemetry synthesis failed: %s", exc)
+            return None
+
     def _handle_general_chat_mode(
         self,
         prompt: str,
@@ -362,27 +382,6 @@ class AgenticKnowledgeOrchestrator:
         limitations: List[str] = []
         missing_info: List[str] = []
 
-        # 1. Check for Unsupported / Unanswerable Query (Scenario I)
-        if any(k in p for k in ["xyz-9999", "nuclear fusion generator", "unsupported tariff 99", "alien tech"]):
-            return AssistantResponseContract(
-                answer=(
-                    "**Requested Information Unavailable in Verified Knowledge Base:**\n\n"
-                    f"The specified specification or parameter referenced in your query (`{prompt}`) "
-                    "could not be found in our verified reference registries or official standards databases (BEE, CEA, BIS).\n\n"
-                    "> **Safety Directive:** GridVision adheres strictly to verified engineering data and does not "
-                    "estimate or hallucinate unapproved technical specifications or unverified tariff rates.\n\n"
-                    "**Next Steps:**\n"
-                    "- Please provide the official manufacturer model number or gazetted tariff order name.\n"
-                    "- Alternatively, select from registered appliance categories (e.g., BEE 1 to 5-Star Split ACs or Frost-Free Refrigerators)."
-                ),
-                mode="general_chat",
-                entityId=meter_id,
-                customerName=customer_name,
-                status="unsupported",
-                missing_information=["Specific unverified appliance model or tariff rate not in approved reference database."],
-                limitations=["No synthetic or extrapolated numerical data is provided for unregistered models."],
-            )
-
         # 2. Check for Household Historical Consumption Analysis (Scenario C)
         if any(k in p for k in ["previous month", "last month", "higher compared", "consumption higher", "why is my"]):
             sources_used.append(KnowledgeSourceType.HOUSEHOLD_TELEMETRY.value)
@@ -390,26 +389,35 @@ class AgenticKnowledgeOrchestrator:
 
             if household_ctx:
                 billing = household_ctx.get("billingCycleStatus", {})
-                period = household_ctx.get("periodAnalysis", {})
+                recent_metrics = household_ctx.get("recentConsumptionMetrics", {})
                 last_dt = billing.get("lastRecordedDate", "recent readings")
-                curr_kwh = billing.get("currentMonthKwh", 0.0)
-                prev_kwh = period.get("totalKwh", 0.0) or (curr_kwh * 0.85)
-                delta_kwh = round(curr_kwh - prev_kwh, 1) if prev_kwh else 0.0
-
-                answer = (
-                    f"### Household Consumption Analysis for `{meter_id}`\n\n"
-                    f"Based on your verified smart meter readings up to **{last_dt}**:\n\n"
-                    f"- **Current Period Consumption:** `{curr_kwh:.1f} kWh`\n"
-                    f"- **Previous Benchmark Consumption:** `{prev_kwh:.1f} kWh`\n"
-                    f"- **Net Variance:** `{'+' if delta_kwh >= 0 else ''}{delta_kwh:.1f} kWh` ({'+' if delta_kwh >= 0 else ''}{((delta_kwh / max(1.0, prev_kwh)) * 100):.1f}%)\n\n"
-                    "**Key Factors Influencing Your Consumption:**\n"
-                    "1. **Seasonal HVAC Demand:** Cooling loads during summer or humid months contribute 40%–60% of total residential draw.\n"
-                    "2. **Continuous Basewattage (Phantom Loads):** Refrigeration and standby electronics running 24/7.\n"
-                    "3. **Tariff Tier Impact:** In multi-slab telescopic tariffs, crossing slab boundaries increases average unit billing rate.\n\n"
-                    "> **Data Provenance:** Historical readings derived deterministically from Medallion Parquet smart meter telemetry."
-                )
-                assumptions.append("Compared against immediately preceding billing interval in recorded meter dataset.")
-                limitations.append("Analysis is constrained to recorded smart meter intervals without disaggregated sub-metering sensors.")
+                curr_kwh = billing.get("actualCycleKwhSoFar")
+                prev_kwh = recent_metrics.get("previousMonthTotalKwh")
+                verified_data = {
+                    "meter_id": meter_id,
+                    "last_recorded_date": last_dt,
+                    "current_period_consumption_kwh": curr_kwh,
+                    "previous_period_consumption_kwh": prev_kwh,
+                }
+                answer = self._synthesize_household_data_answer(prompt, verified_data)
+                if not answer:
+                    lines = [f"Verified household readings for `{meter_id}` through **{last_dt}**:"]
+                    if curr_kwh is not None:
+                        lines.append(f"- Current period recorded consumption: `{float(curr_kwh):.1f} kWh`.")
+                    if prev_kwh is not None:
+                        lines.append(f"- Previous period recorded consumption: `{float(prev_kwh):.1f} kWh`.")
+                    if curr_kwh is not None and prev_kwh is not None and float(prev_kwh) != 0:
+                        delta_kwh = float(curr_kwh) - float(prev_kwh)
+                        change_pct = delta_kwh / abs(float(prev_kwh)) * 100
+                        lines.append(
+                            f"- Recorded change: `{'+' if delta_kwh >= 0 else ''}{delta_kwh:.1f} kWh` "
+                            f"({'+' if change_pct >= 0 else ''}{change_pct:.1f}%)."
+                        )
+                        assumptions.append("Change calculated only from the two recorded period totals shown.")
+                    else:
+                        limitations.append("A verified prior-period total is unavailable, so no comparison was calculated.")
+                    answer = "\n".join(lines)
+                limitations.append("Aggregate household telemetry does not identify appliance-level causes.")
 
                 return AssistantResponseContract(
                     answer=answer,
@@ -555,34 +563,23 @@ class AgenticKnowledgeOrchestrator:
                 citations.append(d.to_citation())
 
             # Format answer grounded in retrieved document chunks
-            doc_excerpts_md = []
-            for d in docs[:3]:
-                doc_excerpts_md.append(
-                    f"#### [{d.publisher}] {d.document_identifier} — {d.heading}\n"
-                    f"{d.content.strip()}\n\n"
-                    f"*Source: {d.document_identifier}, Page {d.page_number}*"
-                )
-
-            if is_safety_specific:
+            answer = self._synthesize_document_answer(
+                prompt=prompt,
+                docs=docs[:4],
+                safety_specific=is_safety_specific,
+            )
+            if not answer:
+                excerpts = [
+                    f"[{doc.publisher}] {doc.document_identifier} — "
+                    f"{doc.heading or 'Retrieved passage'}\n{doc.content.strip()}"
+                    for doc in docs[:3]
+                ]
                 answer = (
-                    f"### Authoritative Electrical Safety Guidelines & Standards (IS 732 / NEC)\n\n"
-                    f"In response to your query: *\"{prompt}\"*:\n\n"
-                    + "\n\n---\n\n".join(doc_excerpts_md)
-                    + "\n\n### Practical Household Electrical Safety Guidelines:\n"
-                    "- **Residual Current Device (RCD/RCCB):** Mandatory installation of an RCCB rated **≤ 30 mA** for all residential 230V socket-outlet circuits to prevent fatal electrical shocks.\n"
-                    "- **Protective Earthing Continuity:** Ensure continuous three-pin earthing with total earth resistance **≤ 5.0 Ω** (preferably ≤ 1.0 Ω). Never remove or bypass the ground pin on appliances.\n"
-                    "- **Circuit Segregation & Conductor Sizing:** Segregate lighting sub-circuits (min **1.5 mm²** copper) from appliance power sub-circuits (min **2.5 to 4.0 mm²** copper). Avoid daisy-chaining multiple high-draw appliances into a single outlet.\n"
-                    "- **Wet Zone Demarcation (Bathrooms & Kitchens):** Adhere strictly to IS 732 Zone 0, 1, and 2 safety demarcation. Never place general 230V switches or outlets within 0.6 m of bathtubs or showers; use IPX4/IPX5 moisture-resistant fittings.\n"
-                    "- **Overcurrent & Fire Protection:** Equip all sub-circuits with Type-B or Type-C MCBs matched to conductor current limits. Never bridge tripped breakers or blown fuses with copper wire."
+                    "Retrieved source passages (shown without generated interpretation):\n\n"
+                    + "\n\n".join(excerpts)
                 )
                 limitations.append(
-                    "Specific site installation must be certified by a licensed electrical contractor under CEA safety regulations."
-                )
-            else:
-                answer = (
-                    f"### Verified Electricity Information\n\n"
-                    f"Relevant passages for *\"{prompt}\"*:\n\n"
-                    + "\n\n---\n\n".join(doc_excerpts_md)
+                    "LLM synthesis was unavailable; retrieved passages are shown without additional interpretation."
                 )
             assumptions.append("Answer grounded in passages retrieved from the document knowledge base.")
 
@@ -964,6 +961,39 @@ class AgenticKnowledgeOrchestrator:
             docs = self.retriever.search("BEE room air conditioner star rating schedule ISEER annual energy consumption", top_k=2)
             for d in docs:
                 citations.append(d.to_citation())
+
+        model_identifiers = re.findall(
+            r"\b(?=[A-Za-z0-9._-]*\d)[A-Za-z][A-Za-z0-9._-]*\b",
+            prompt,
+        )
+        for identifier in model_identifiers:
+            try:
+                (self.resolver or ReferenceResolver()).resolve(
+                    identifier=identifier,
+                    category="appliance",
+                    jurisdiction="IN",
+                )
+            except ReferenceResolutionError:
+                answer = self._explain_missing_appliance_reference(prompt, identifier)
+                return AssistantResponseContract(
+                    answer=answer or (
+                        f"No verified appliance reference is registered for `{identifier}`. "
+                        "I cannot provide an exact model specification or substitute a category benchmark."
+                    ),
+                    mode="appliance_lifecycle",
+                    entityId=meter_id,
+                    customerName=customer_name,
+                    status="unsupported",
+                    missing_information=[
+                        f"No approved appliance reference was found for identifier '{identifier}'."
+                    ],
+                    limitations=[
+                        "Category-level efficiency benchmarks do not verify an individual manufacturer model."
+                    ],
+                    provenance=AssistantProvenance(
+                        knowledge_sources_used=[KnowledgeSourceType.STRUCTURED_REFERENCE.value]
+                    ),
+                )
 
         # Check if query is looking up an exact appliance specification (Scenario B)
         is_spec_lookup = any(k in p for k in ["annual energy consumption", "what is the annual", "how much does a 5-star", "exact ac model", "iseer rating"]) and not any(k in p for k in ["replace", "replac", "payback", "compare"])

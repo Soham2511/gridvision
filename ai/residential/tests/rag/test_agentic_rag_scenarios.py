@@ -96,6 +96,37 @@ class TestAgenticRAGScenarios(unittest.TestCase):
         for c in res.citations:
             self.assertIn(c.publisher, ["BIS", "CEA", "BEE", "DISCOM"])
 
+    def test_rag_answer_uses_llm_synthesis_grounded_in_retrieved_passages(self):
+        class RecordingLLM:
+            def __init__(self):
+                self.messages = None
+
+            def is_available(self):
+                return True
+
+            def generate_chat_completion(self, messages, temperature=0.2, max_tokens=800):
+                self.messages = messages
+                return "The retrieved standard describes the relevant protective measure."
+
+        provider = RecordingLLM()
+        original_llm_provider = self.orchestrator.llm_provider
+        self.orchestrator.llm_provider = provider
+        try:
+            result = self.orchestrator.process_query(
+                "What does the standard say about electrical safety?",
+                meter_id="METER-1000",
+            )
+        finally:
+            self.orchestrator.llm_provider = original_llm_provider
+
+        self.assertEqual(
+            result.answer,
+            "The retrieved standard describes the relevant protective measure.",
+        )
+        self.assertTrue(result.citations)
+        self.assertIn("Retrieved evidence (JSON)", provider.messages[0]["content"])
+        self.assertIn(result.citations[0].document_identifier, provider.messages[0]["content"])
+
     # -----------------------------------------------------------------
     # Scenario B: Exact appliance specification
     # -----------------------------------------------------------------
@@ -122,6 +153,37 @@ class TestAgenticRAGScenarios(unittest.TestCase):
         self.assertIn("kWh", res.answer)
         self.assertIn("METER-1000", res.answer)
         self.assertIn("household_telemetry", res.provenance.knowledge_sources_used)
+
+    def test_missing_previous_month_data_is_not_inferred(self):
+        class IncompleteHouseholdContext:
+            def build_context(self, meter_id, prompt_intent=None):
+                return {
+                    "billingCycleStatus": {
+                        "lastRecordedDate": "2026-11-04",
+                        "actualCycleKwhSoFar": 123.4,
+                    },
+                    "recentConsumptionMetrics": {
+                        "previousMonthTotalKwh": None,
+                    },
+                }
+
+        original_context_builder = self.orchestrator.context_builder
+        self.orchestrator.context_builder = IncompleteHouseholdContext()
+        try:
+            result = self.orchestrator._handle_general_chat_mode(
+                prompt="Why is my consumption higher than the previous month?",
+                meter_id="METER-1000",
+                customer_name=None,
+                required_sources=[],
+            )
+        finally:
+            self.orchestrator.context_builder = original_context_builder
+
+        self.assertIn("123.4 kWh", result.answer)
+        self.assertNotIn("Previous period recorded consumption", result.answer)
+        self.assertTrue(
+            any("prior-period total is unavailable" in item for item in result.limitations)
+        )
 
     # -----------------------------------------------------------------
     # Scenario D: Mixed RAG and structured data
@@ -205,8 +267,11 @@ class TestAgenticRAGScenarios(unittest.TestCase):
         res: AssistantResponseContract = self.orchestrator.process_query(prompt, meter_id="METER-1000")
 
         self.assertEqual(res.status, "unsupported")
-        self.assertIn("Unavailable in Verified Knowledge Base", res.answer)
-        self.assertIn("does not estimate or hallucinate", res.answer)
+        self.assertIn("xyz-9999", res.answer)
+        self.assertNotIn("750 kWh", res.answer)
+        self.assertTrue(
+            any("xyz-9999" in item for item in res.missing_information)
+        )
         self.assertTrue(len(res.missing_information) > 0)
 
     # -----------------------------------------------------------------
