@@ -280,7 +280,13 @@ class TestDialogueStateAndContinuation(unittest.TestCase):
             )
 
         self.assertEqual(response.get("status"), "success")
-        self.assertIn("Verified Electricity Information", response.get("answer", ""))
+        self.assertIn("Retrieved source passages", response.get("answer", ""))
+        self.assertTrue(
+            any(
+                "LLM synthesis was unavailable" in limitation
+                for limitation in response.get("limitations", [])
+            )
+        )
         self.assertTrue(response.get("citations"))
         self.assertIn(
             "document_rag",
