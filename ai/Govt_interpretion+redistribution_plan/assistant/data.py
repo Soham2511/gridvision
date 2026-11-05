@@ -652,6 +652,7 @@ def calculate_summary(records: RetrievedRecords) -> dict[str, Any]:
         "forecast_date": records.forecast_date,
         "start_timestamp": records.start_timestamp,
         "end_timestamp": records.end_timestamp,
+        "requested_grid_ids": sorted(requested_grids),
         "interval_count": len(records.hourly_records),
         "grid_count": len(grids),
         "predicted_demand_total_kwh": sum(

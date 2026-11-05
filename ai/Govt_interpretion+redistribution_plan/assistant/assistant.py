@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from contextvars import ContextVar
 import json
 import logging
 import os
@@ -13,7 +14,7 @@ from functools import wraps
 from pathlib import Path
 from typing import Any, Callable
 
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import BaseModel, ConfigDict, ValidationError, field_validator
 
 from . import analysis
 from .data import (
@@ -59,6 +60,7 @@ from ..paths import (
     ASSISTANT_HISTORY_PATH,
     ASSISTANT_LOG_PATH,
     LANGSMITH_API_KEY_PATH,
+    PROJECT_ROOT,
 )
 
 DEFAULT_HISTORY_PATH = (
@@ -69,6 +71,13 @@ DEFAULT_LANGSMITH_KEY_PATH = LANGSMITH_API_KEY_PATH
 HISTORY_TURNS = 4
 LOGGER = logging.getLogger("ai.assistant")
 _LANGSMITH_TRACE_HANDLER: Callable[..., Any] | None = None
+_LANGSMITH_TRACE_CONTEXT: Callable[..., Any] | None = None
+_LANGSMITH_TRACEABLE: Callable[..., Any] | None = None
+_LANGSMITH_CLIENT: Any | None = None
+_LANGSMITH_ACTIVE: ContextVar[bool] = ContextVar(
+    "govt_assistant_langsmith_active", default=False
+)
+_LANGSMITH_STAGE_HANDLERS: dict[tuple[str, Callable[..., Any]], Callable[..., Any]] = {}
 QUALITATIVE_RESULT_SCHEMA = {
     "type": "object",
     "properties": {
@@ -95,6 +104,9 @@ For general questions about concepts or assistant capabilities, use help.
 Use ISO YYYY-MM-DD and an exact available ISO hourly timestamp. Never invent IDs,
 timestamps, measurements or model results. Grid IDs must be selected from the
 provided simulation metadata. Use null when a field is genuinely unspecified.
+For redistribution plans, choose a supported plan intent; never use "forecast"
+as an intent. forecast_date is a calendar date only (YYYY-MM-DD), never a
+timestamp. A date-only redistribution plan covers the full day.
 start_timestamp must be timezone-naive (YYYY-MM-DDTHH:00:00); output_formats
 must contain each requested format only once.
 When the user asks for an ambiguous/unavailable date or hour, set
@@ -151,6 +163,14 @@ class QualitativeExplanation(BaseModel):
 
     overview: str
     limitations: str
+
+    @field_validator("overview", "limitations", mode="before")
+    @classmethod
+    def join_text_fragments(cls, value: Any) -> Any:
+        """Accept Ollama's occasional list-shaped prose as ordinary text."""
+        if isinstance(value, list) and all(isinstance(item, str) for item in value):
+            return " ".join(item.strip() for item in value if item.strip())
+        return value
 
 
 @dataclass(frozen=True)
@@ -556,7 +576,7 @@ def validate_request(
 
 def interpret_user_query(
     query: str,
-    llm: LLMClient,
+    llm: LLMClient | None,
     *,
     available: dict[str, Any] | None = None,
     history: dict[str, Any] | None = None,
@@ -566,6 +586,61 @@ def interpret_user_query(
         raise ValueError("Please enter a non-empty question.")
     available = available or _available_context(DEFAULT_SIMULATIONS_DIR)
     history = history or {"turns": [], "last_successful_request": None}
+    previous_request = history.get("last_successful_request")
+    # Simple historical questions with an explicit period are fully resolvable
+    # from local data. Do not make Ollama interpret an otherwise unambiguous
+    # request (or risk a slow/invalid JSON response).
+    deterministic_intent = _classify_query_intent(
+        query, "historical_analysis", []
+    )
+    if (
+        deterministic_intent in {"historical_analysis", "demand_comparison"}
+        and _parse_analysis_period(query) is not None
+    ):
+        deterministic_request = QueryRequest(
+            intent=deterministic_intent,
+            forecast_date=None,
+            start_timestamp=None,
+            duration_hours=None,
+            grid_ids=[],
+            output_formats=["text"],
+            needs_clarification=False,
+            clarification_question=None,
+        )
+        deterministic_request = _ground_explicit_query_details(
+            query, deterministic_request, history=history
+        )
+        return validate_request(deterministic_request, available=available)
+    asks_artifact = bool(
+        re.search(
+            r"\b(image|visualization|visualisation|map|png|csv|spreadsheet)\b",
+            query,
+            re.IGNORECASE,
+        )
+        and re.search(
+            r"\b(generate|create|make|regenerate|redo|recreate|export|download|save|show|give me|again)\b",
+            query,
+            re.IGNORECASE,
+        )
+    )
+    has_explicit_period = bool(
+        re.search(
+            r"\b(?:20\d{2}-\d{2}-\d{2}|\d{1,2}[-/]\d{1,2}[-/]20\d{2})(?:T\d{2}:\d{2})?\b",
+            query,
+            re.IGNORECASE,
+        )
+    )
+    if (
+        asks_artifact
+        and not has_explicit_period
+        and isinstance(previous_request, QueryRequest)
+        and previous_request.intent not in {"help", "clarification"}
+    ):
+        # Artifact-only follow-ups are determined by the last successful
+        # request. Avoid asking Ollama to restate its date/scope as JSON.
+        return _route_query_action(query, previous_request, history)
+    if llm is None:
+        raise ValueError("A language model is required to interpret this query.")
     user_context = {
         "user_question": query,
         "available_simulation_metadata": available,
@@ -598,6 +673,40 @@ def interpret_user_query(
         # dates/times in the user's query are grounded immediately afterward.
         response_data = json.loads(response)
         if isinstance(response_data, dict):
+            # Ollama may return an unsupported intent label (such as
+            # "forecast"). Defer classification to the deterministic query
+            # grounding below instead of rejecting the whole request.
+            allowed_intents = set(
+                QueryRequest.model_json_schema()["properties"]["intent"]["enum"]
+            )
+            if response_data.get("intent") not in allowed_intents:
+                response_data["intent"] = "help"
+
+            # Keep the clarification fields internally valid when the model
+            # sets the flag but omits its question. Explicit, resolvable plan
+            # details are cleared by deterministic grounding below.
+            if response_data.get("needs_clarification") and not str(
+                response_data.get("clarification_question") or ""
+            ).strip():
+                response_data["clarification_question"] = (
+                    "Could you clarify what you would like to know?"
+                )
+
+            # Repair models that put a timestamp in the date-only field.
+            # The explicit date parsed from the user query takes precedence.
+            forecast_value = response_data.get("forecast_date")
+            if isinstance(forecast_value, str):
+                normalized_date = _parse_date_token(forecast_value)
+                if normalized_date is None:
+                    try:
+                        normalized_date = datetime.fromisoformat(
+                            forecast_value.replace("Z", "+00:00")
+                        ).date()
+                    except ValueError:
+                        normalized_date = None
+                if normalized_date is not None:
+                    response_data["forecast_date"] = normalized_date.isoformat()
+
             timestamp = response_data.get("start_timestamp")
             if isinstance(timestamp, str) and timestamp.endswith("Z"):
                 response_data["start_timestamp"] = timestamp[:-1]
@@ -739,6 +848,12 @@ def _complete_json(
     messages: list[dict[str, str]],
     response_schema: dict[str, Any],
 ) -> str:
+    if isinstance(llm, OllamaProvider):
+        return llm.complete(
+            messages,
+            json_mode=True,
+            response_schema=response_schema,
+        )
     return llm.complete(messages, json_mode=True)
 
 
@@ -824,7 +939,7 @@ def _is_follow_up_query(query: str) -> bool:
         re.search(
             r"\b(what about|how about|and grid|make it simpler|simplify|"
             r"explain that|same period|same hour|next|after that|"
-            r"(?:generate|create|make|show|export)\s+(?:the\s+)?(?:image|csv))\b",
+            r"(?:give me(?:\s+in)?|generate|create|make|show|export)\s+(?:the\s+)?(?:image|csv))\b",
             query,
             flags=re.IGNORECASE,
         )
@@ -876,7 +991,11 @@ def _route_query_action(
             }
         )
 
-    asks_image = bool(re.search(r"\b(image|visualization|visualisation|map|png)\b", query, re.IGNORECASE))
+    asks_image = bool(re.search(
+        r"\b(image|visualization|visualisation|map|png|graph|chart|plot)\b",
+        query,
+        re.IGNORECASE,
+    ))
     asks_csv = bool(re.search(r"\b(csv|spreadsheet|downloadable file)\b", query, re.IGNORECASE))
     action_word = bool(
         re.search(
@@ -886,6 +1005,9 @@ def _route_query_action(
         )
     )
     explicit_only = bool(re.search(r"\bonly\b", query, re.IGNORECASE))
+    is_plan_view_request = _is_only_plan_view_query(query, request)
+    if is_plan_view_request and not asks_csv:
+        return request.model_copy(update={"output_formats": ["image"]})
     if asks_image and asks_csv:
         return request.model_copy(update={"output_formats": ["image", "csv"]})
     if asks_image and (explicit_only or action_word and not asks_csv):
@@ -967,10 +1089,28 @@ def _route_query_action(
         "predicted_analysis",
         "demand_comparison",
     }:
-        return request.model_copy(update={"output_formats": ["text"]})
+        return request.model_copy(
+            update={"output_formats": request.output_formats or ["text"]}
+        )
     if request.intent not in {"help", "clarification"}:
         return request.model_copy(update={"output_formats": ["text", "csv", "image"]})
     return request
+
+
+def _is_only_plan_view_query(query: str, request: QueryRequest) -> bool:
+    return bool(
+        re.search(r"\bonly\b", query, re.IGNORECASE)
+        and re.search(
+            r"\b(show|display|view|give me)\b", query, re.IGNORECASE
+        )
+        and re.search(r"\b(plan|redistribution)\b", query, re.IGNORECASE)
+        and request.intent in {"plan", "summary", "grid_plan", "compare_grids"}
+        and not re.search(
+            r"\b(text|details|explanation|summary only)\b",
+            query,
+            re.IGNORECASE,
+        )
+    )
 
 
 def _is_pending_plan_follow_up(
@@ -1192,6 +1332,10 @@ def _parse_analysis_period(query: str) -> tuple[str, str] | None:
                 return None
         except ValueError:
             return None
+        if len(parsed_dates) == 1 and re.search(
+            r"\b(till|until|through|up\s+to)\b", query, re.IGNORECASE
+        ):
+            return f"{parsed_dates[0].year:04d}-01-01", parsed_dates[0].isoformat()
         return parsed_dates[0].isoformat(), parsed_dates[-1].isoformat()
     year_match = re.search(r"\b(20\d{2})\b", query)
     if year_match is None:
@@ -1212,7 +1356,9 @@ def _parse_analysis_period(query: str) -> tuple[str, str] | None:
 
 def _parse_date_token(value: str) -> date | None:
     try:
-        if "/" in value or ("-" in value and not value.startswith("20")):
+        if re.fullmatch(r"20\d{2}-\d{2}-\d{2}", value):
+            return date.fromisoformat(value)
+        if "/" in value or "-" in value:
             separator = "/" if "/" in value else "-"
             month_or_day, day_or_month, year = (
                 int(component) for component in value.split(separator)
@@ -1381,7 +1527,9 @@ def _handle_analysis_request(
             )
         if response_llm is None:
             response_llm = _response_model_for_query(provider, response_model)
-        overview = _generate_analysis_overview(
+        overview = _run_langsmith_stage(
+            "response-generation",
+            _generate_analysis_overview,
             query,
             {"sources": sources},
             response_llm,
@@ -1392,7 +1540,9 @@ def _handle_analysis_request(
             request=request,
         )
 
-    result_data = _analysis_data_for_request(
+    result_data = _run_langsmith_stage(
+        "analysis-calculation",
+        _analysis_data_for_request,
         request,
         simulations_dir=simulations_dir,
     )
@@ -1403,18 +1553,47 @@ def _handle_analysis_request(
         else ""
     )
     if "csv" in request.output_formats:
-        csv_path = save_analysis_csv(result_data, output_dir=artifacts_dir)
-    if "image" in request.output_formats:
-        image_path = save_analysis_image(result_data, output_dir=artifacts_dir)
-    if "text" in request.output_formats:
-        if response_llm is None:
-            response_llm = _response_model_for_query(provider, response_model)
-        overview = _generate_analysis_overview(
-            query,
-            result_data,
-            response_llm,
+        csv_path = _run_langsmith_stage(
+            "csv-generation", save_analysis_csv, result_data, output_dir=artifacts_dir
         )
-        response = overview + "\n\nVerified analysis results:\n" + report
+    if "image" in request.output_formats:
+        image_path = _run_langsmith_stage(
+            "visualization-generation",
+            save_analysis_image,
+            result_data,
+            output_dir=artifacts_dir,
+        )
+    if "text" in request.output_formats:
+        if request.intent == "historical_analysis" and _is_simple_network_summary_query(query):
+            response = "Verified historical energy statistics:\n" + report
+        elif request.intent == "historical_analysis" and _asks_for_highest_grid(query):
+            grids = result_data["grid_totals"]
+            highest_total = max(grids, key=lambda item: item["total_demand_kwh"])
+            highest_peak = max(
+                grids, key=lambda item: item["maximum_hourly_demand_kwh"]
+            )
+            response = (
+                f"By total observed demand from {result_data['start_date']} through "
+                f"{result_data['end_date']}, Grid {highest_total['grid_id']} was "
+                f"highest at {highest_total['total_demand_kwh']:.2f} kWh. "
+                f"The highest single-hour observed demand was also Grid "
+                f"{highest_peak['grid_id']} at "
+                f"{highest_peak['maximum_hourly_demand_kwh']:.2f} kWh on "
+                f"{highest_peak['peak_timestamp']}."
+            )
+        elif request.intent == "demand_comparison" and _is_direct_comparison_query(query):
+            response = "Verified historical and predicted demand comparison:\n" + report
+        else:
+            if response_llm is None:
+                response_llm = _response_model_for_query(provider, response_model)
+            overview = _run_langsmith_stage(
+                "response-generation",
+                _generate_analysis_overview,
+                query,
+                result_data,
+                response_llm,
+            )
+            response = overview + "\n\nVerified analysis results:\n" + report
         if csv_path is not None:
             response += f"\n\nAnalysis CSV: {csv_path}"
         if image_path is not None:
@@ -1431,6 +1610,38 @@ def _handle_analysis_request(
         image_path=image_path,
         request=request,
     )
+
+
+def _is_simple_network_summary_query(query: str) -> bool:
+    """Whether Python's network summary directly answers this historical query."""
+    asks_for_detail = re.search(
+        r"\b(which|highest|lowest|top|bottom|rank|ranking|compare|comparison|"
+        r"why|cause|explain|per[- ]grid|each grid|every grid)\b",
+        query,
+        re.IGNORECASE,
+    )
+    asks_for_network = re.search(
+        r"\b(all grids|all grid|whole network|network[- ]wide|total demand|"
+        r"energy demand|historical demand|historical energy)\b",
+        query,
+        re.IGNORECASE,
+    )
+    return asks_for_network is not None and asks_for_detail is None
+
+
+def _asks_for_highest_grid(query: str) -> bool:
+    return bool(
+        re.search(r"\b(which|highest|top)\b", query, re.IGNORECASE)
+        and re.search(r"\b(grid|grids)\b", query, re.IGNORECASE)
+        and re.search(r"\b(demand|consumption)\b", query, re.IGNORECASE)
+    )
+
+
+def _is_direct_comparison_query(query: str) -> bool:
+    asks_for_explanation = re.search(
+        r"\b(why|explain|cause|reason|how come)\b", query, re.IGNORECASE
+    )
+    return asks_for_explanation is None
 
 
 def _multi_analysis_intents(query: str) -> list[str]:
@@ -1475,7 +1686,9 @@ def _handle_multi_analysis_request(
         subrequest = request.model_copy(
             update={"intent": intent, "output_formats": ["text"]}
         )
-        data_by_intent[intent] = _analysis_data_for_request(
+        data_by_intent[intent] = _run_langsmith_stage(
+            "analysis-calculation",
+            _analysis_data_for_request,
             subrequest,
             simulations_dir=simulations_dir,
         )
@@ -1490,7 +1703,9 @@ def _handle_multi_analysis_request(
     image_paths: list[Path] = []
     if "csv" in output_formats:
         csv_paths = [
-            save_analysis_csv(
+            _run_langsmith_stage(
+                "csv-generation",
+                save_analysis_csv,
                 data_by_intent[intent],
                 output_dir=Path(artifacts_dir) / intent,
             )
@@ -1498,7 +1713,9 @@ def _handle_multi_analysis_request(
         ]
     if "image" in output_formats:
         image_paths = [
-            save_analysis_image(
+            _run_langsmith_stage(
+                "visualization-generation",
+                save_analysis_image,
                 data_by_intent[intent],
                 output_dir=Path(artifacts_dir) / intent,
             )
@@ -1507,7 +1724,9 @@ def _handle_multi_analysis_request(
     if "text" in output_formats:
         if response_llm is None:
             response_llm = _response_model_for_query(provider, response_model)
-        overview = _generate_analysis_overview(
+        overview = _run_langsmith_stage(
+            "response-generation",
+            _generate_analysis_overview,
             query,
             {"analyses": data_by_intent},
             response_llm,
@@ -1543,6 +1762,46 @@ def _render_deterministic_facts(
         f"({summary['interval_count']} hourly interval(s))."
     )
     grid_totals = summary["grid_totals"]
+    requested_grid_ids = summary.get("requested_grid_ids", [])
+    if (
+        intent in {"summary", "grid_plan"}
+        and len(requested_grid_ids) == 1
+        and len(grid_totals) == 1
+    ):
+        grid = grid_totals[0]
+        grid_id = requested_grid_ids[0]
+        lines = [
+            f"Forecast date: {summary['forecast_date']}.",
+            period,
+            f"Grid {grid_id} predicted demand: {grid['predicted_demand_kwh']:.2f} kWh; "
+            f"synthetic supply: {grid['synthetic_supply_kwh']:.2f} kWh.",
+            f"For Grid {grid_id}, energy sent: {grid['energy_sent_kwh']:.2f} kWh; "
+            f"received: {grid['energy_received_kwh']:.2f} kWh; "
+            f"transmission losses attributed to its outgoing transfers: "
+            f"{grid['transmission_losses_kwh']:.2f} kWh.",
+            f"Across the selected hours, Grid {grid_id} had "
+            f"{grid['initial_surplus_kwh']:.2f} kWh of initial surplus and "
+            f"{grid['initial_deficit_kwh']:.2f} kWh of initial deficit; these can "
+            "occur in different hourly intervals.",
+            f"Remaining surplus: {grid['remaining_surplus_kwh']:.2f} kWh; "
+            f"unmet demand: {grid['unmet_demand_kwh']:.2f} kWh.",
+            f"Transfers involving Grid {grid_id} (sent / received / lost kWh):",
+        ]
+        if summary["transfers_by_grid_pair"]:
+            lines.extend(
+                f"  {item['from_grid']} → {item['to_grid']}: "
+                f"{item['energy_sent_kwh']:.2f} / "
+                f"{item['energy_received_kwh']:.2f} / "
+                f"{item['energy_lost_kwh']:.2f}"
+                for item in summary["transfers_by_grid_pair"]
+            )
+        else:
+            lines.append("  No transfers were recorded for this grid.")
+        lines.append(
+            "Demand is model-predicted. Supply, network, capacities, and losses "
+            "are synthetic assumptions, not measured electricity infrastructure."
+        )
+        return "\n".join(lines)
     if intent == "compare_hours":
         lines = [
             f"Forecast date: {summary['forecast_date']}.",
@@ -2087,7 +2346,12 @@ def handle_user_query(
         return AssistantResult(text=_basic_concept_answer(query), request=request)
     available = _available_context(simulations_dir)
     provider_prefix = provider.strip().upper().replace("-", "_")
-    if query_llm is None:
+    deterministic_query_interpretation = (
+        _classify_query_intent(query, "historical_analysis", [])
+        in {"historical_analysis", "demand_comparison"}
+        and _parse_analysis_period(query) is not None
+    )
+    if query_llm is None and not deterministic_query_interpretation:
         default_query_model = (
             DEFAULT_OLLAMA_QUERY_MODEL
             if provider_prefix == "OLLAMA"
@@ -2101,7 +2365,9 @@ def handle_user_query(
             or os.environ.get("ENERGY_QUERY_MODEL", default_query_model)
         )
         query_llm = initialize_llm(provider, selected_model)
-    request = interpret_user_query(
+    request = _run_langsmith_stage(
+        "query-interpretation",
+        interpret_user_query,
         query,
         query_llm,
         available=available,
@@ -2290,7 +2556,9 @@ def handle_user_query(
         return result
 
     try:
-        records = retrieve_relevant_records(
+        records = _run_langsmith_stage(
+            "plan-data-retrieval",
+            retrieve_relevant_records,
             request,
             simulations_dir=simulations_dir,
             last_request=(
@@ -2315,7 +2583,7 @@ def handle_user_query(
         _write_history(history, history_path)
         return result
 
-    summary = calculate_summary(records)
+    summary = _run_langsmith_stage("plan-summary-calculation", calculate_summary, records)
     if request.intent == "demand_solution":
         summary.update(calculate_demand_solution(records, request.grid_ids))
     if "text" in request.output_formats:
@@ -2333,7 +2601,9 @@ def handle_user_query(
                 or os.environ.get("ENERGY_RESPONSE_MODEL", default_response_model)
             )
             response_llm = initialize_llm(provider, selected_model)
-        explanation = generate_explanation(
+        explanation = _run_langsmith_stage(
+            "response-generation",
+            generate_explanation,
             _explanation_context(query, request, records, summary),
             response_llm,
         )
@@ -2346,12 +2616,16 @@ def handle_user_query(
         response = ""
 
     csv_path = (
-        generate_csv(records, output_dir=artifacts_dir)
+        _run_langsmith_stage(
+            "csv-generation", generate_csv, records, output_dir=artifacts_dir
+        )
         if "csv" in request.output_formats
         else None
     )
     image_path = (
-        generate_image(
+        _run_langsmith_stage(
+            "visualization-generation",
+            generate_image,
             records,
             recommended_transfers=summary.get("demand_solution_recommendations", []),
             output_dir=artifacts_dir,
@@ -2382,7 +2656,11 @@ def handle_user_query(
     if csv_path is not None and "text" in request.output_formats:
         response += f"\nTransfer CSV: {csv_path}"
     if image_path is not None and not response:
-        response = f"Image saved: {image_path}"
+        response = (
+            ""
+            if _is_only_plan_view_query(query, request)
+            else f"Image saved: {image_path}"
+        )
     if csv_path is not None and not response:
         response = f"CSV saved: {csv_path}"
     result = AssistantResult(
@@ -2432,51 +2710,122 @@ def _langsmith_trace_outputs(output: Any) -> dict[str, Any]:
     }
 
 
+def _langsmith_setting(name: str, default: str = "") -> str:
+    """Read one LangSmith setting without loading unrelated project secrets."""
+    if name in os.environ:
+        return os.environ[name].strip()
+    try:
+        from dotenv import dotenv_values
+    except ImportError:
+        return default
+    value = dotenv_values(PROJECT_ROOT / ".env").get(name)
+    return str(value).strip() if value is not None else default
+
+
+def _run_langsmith_stage(
+    name: str,
+    handler: Callable[..., Any],
+    *args: Any,
+    **kwargs: Any,
+) -> Any:
+    """Create a redacted child span when inside the Government query trace."""
+    if not _LANGSMITH_ACTIVE.get() or _LANGSMITH_TRACEABLE is None:
+        return handler(*args, **kwargs)
+    cache_key = (name, handler)
+    stage_handler = _LANGSMITH_STAGE_HANDLERS.get(cache_key)
+    if stage_handler is None:
+        stage_handler = _LANGSMITH_TRACEABLE(
+            name=name,
+            run_type="chain",
+            client=_LANGSMITH_CLIENT,
+            process_inputs=lambda _inputs: {"stage": name},
+            process_outputs=lambda _output: {"status": "completed"},
+        )(handler)
+        _LANGSMITH_STAGE_HANDLERS[cache_key] = stage_handler
+    return stage_handler(*args, **kwargs)
+
+
 def _with_optional_langsmith_trace(
     handler: Callable[..., AssistantResult],
 ) -> Callable[..., AssistantResult]:
-    """Enable opt-in, content-redacted LangSmith latency tracing."""
+    """Trace Government queries in a scoped, content-redacted LangSmith project."""
     @wraps(handler)
     def dispatch(*args: Any, **kwargs: Any) -> AssistantResult:
-        global _LANGSMITH_TRACE_HANDLER
-        if os.environ.get("LANGSMITH_TRACING", "").casefold() not in {
-            "true",
-            "1",
-            "yes",
-        }:
+        global _LANGSMITH_TRACE_HANDLER, _LANGSMITH_TRACE_CONTEXT
+        global _LANGSMITH_TRACEABLE, _LANGSMITH_CLIENT
+        enabled_value = _langsmith_setting("GOVT_ASSISTANT_LANGSMITH_TRACING")
+        if not enabled_value:
+            enabled_value = _langsmith_setting("LANGSMITH_TRACING", "false")
+        enabled = enabled_value.casefold() in {"true", "1", "yes"}
+        if not enabled:
             return handler(*args, **kwargs)
-        api_key = os.environ.get("LANGSMITH_API_KEY", "").strip()
+        api_key = _langsmith_setting("LANGSMITH_API_KEY")
         if not api_key:
-            key_path = DEFAULT_LANGSMITH_KEY_PATH
+            configured_key_path = _langsmith_setting("LANGSMITH_API_KEY_FILE")
+            key_path = (
+                Path(configured_key_path).expanduser()
+                if configured_key_path
+                else DEFAULT_LANGSMITH_KEY_PATH
+            )
+            if not key_path.is_absolute():
+                key_path = PROJECT_ROOT / key_path
+            key_path = key_path.resolve()
             if key_path.is_file():
                 try:
                     api_key = key_path.read_text(encoding="utf-8").strip()
                 except OSError as exc:
-                    raise RuntimeError(
-                        f"Unable to read the LangSmith API key file: {key_path}"
-                    ) from exc
-                if api_key:
-                    os.environ["LANGSMITH_API_KEY"] = api_key
+                    LOGGER.warning(
+                        "Unable to read the configured LangSmith key file (%s); continuing without tracing: %s",
+                        key_path,
+                        type(exc).__name__,
+                    )
+                    return handler(*args, **kwargs)
         if not api_key:
-            raise RuntimeError(
-                "Set LANGSMITH_API_KEY or LANGSMITH_API_KEY_FILE when "
-                "LANGSMITH_TRACING is enabled."
+            LOGGER.warning(
+                "LangSmith tracing is enabled for Government assistant, but no API key is configured; continuing without tracing."
             )
+            return handler(*args, **kwargs)
         if _LANGSMITH_TRACE_HANDLER is None:
             try:
-                from langsmith import traceable
-            except ImportError as exc:
-                raise RuntimeError(
-                    "LangSmith tracing is enabled but the optional LangSmith "
-                    "package is missing. Install ai/requirements-observability.txt."
-                ) from exc
-            _LANGSMITH_TRACE_HANDLER = traceable(
-                name="energy-assistant-query",
-                run_type="chain",
-                process_inputs=_langsmith_trace_inputs,
-                process_outputs=_langsmith_trace_outputs,
-            )(handler)
-        return _LANGSMITH_TRACE_HANDLER(*args, **kwargs)
+                from langsmith import Client, traceable, tracing_context
+            except ImportError:
+                LOGGER.warning(
+                    "LangSmith tracing is enabled for Government assistant, but the langsmith package is unavailable; continuing without tracing."
+                )
+                return handler(*args, **kwargs)
+            try:
+                _LANGSMITH_CLIENT = Client(api_key=api_key)
+                _LANGSMITH_TRACE_CONTEXT = tracing_context
+                _LANGSMITH_TRACEABLE = traceable
+                _LANGSMITH_TRACE_HANDLER = traceable(
+                    name="energy-assistant-query",
+                    run_type="chain",
+                    tags=["gridvision", "government-redistribution"],
+                    metadata={"assistant": "government-redistribution"},
+                    process_inputs=_langsmith_trace_inputs,
+                    process_outputs=_langsmith_trace_outputs,
+                )(handler)
+            except Exception as exc:
+                LOGGER.warning(
+                    "Unable to initialize LangSmith tracing (%s); continuing without tracing.",
+                    type(exc).__name__,
+                )
+                return handler(*args, **kwargs)
+        assert _LANGSMITH_TRACE_CONTEXT is not None
+        token = _LANGSMITH_ACTIVE.set(True)
+        try:
+            with _LANGSMITH_TRACE_CONTEXT(
+                enabled=True,
+                client=_LANGSMITH_CLIENT,
+                project_name=_langsmith_setting(
+                    "GOVT_ASSISTANT_LANGSMITH_PROJECT",
+                    "GridVision-Government-Assistant",
+                ),
+                tags=["gridvision", "government-redistribution"],
+            ):
+                return _LANGSMITH_TRACE_HANDLER(*args, **kwargs)
+        finally:
+            _LANGSMITH_ACTIVE.reset(token)
 
     return dispatch
 

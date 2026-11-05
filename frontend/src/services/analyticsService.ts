@@ -391,9 +391,14 @@ class AnalyticsService {
     });
     if (!response.ok) {
       const errorBody = await response.json().catch(() => null) as {
-        error?: { message?: string };
+        error?: { message?: string; details?: unknown };
       } | null;
-      throw new Error(errorBody?.error?.message || `Assistant request failed (${response.status}).`);
+      const validationDetails = errorBody?.error?.details
+        ? ` Details: ${JSON.stringify(errorBody.error.details)}`
+        : '';
+      throw new Error(
+        `${errorBody?.error?.message || `Assistant request failed (${response.status}).`}${validationDetails}`,
+      );
     }
     if (!response.body) {
       throw new Error('Assistant streaming response had no body.');

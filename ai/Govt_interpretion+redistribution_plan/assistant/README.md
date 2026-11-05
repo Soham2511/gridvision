@@ -157,17 +157,18 @@ errors are sanitized and results include title, excerpt, and source URL.
 External snippets are treated as untrusted text and are not represented as
 internal energy measurements.
 
-LangSmith tracing is optional and disabled by default. To enable it, install
-`ai/requirements-observability.txt` with
-`.venv/bin/python -m pip install -r ai/requirements-observability.txt`, set
-`LANGSMITH_TRACING=true` and either `LANGSMITH_API_KEY` or
-`LANGSMITH_API_KEY_FILE` (defaults to `Key_vault/langsmith/api.key`), then
-start a new assistant process. The key file is read only when tracing is
-enabled. Trace payloads include question length and completion/artifact status
-only; query text, numerical analysis, source content, and generated response
-text are redacted. LangChain is not required because the existing deterministic
-Python router and provider adapters provide the needed orchestration without
-an additional runtime layer.
+LangSmith tracing is scoped to this Government assistant. The root `.env`
+enables it with `GOVT_ASSISTANT_LANGSMITH_TRACING=true` and selects the
+`GridVision-Government-Assistant` project; override the project with
+`GOVT_ASSISTANT_LANGSMITH_PROJECT`. Credentials come from `LANGSMITH_API_KEY`
+or `LANGSMITH_API_KEY_FILE` (default `Key_vault/langsmith/api.key`). The key is
+read only when tracing is enabled. If the SDK or credentials are unavailable,
+the assistant continues without tracing. Trace payloads include question
+length and completion/artifact status only; query text, numerical analysis,
+source content, generated files, and response text are redacted. Install
+`ai/requirements-observability.txt` if the SDK is missing. LangChain is not
+required because the existing deterministic Python router and provider
+adapters provide the orchestration.
 
 See [ARCHITECTURE.md](./ARCHITECTURE.md) for the architecture, data flow,
 trust boundaries, request schema, time resolution, model choices, and output

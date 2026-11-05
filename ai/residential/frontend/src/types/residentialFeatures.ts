@@ -321,4 +321,6 @@ export interface AssistantResponsePayload {
   limitations?: string[];
   missing_information?: string[];
   structured_data?: any;
+  artifacts?: Array<{ format: string; label: string; url: string }>;
+  downloads?: Array<{ format: string; label: string; url: string }>;
 }

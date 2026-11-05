@@ -112,13 +112,18 @@ requests web research, treats returned source text as untrusted, and formats
 the source URLs as citations. Web snippets are not mixed into Python's
 historical or forecast calculations.
 
-Optional LangSmith tracing is disabled unless `LANGSMITH_TRACING=true` and
-either `LANGSMITH_API_KEY` or `LANGSMITH_API_KEY_FILE` is set. When no key
-environment variable is present, the default key file is
-`Key_vault/langsmith/api.key`; it is read only after tracing is enabled.
-Install its optional dependency from `ai/requirements-observability.txt`.
-Trace processors retain query length and completion/artifact status only; they
-redact question text, analysis values, web snippets, and response content.
+Government assistant LangSmith tracing is enabled by
+`GOVT_ASSISTANT_LANGSMITH_TRACING=true` (or the standard
+`LANGSMITH_TRACING=true` setting). It uses the `GridVision-Government-Assistant`
+project by default; override it with `GOVT_ASSISTANT_LANGSMITH_PROJECT`. The
+backend and assistant CLI read these settings from the root `.env`. Credentials
+come from `LANGSMITH_API_KEY` or `LANGSMITH_API_KEY_FILE`; the default key file is
+`Key_vault/langsmith/api.key`, and it is read only when tracing is enabled.
+Install its optional dependency from `ai/requirements-observability.txt` if it
+is missing. Tracing is scoped to this assistant and fails open if the SDK or
+credentials are unavailable. Trace processors retain query length and
+completion/artifact status only; they redact question text, analysis values,
+web snippets, generated file contents, and response content.
 LangChain is intentionally not a runtime dependency; deterministic routing
 and the existing provider protocol are sufficient for this assistant.
 
