@@ -89,11 +89,12 @@ class PlanHouseEnergyTool(BaseTool):
 
     name: str = "plan_house_energy"
     description: str = (
-        "Design and plan a residential electrical layout and equipment schedule based on property size, "
-        "occupancy, customer preferences, and budget. "
-        "Returns recommended connected electrical load (kW), diversified peak demand (kW), room-wise equipment schedule, "
-        "estimated monthly bills in ₹, and alternative plans (Economy, Balanced, High-Efficiency). "
-        "Use this tool whenever the customer asks to plan, design, or size the electrical setup or energy plan for a new or existing home."
+        "Create a residential electrical/equipment plan from the home's area, rooms, occupancy, "
+        "location, preferences, and budget. Use for planning or sizing a new/renovated home, "
+        "not for analyzing an existing appliance replacement. Returns connected load, diversified "
+        "demand, a room-wise schedule, modeled monthly cost, and alternative efficiency tiers. "
+        "Use verified premises-profile and appliance-inventory tools first when the request "
+        "depends on the customer's registered property details."
     )
     args_schema: Type[BaseModel] = PlanHouseEnergyInput
 
@@ -114,8 +115,9 @@ class PlanHouseAreaM2Tool(PlanHouseEnergyTool):
 
     name: str = "plan_house_area_m2"
     description: str = (
-        "Alias for plan_house_energy. Design and plan a residential electrical layout and equipment schedule "
-        "based on built_up_area_m2, property_type, and occupancy."
+        "Alias for plan_house_energy. Use only for a new-home or renovation plan that needs a "
+        "room-wise equipment schedule and connected-load estimate from the home's area and "
+        "occupancy. For replacement savings on one appliance, use analyze_appliance_scenario."
     )
 
 
@@ -167,11 +169,13 @@ class AnalyzeApplianceScenarioTool(BaseTool):
 
     name: str = "analyze_appliance_scenario"
     description: str = (
-        "Evaluate the financial, energy, and environmental impact of purchasing, upgrading, or replacing an appliance. "
-        "Computes annual kWh savings, annual ₹ bill reduction, net upfront investment, simple payback period in years, "
-        "break-even year, and 7-year Total Cost of Ownership (TCO). "
-        "Use this tool whenever the customer asks about replacing an AC, buying a BLDC fan, upgrading a refrigerator, "
-        "or calculating the payback of an energy-efficient appliance."
+        "Compare one existing appliance with a proposed purchase, replacement, upgrade, or removal. "
+        "Use when asked about an AC/fan/refrigerator upgrade or its savings/payback. Provide the "
+        "old and proposed wattage/efficiency, daily hours, and proposed price from user input or "
+        "verified inventory/benchmark tools; do not invent missing specifications or prices. "
+        "Returns annual kWh and bill savings, net investment, payback, break-even, and 7-year "
+        "total cost of ownership. For a whole-home prioritized savings package, use "
+        "generate_energy_cost_recommendations instead."
     )
     args_schema: Type[BaseModel] = AnalyzeApplianceScenarioInput
 
@@ -241,11 +245,12 @@ class ManageEnergyCostTool(BaseTool):
 
     name: str = "generate_energy_cost_recommendations"
     description: str = (
-        "Evaluate household smart meter consumption patterns and customer budget to generate tailored, "
-        "prioritized cost-saving strategies (zero-cost behavioral changes, quick-win timers, BLDC fan retrofits, and rooftop solar). "
-        "Returns achievable monthly and annual ₹ savings, required investment, and payback periods. "
-        "Use this tool whenever the customer asks how to lower their electricity bill, save energy, reduce power costs, "
-        "or requests personalized energy conservation advice."
+        "Build a household-wide, prioritized electricity cost-reduction package using the "
+        "authorized meter's usage, investment budget, target savings, and stated preferences. "
+        "Use when the customer asks how to lower bills, requests a savings plan/package, or asks "
+        "for personalized efficiency actions. Returns modeled monthly/annual savings, upfront "
+        "investment, strategies, and payback. For one appliance's replacement economics, use "
+        "analyze_appliance_scenario instead; recommendations are estimates, not guaranteed savings."
     )
     args_schema: Type[BaseModel] = ManageEnergyCostInput
 
@@ -259,4 +264,3 @@ class ManageEnergyCostTool(BaseTool):
 
     async def _arun(self, *args: Any, **kwargs: Any) -> str:
         return self._run(*args, **kwargs)
-

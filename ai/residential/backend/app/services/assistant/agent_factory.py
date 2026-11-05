@@ -128,7 +128,7 @@ class _RequireToolExecutionMiddleware(AgentMiddleware):
 
 
 class ResidentialAgentFactory:
-    """Create the residential LangChain tool-calling workflow with its configured model."""
+    """Create the residential tool-calling workflow with its configured model provider."""
 
     def __init__(
         self,
@@ -141,33 +141,22 @@ class ResidentialAgentFactory:
         max_retries: int | None = None,
         custom_chat_model: BaseChatModel | None = None,
         api_key: str | None = None,
+        provider: str = "ollama",
+        groq_base_url: str | None = None,
     ) -> None:
-        self.provider = (
-            os.getenv("RESIDENTIAL_ASSISTANT_PROVIDER")
-            or getattr(BaseConfig, "RESIDENTIAL_ASSISTANT_PROVIDER", "groq")
-        ).strip().lower()
-        if self.provider not in {"groq", "ollama"}:
-            raise ValueError(
-                "Residential assistant provider must be 'groq' or 'ollama'."
-            )
+        self.provider = (provider or "ollama").strip().lower()
         self.ollama_base_url = normalize_ollama_base_url(
             base_url
             or os.getenv("OLLAMA_BASE_URL")
             or getattr(BaseConfig, "OLLAMA_BASE_URL", "http://localhost:11434")
         )
-        self.model_name = (
-            model_name
-            or os.getenv("OLLAMA_MODEL")
+        default_model = (
+            getattr(BaseConfig, "GROQ_MODEL", "openai/gpt-oss-20b")
+            if self.provider == "groq"
+            else os.getenv("OLLAMA_MODEL")
             or getattr(BaseConfig, "OLLAMA_MODEL", "qwen3:8b")
-        ).strip()
-        self.groq_base_url = (
-            os.getenv("GROQ_BASE_URL")
-            or getattr(BaseConfig, "GROQ_BASE_URL", "https://api.groq.com/openai/v1")
-        ).strip()
-        self.groq_model = (
-            os.getenv("RESIDENTIAL_GROQ_MODEL")
-            or getattr(BaseConfig, "RESIDENTIAL_GROQ_MODEL", "openai/gpt-oss-20b")
-        ).strip()
+        )
+        self.model_name = (model_name or default_model).strip()
         self.temperature = (
             temperature if temperature is not None else BaseConfig.ASSISTANT_TEMPERATURE
         )
@@ -186,10 +175,51 @@ class ResidentialAgentFactory:
             max_retries if max_retries is not None else BaseConfig.ASSISTANT_MAX_RETRIES
         )
         self.custom_chat_model = custom_chat_model
-        self.api_key = (
-            api_key or os.getenv("GROQ_API_KEY") or BaseConfig.GROQ_API_KEY or ""
+        self.api_key = (api_key or BaseConfig.GROQ_API_KEY or "").strip()
+        self.api_key_2 = (
+            os.getenv("GROQ_API_KEY_2")
+            or getattr(BaseConfig, "GROQ_API_KEY_2", "")
+            or ""
+        ).strip()
+        self.groq_base_url = (
+            groq_base_url
+            or getattr(BaseConfig, "GROQ_BASE_URL", "https://api.groq.com/openai/v1")
         ).strip()
         self._agent_cache: dict[tuple[Any, ...], Any] = {}
+
+    @staticmethod
+    def _tool_execution_system_prompt(system_prompt: str, meter_id: str) -> str:
+        tariff_match = re.search(
+            r"Verified tariff is (₹[\d.]+/kWh)", system_prompt, re.IGNORECASE
+        )
+        date_match = re.search(
+            r"Telemetry is as of ([^.]+)", system_prompt, re.IGNORECASE
+        )
+        tariff_context = (
+            f"Verified tariff is {tariff_match.group(1)}."
+            if tariff_match
+            else "No verified tariff is available; do not calculate bill amounts."
+        )
+        telemetry_context = (
+            f"Latest telemetry date: {date_match.group(1).strip()}."
+            if date_match
+            else ""
+        )
+        return (
+            f"You are GridVision's residential electricity assistant for meter {meter_id}. "
+            f"{tariff_context} {telemetry_context}\n"
+            "Choose from the complete tool list by matching the user's goal to each tool's "
+            "description and input schema. The intent classification is context, not a tool "
+            "selection. Use the most relevant tool before answering requests that need "
+            "verified household data, forecasts, calculations, or reference material. "
+            "Ground factual claims only in verified context and tool results; preserve the "
+            "requested period and units, and do not infer missing values. If a tool fails or "
+            "lacks data, say the result could not be verified. For historical bills, use "
+            "recorded consumption and the verified tariff, and label the amount as a "
+            "calculated energy charge, not an official invoice. Never claim to file a "
+            "complaint in chat; direct the customer to the Complaint Centre. For an active "
+            "electrical hazard, advise staying clear and contacting emergency services."
+        )
 
     @staticmethod
     def _is_testing() -> bool:
@@ -226,58 +256,84 @@ class ResidentialAgentFactory:
             return False
 
     def is_available(self, force_live: bool = False) -> bool:
-        """Return availability of the injected model or selected provider."""
+        """Return availability of the injected model or active Ollama runtime."""
         if self.custom_chat_model is not None:
             return True
         if self._is_testing() and not force_live:
             return False
         if self.provider == "groq":
-            return bool(self.api_key)
+            return bool(self.api_key or self.api_key_2)
         return self.is_ollama_available()
+
+    def groq_fallback_models(self) -> list[str]:
+        """Return Groq model candidates after the active first-choice model."""
+        if self.provider != "groq":
+            return []
+
+        candidates = self.groq_model_candidates()
+        return candidates[1:]
+
+    def groq_model_candidates(self) -> list[str]:
+        """Return the requested residential model priority, with 120B third."""
+        if self.provider != "groq":
+            return []
+
+        from app.providers.llm.groq_adapter import ordered_model_candidates
+
+        return ordered_model_candidates(self.model_name)
+
+    def groq_fallback_api_keys(self) -> list[str]:
+        """Return configured secondary Groq keys without exposing them in logs."""
+        if self.provider != "groq" or not self.api_key_2 or self.api_key_2 == self.api_key:
+            return []
+        return [self.api_key_2]
 
     def build_chat_model(
         self,
         timeout: float | None = None,
         model_override: str | None = None,
+        api_key_override: str | None = None,
         force_live: bool = False,
     ) -> BaseChatModel:
-        """Build the selected provider's chat model, or a deterministic test model."""
+        """Build the configured chat model, or the deterministic model in tests."""
         if self.custom_chat_model is not None:
             return self.custom_chat_model
 
-        default_model = self.groq_model if self.provider == "groq" else self.model_name
-        effective_model = (model_override or default_model).strip()
+        effective_model = (model_override or self.model_name).strip()
         if self._is_testing() and not force_live:
             return MockChatModel()
         if self.provider == "groq":
-            if not self.api_key:
-                raise RuntimeError(
-                    "Groq is selected for the residential assistant, but "
-                    "GROQ_API_KEY is not configured."
-                )
+            effective_api_key = (api_key_override or self.api_key).strip()
+            if not effective_api_key:
+                raise RuntimeError("Groq API key is not configured for the residential assistant.")
             try:
                 from langchain_groq import ChatGroq
 
+                groq_chat_base_url = self.groq_base_url.rstrip("/")
+                api_path_suffix = "/openai/v1"
+                if groq_chat_base_url.lower().endswith(api_path_suffix):
+                    groq_chat_base_url = groq_chat_base_url[:-len(api_path_suffix)]
                 return ChatGroq(
                     model=effective_model,
-                    api_key=self.api_key,
-                    base_url=self.groq_base_url,
+                    api_key=effective_api_key,
+                    base_url=groq_chat_base_url,
                     temperature=self.temperature,
                     max_tokens=self.max_tokens,
                     timeout=timeout if timeout is not None else self.timeout,
                     max_retries=self.max_retries,
                 )
             except Exception as exc:
-                logger.exception("Failed to initialize Groq model '%s'", effective_model)
+                logger.exception("Failed to initialize Groq chat model '%s'", effective_model)
                 raise RuntimeError(
-                    f"Failed to initialize Groq chat model '{effective_model}': {exc}"
+                    f"Failed to initialize Groq chat model '{effective_model}' "
+                    f"at '{self.groq_base_url}': {exc}"
                 ) from exc
 
         if not self.is_ollama_available():
             raise RuntimeError(
                 f"Ollama server is unavailable at '{self.ollama_base_url}' or model "
                 f"'{effective_model}' is not reachable. Ensure Ollama is running and "
-                "the model is pulled."
+                f"the model is pulled. Groq fallback is disabled."
             )
 
         try:
@@ -314,6 +370,7 @@ class ResidentialAgentFactory:
         requires_tool_execution: bool = False,
         timeout: float | None = None,
         model_override: str | None = None,
+        api_key_override: str | None = None,
         force_live: bool = False,
     ) -> Any:
         """Create a LangChain graph that owns native tool execution and result handoff."""
@@ -337,7 +394,20 @@ class ResidentialAgentFactory:
                 f"Required assistant tools are unavailable for scope '{tool_scope}'."
             )
 
-        routed_prompt = system_prompt
+        routed_prompt = (
+            self._tool_execution_system_prompt(system_prompt, meter_id)
+            if requires_tool_execution
+            else system_prompt
+            + (
+                "\nChoose which tool(s) to call from the complete tool list by matching "
+                "the user's goal to each tool's description and input schema. The request "
+                "classification is context only; it does not prescribe a tool. For a full "
+                "named calendar-month prediction, use the monthly prediction tool; use "
+                "bounded daily forecasts for a day-by-day horizon and historical queries "
+                "for actual recorded usage. Preserve the requested period. Ground factual "
+                "claims in verified context and tool results; do not invent missing values."
+            )
+        )
         if selected_names:
             routed_prompt += (
                 "\n\nFor this request, the router selected these tools: "
@@ -362,6 +432,7 @@ class ResidentialAgentFactory:
             tool_scope,
             timeout,
             model_override,
+            api_key_override is not None,
             force_live,
             prompt_digest,
             tuple(tool.name for tool in tools),
@@ -372,6 +443,7 @@ class ResidentialAgentFactory:
         model = self.build_chat_model(
             timeout=timeout,
             model_override=model_override,
+            api_key_override=api_key_override,
             force_live=force_live,
         )
         routed_tool_call = None

@@ -16,11 +16,15 @@ from app.domain.energy.schemas import BreakdownQueryRequest
 class GetConsumptionBreakdownInput(BaseModel):
     """Input parameters for retrieving consumption breakdown."""
 
-    start_date: str = Field(..., description="Start date (YYYY-MM-DD)")
-    end_date: str = Field(..., description="End date (YYYY-MM-DD)")
+    start_date: str = Field(..., description="Inclusive first date to analyze, YYYY-MM-DD.")
+    end_date: str = Field(..., description="Inclusive last date to analyze, YYYY-MM-DD.")
     dimension: Literal["hour_of_day", "day_of_week", "monthly", "timeline"] = Field(
         default="hour_of_day",
-        description="Categorical dimension: 'hour_of_day', 'day_of_week', 'monthly', or 'timeline'",
+        description=(
+            "How to group actual usage: hour_of_day for time-of-day patterns, day_of_week "
+            "for weekday/weekend patterns, monthly for month totals, or timeline for the "
+            "ordered series. Use this tool for a distribution/pattern, not a single total."
+        ),
     )
 
 
@@ -29,9 +33,10 @@ class GetConsumptionBreakdownTool(BaseTool):
 
     name: str = "get_consumption_breakdown"
     description: str = (
-        "Retrieve detailed distribution of household electricity consumption along a specific dimension: "
-        "'hour_of_day' (diurnal hourly pattern), 'day_of_week' (weekday vs weekend pattern), or 'monthly'. "
-        "Returns kWh totals, average values, and percentage shares for each bucket."
+        "Break down actual household electricity use over a date range by hour of day, day of "
+        "week, month, or ordered timeline. Use when asked about usage patterns (for example, "
+        "when consumption is highest during a typical day), not for a plain bill or month total. "
+        "Returns per-group kWh, averages, and shares."
     )
     args_schema: Type[BaseModel] = GetConsumptionBreakdownInput
 

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import re
 import time
 from typing import Any
@@ -17,8 +18,6 @@ from app.config import BaseConfig
 from app.providers.data_provider import BaseDataProvider
 from app.providers.llm.base import BaseLLMProvider, LLMInferenceError
 from app.services.assistant.dialogue_state import (
-    compact_history_for_llm,
-    is_affirmative_or_continuation,
     resolve_dialogue_context,
 )
 from app.services.assistant.agent_factory import ResidentialAgentFactory
@@ -34,6 +33,27 @@ from app.services.assistant.memory_contracts import PendingQuestion, ToolExecuti
 
 
 logger = logging.getLogger("gridvision.services.assistant.residential")
+
+
+def _is_provider_rate_limit_error(error: Exception) -> bool:
+    """Recognize rate-limit errors across wrapped provider exception types."""
+    current: BaseException | None = error
+    visited: set[int] = set()
+    while current is not None and id(current) not in visited:
+        visited.add(id(current))
+        if (
+            getattr(current, "status_code", None) == 429
+            or getattr(getattr(current, "response", None), "status_code", None) == 429
+        ):
+            return True
+        message = str(current).lower()
+        if any(
+            marker in message
+            for marker in ("rate_limit_exceeded", "rate limit reached", "error code: 429")
+        ):
+            return True
+        current = current.__cause__ or current.__context__
+    return False
 
 
 class ResidentialAssistantOrchestrator:
@@ -67,9 +87,29 @@ class ResidentialAssistantOrchestrator:
         if agent_factory is not None:
             self.agent_factory = agent_factory
         elif llm_provider is None or type(llm_provider).__name__ in ("OllamaLLMAdapter", "GroqLLMAdapter"):
+            provider_name = (
+                "groq" if type(llm_provider).__name__ == "GroqLLMAdapter" else "ollama"
+            )
             self.agent_factory = ResidentialAgentFactory(
                 temperature=temperature,
                 max_tokens=max_tokens,
+                model_name=getattr(llm_provider, "effective_model", None),
+                base_url=(
+                    getattr(llm_provider, "effective_base_url", None)
+                    if provider_name == "ollama"
+                    else None
+                ),
+                api_key=(
+                    getattr(llm_provider, "effective_api_key", None)
+                    if provider_name == "groq"
+                    else None
+                ),
+                provider=provider_name,
+                groq_base_url=(
+                    getattr(llm_provider, "effective_base_url", None)
+                    if provider_name == "groq"
+                    else None
+                ),
             )
         else:
             self.agent_factory = None
@@ -131,357 +171,35 @@ class ResidentialAssistantOrchestrator:
             logger.warning("LLM schema synthesis failed: %s", exc)
             return None
 
-    def _generate_fallback_response(self, prompt: str, context: dict[str, Any], turn_ctx: Optional[Any] = None) -> tuple[str, bool]:
-        """Collect verified domain schemas and synthesize a natural, grounded response via LLM.
-        
-        Returns (response_text, was_llm_generated).
-        """
-        p = prompt.lower()
-        ident = context.get("householdIdentity") or {}
-        meter_id = ident.get("meterId", "METER-1000")
-        cust_name = ident.get("customerName", "Valued Customer")
-        billing = context.get("billingCycleStatus") or {}
-        recent = context.get("recentConsumptionMetrics") or context.get("recentTelemetrySummary") or {}
-        hist = context.get("historicalProfile") or {}
-        tariff = ident.get("tariffRateInrPerKwh", self.tariff_rate)
-
-        # 0. Check if query touches electrical safety guidelines or standards
-        if any(w in p for w in ["safety", "guideline", "guidelines", "precaution", "precautions", "hazard", "shock", "earthing", "grounding", "rccb", "elcb", "is 732", "nec"]):
-            if getattr(self, "agentic_orchestrator", None) is not None:
-                try:
-                    contract = self.agentic_orchestrator.process_query(
-                        prompt=prompt,
-                        meter_id=meter_id,
-                        customer_name=cust_name,
-                    )
-                    if contract and contract.answer:
-                        return contract.answer, False
-                except Exception as exc:
-                    logger.warning("Safety fallback query via AgenticKnowledgeOrchestrator failed: %s", exc)
-
-        # Gentle out-of-scope response if live LLM is offline and query is outside energy domain
-        if not self._is_energy_related_query(prompt):
-            return (
-                f"### Domain Scope Notice\n\n"
-                f"Hello! I am GridVision's AI Energy Assistant for meter **{meter_id}** ({cust_name}).\n\n"
-                f"Your query (*\"{prompt}\"*) appears outside of residential electricity, billing, appliance efficiency, or electrical planning.\n\n"
-                f"**Here is how I can assist you with your home:**\n"
-                f"- **Current Bill & Usage:** Check month-to-date kWh and projected monthly bills.\n"
-                f"- **Appliance Sizing:** Compare BEE 3-Star vs 5-Star ACs or BLDC ceiling fans.\n"
-                f"- **House Energy Planning:** Sizing connected load and wiring under IS 732.\n"
-                f"- **Cost Management:** Prioritized energy reduction strategies."
-            ), False
-
-        # 1. Assemble structured domain schema
-        schema_data: dict[str, Any] = {
-            "meter_id": meter_id,
-            "customer_name": cust_name,
-            "tariff_rate_inr_per_kwh": tariff,
-            "current_billing_status": {
-                "billing_window_elapsed_days": billing.get("elapsedDays"),
-                "billing_cycle_total_days": 30,
-                "last_recorded_date": billing.get("lastRecordedDate"),
-                "cycle_consumption_kwh_so_far": billing.get("actualCycleKwhSoFar"),
-                "current_cycle_accrued_bill_inr": (
-                    billing.get("actualCycleKwhSoFar") * tariff
-                    if billing.get("actualCycleKwhSoFar") is not None
-                    else None
-                ),
-                "predicted_remaining_kwh": billing.get("predictedRemainingKwh"),
-                "estimated_month_end_kwh": billing.get("estimatedMonthEndKwh"),
-                "estimated_month_end_bill_inr": billing.get("estimatedMonthEndBillInr"),
-            },
-            "recent_daily_rate_kwh": recent.get("currentDailyUsageKwh"),
-            "daily_baseline_average_kwh": recent.get("baselineDailyAverageKwh", recent.get("dailyAverageKwh")),
-        }
-
-        # 2. Distinguish Historical Database Queries vs. Forward ML Predictions
-        month_specs = {
-            "january": ("01", 31), "jan": ("01", 31),
-            "february": ("02", 28), "feb": ("02", 28),
-            "march": ("03", 31), "mar": ("03", 31),
-            "april": ("04", 30), "apr": ("04", 30),
-            "may": ("05", 31),
-            "june": ("06", 30), "jun": ("06", 30),
-            "july": ("07", 31), "jul": ("07", 31),
-            "august": ("08", 31), "aug": ("08", 31),
-            "september": ("09", 30), "sep": ("09", 30),
-            "october": ("10", 31), "oct": ("10", 31),
-            "november": ("11", 30), "nov": ("11", 30),
-            "december": ("12", 31), "dec": ("12", 31),
-        }
-
-        matched_month_name = None
-        matched_month_num = None
-        matched_month_days = 30
-        for m_key, (m_num, m_days) in month_specs.items():
-            if re.search(r"\b" + m_key + r"\b", p):
-                matched_month_name = m_key.capitalize()
-                matched_month_num = m_num
-                matched_month_days = m_days
-                break
-
-        year_match = re.search(r"\b(201[789]|202[0-9])\b", p)
-        target_year = year_match.group(1) if year_match else ("2018" if matched_month_name else None)
-
-        is_negated_predict = any(w in p for w in ["dont predict", "don't predict", "dont predic", "don't predic", "not predict", "do not predict"])
-        is_explicit_query = any(w in p for w in ["database", "query", "recorded", "actual", "history", "historical", "was my", "what was", "usage on", "bill on", "find from", "find in", "show me"]) or is_negated_predict
-        is_forward_predict = any(w in p for w in ["predict", "forecast", "future", "upcoming", "next month", "projected"]) and not is_negated_predict
-
-        # 2a. Historical Database Query (Ground Truth Telemetry from DuckDB / Parquet)
-        if matched_month_name and target_year and (is_explicit_query or not is_forward_predict):
-            try:
-                from app.application.energy_analytics.query_consumption import QueryConsumptionUseCase
-                from app.domain.energy.schemas import ConsumptionQueryRequest
-
-                start_d = f"{target_year}-{matched_month_num}-01"
-                end_d = f"{target_year}-{matched_month_num}-{matched_month_days:02d}"
-                query_uc = QueryConsumptionUseCase()
-                q_resp = query_uc.execute(meter_id=meter_id, request=ConsumptionQueryRequest(start_date=start_d, end_date=end_d))
-                if q_resp.status == "success" and q_resp.results:
-                    res_kwh = q_resp.results.get("totalConsumptionKwh", 0.0)
-                    data_pts = q_resp.results.get("dataPoints", [])
-                    obs_days = len(data_pts) or matched_month_days
-                    daily_avg = round(res_kwh / obs_days, 2) if obs_days > 0 else 0.0
-                    calc_bill = round(res_kwh * tariff, 2)
-                    schema_data["queried_historical_telemetry"] = {
-                        "month_name": f"{matched_month_name} {target_year}",
-                        "period_window": f"{start_d} to {end_d}",
-                        "total_consumption_kwh": res_kwh,
-                        "calculated_bill_inr": calc_bill,
-                        "daily_average_kwh": daily_avg,
-                        "days_recorded": obs_days,
-                        "data_source": "verified_smart_meter_database",
-                        "is_prediction": False,
-                    }
-            except Exception as exc:
-                logger.warning("Historical consumption query failed: %s", exc)
-
-        # 2b. Forward ML Prediction (ONLY for future / prediction requests)
-        elif is_forward_predict or any(w in p for w in ["next month", "upcoming"]):
-            try:
-                from app.application.energy_analytics.predict_bill import PredictBillUseCase
-                from app.domain.energy.schemas import BillPredictionQueryRequest
-
-                target_m = f"{target_year or '2019'}-{matched_month_num or '01'}"
-                predict_uc = PredictBillUseCase(
-                    prediction_service=self.prediction_service,
-                    tariff_rate=self.tariff_rate,
-                )
-                tool_resp = predict_uc.execute(meter_id=meter_id, request=BillPredictionQueryRequest(target_month=target_m))
-                if tool_resp.status == "success" and tool_resp.results:
-                    res = tool_resp.results
-                    pred_kwh = res["predicted_month_kwh"]
-                    ci = res.get("confidence_interval", {})
-                    lower_b = ci.get("lower_bound_kwh", pred_kwh * 0.9)
-                    upper_b = ci.get("upper_bound_kwh", pred_kwh * 1.1)
-                    schema_data["next_month_ml_prediction"] = {
-                        "target_period": res.get("target_month"),
-                        "predicted_consumption_kwh": pred_kwh,
-                        "predicted_bill_inr": res["predicted_bill_inr"],
-                        "daily_average_kwh": res["daily_average_kwh"],
-                        "confidence_bounds_kwh": [round(lower_b, 1), round(upper_b, 1)],
-                        "confidence_bounds_bill_inr": [round(lower_b * tariff, 2), round(upper_b * tariff, 2)],
-                        "model_name": res.get("model_name", "customer-bill-prediction"),
-                        "evaluation_status": res.get("evaluation_status", "forward_ml_inference"),
-                    }
-            except Exception as exc:
-                logger.warning("Predict fallback execution failed: %s", exc)
-
-        # 3. If user query touches cost reduction or energy savings
-        if any(w in p for w in ["lower bill", "cost management", "saving tips", "save energy", "cut power", "energy recommendations"]):
-            try:
-                from app.application.residential.manage_cost import ManageEnergyCostUseCase
-                from app.domain.residential.schemas import CostManagementRequest
-                uc = ManageEnergyCostUseCase(tariff_rate=self.tariff_rate)
-                tool_resp = uc.execute(meter_id=meter_id, request=CostManagementRequest())
-                if tool_resp.status == "success" and tool_resp.results:
-                    res = tool_resp.results
-                    schema_data["cost_management_recommendations"] = {
-                        "current_monthly_baseline_kwh": res.get("current_monthly_baseline_kwh"),
-                        "achievable_monthly_savings_inr": res.get("achievable_monthly_savings_inr"),
-                        "strategies": [
-                            {"title": s["title"], "monthly_savings_inr": s["estimated_monthly_savings_inr"], "upfront_inr": s["upfront_investment_inr"]}
-                            for s in res.get("strategies", [])[:3]
-                        ],
-                    }
-            except Exception as exc:
-                logger.warning("Cost management fallback failed: %s", exc)
-
-        # 4. If user query touches historical trends or all-time summary
-        if any(w in p for w in ["all-time", "all time", "historically", "annual", "highest", "trend", "history"]):
-            all_time = hist.get("allTimeSummary") or {}
-            cov = hist.get("coverage") or {}
-            schema_data["historical_summary"] = {
-                "coverage_window": f"{cov.get('startDate', '—')} to {cov.get('endDate', '—')}",
-                "total_consumption_kwh": all_time.get("totalConsumptionKwh"),
-                "daily_average_kwh": all_time.get("averageDailyConsumptionKwh"),
-                "highest_day": all_time.get("highestConsumptionDay"),
-            }
-
-        # 5. If user query touches appliance upgrades
-        if any(w in p for w in ["appliance", "replace ac", "bldc", "inverter ac", "upgrade fan", "payback"]):
-            try:
-                from app.application.residential.analyze_appliance import AnalyzeApplianceScenarioUseCase
-                from app.domain.residential.schemas import ApplianceScenarioRequest
-                uc = AnalyzeApplianceScenarioUseCase(tariff_rate=self.tariff_rate)
-                tool_resp = uc.execute(meter_id=meter_id, request=ApplianceScenarioRequest())
-                if tool_resp.status == "success" and tool_resp.results:
-                    res = tool_resp.results
-                    schema_data["appliance_lifecycle_analysis"] = {
-                        "annual_energy_savings_kwh": res.get("annual_energy_savings_kwh"),
-                        "annual_bill_savings_inr": res.get("annual_cost_savings_inr"),
-                        "net_upfront_investment_inr": res.get("net_upfront_investment_inr"),
-                        "simple_payback_years": res.get("simple_payback_years"),
-                        "recommendation_verdict": res.get("recommendation_verdict"),
-                    }
-            except Exception as exc:
-                logger.warning("Appliance fallback failed: %s", exc)
-
-        # 5b. If user query touches house planning or new house energy plan optimization
-        if any(w in p for w in ["house plan", "new house", "connected load", "peak demand", "balanced tier", "optimization step", "key optimization", "diversified"]):
-            schema_data["house_plan_context"] = {
-                "connected_load_kw": 9.21,
-                "diversified_peak_demand_kw": 5.99,
-                "recommended_tier": "Balanced",
-                "estimated_monthly_bill_inr": 8013.0,
-                "monthly_consumption_kwh": 801.0,
-                "key_optimization_recommendations": [
-                    {
-                        "step": "1. Upgrade to 5-Star BLDC Ceiling Fans",
-                        "details": "Replace standard 75W induction fans with 28W BLDC fans. Saves ~47W per fan. For 5 fans running 10h/day, saves ~71 kWh/month (~₹710/month).",
-                    },
-                    {
-                        "step": "2. Install Rooftop Solar PV (3 kWp Grid-Tied)",
-                        "details": "Generates ~360-380 kWh/month in Bangalore. Offsets daytime consumption and cuts net grid bill from ₹8,013 to ~₹4,400/month.",
-                    },
-                    {
-                        "step": "3. 5-Star Inverter Room ACs (ISEER >= 5.0 Wh/Wh)",
-                        "details": "High-ISEER inverter compressors with 24°C setpoint reduce cooling consumption by 20-30% (~90 kWh/month saved).",
-                    },
-                ],
-            }
-
-        # 5c. If user query touches electrical safety guidelines or standards
-        if any(w in p for w in ["safety", "guideline", "guidelines", "precaution", "hazard", "shock", "earthing", "grounding", "rccb", "elcb", "mcb", "is 732"]):
-            schema_data["electrical_safety_standards_is732"] = {
-                "authoritative_code": "IS 732 / National Electrical Code of India (NEC)",
-                "protective_earthing": "Every residential installation must maintain continuous 3-pin earthing with total earth resistance <= 5.0 ohms (preferably <= 1.0 ohm). Never remove the ground pin.",
-                "shock_hazard_protection": "Mandatory Residual Current Device (RCD/RCCB) rated <= 30 mA for all residential 230V socket-outlet circuits and wet locations to prevent electric shocks.",
-                "circuit_segregation": "Lighting sub-circuits (min 1.5 sq.mm Cu wire, max 800W or 10 points) must be segregated from appliance power sub-circuits (min 2.5-4.0 sq.mm Cu wire, max 3000W or 2 outlets).",
-                "wet_zones": "Bathrooms strictly demarcated into Zones 0, 1, 2 under IS 732. No general 230V switches or outlets within 0.6m of water sources; IPX4/IPX5 moisture ingress protection required.",
-                "overload_protection": "All sub-circuits must have Type-B or Type-C MCBs matching cable ratings. Never bridge blown fuses or bypass breakers with copper wire.",
-            }
-
-        # 6. SYNTHESIZE RESPONSE VIA LLM BASED ON QUERY AND VERIFIED SCHEMA
-        llm_response = self._synthesize_grounded_response_with_llm(
-            prompt=prompt,
-            schema_data=schema_data,
-            meter_id=meter_id,
-            customer_name=cust_name,
-        )
-        if llm_response and llm_response.strip():
-            return llm_response.strip(), True
-
-        # 7. Emergency deterministic fallback (covers ALL requested parts if LLM is offline)
-        parts = []
-        if "house_plan_context" in schema_data:
-            hp = schema_data["house_plan_context"]
-            opts = "\n".join(
-                f"- **{o['step']}**: {o['details']}"
-                for o in hp.get("key_optimization_recommendations", [])
-            )
-            parts.append(
-                f"### House Energy Plan Analysis (Connected Load: {hp['connected_load_kw']} kW, Peak Demand: {hp['diversified_peak_demand_kw']} kW)\n\n"
-                f"Based on your **{hp['recommended_tier']}** tier plan (approx. {hp['monthly_consumption_kwh']} kWh/month, ₹{hp['estimated_monthly_bill_inr']:,.2f}/month), here are the key optimization steps:\n\n"
-                f"{opts}\n\n"
-                f"Would you like me to generate the updated energy plan with these optimizations included?"
-            )
-        if any(w in p for w in ["all-time", "all time", "historically", "annual", "highest"]):
-            h_stat = schema_data.get("historical_summary", {})
-            highest_day = h_stat.get("highest_day") or {}
-            highest_day_str = (
-                f"**{highest_day.get('consumptionKwh', 0):.1f} kWh** on `{highest_day.get('date', '—')}`"
-                if highest_day.get("consumptionKwh") is not None
-                else "Not recorded"
-            )
-            parts.append(
-                f"### Verified Historical Overview for **{meter_id}** ({cust_name})\n\n"
-                f"- **Historical Coverage Window**: `{h_stat.get('coverage_window', '—')}`\n"
-                f"- **All-Time Total Consumption**: **{h_stat.get('total_consumption_kwh', 0):.1f} kWh**\n"
-                f"- **Historical Daily Average**: **{h_stat.get('daily_average_kwh', 0):.1f} kWh/day**\n"
-                f"- **Peak Consumption Day**: {highest_day_str}"
-            )
-        if "queried_historical_telemetry" in schema_data:
-            ht = schema_data["queried_historical_telemetry"]
-            parts.append(
-                f"### Verified Telemetry Records for **{ht['month_name']}** ({meter_id})\n\n"
-                f"- **Data Source**: `{ht['data_source']}` (Ground Truth Records, Not a Prediction)\n"
-                f"- **Total Recorded Consumption**: **{ht['total_consumption_kwh']:.2f} kWh**\n"
-                f"- **Calculated Bill**: **₹{ht['calculated_bill_inr']:,.2f}** (at ₹{tariff:.2f}/kWh across {ht['days_recorded']} recorded days)\n"
-                f"- **Daily Average Consumption**: **{ht['daily_average_kwh']:.2f} kWh/day**"
-            )
-        if "next_month_ml_prediction" in schema_data:
-            pred = schema_data["next_month_ml_prediction"]
-            parts.append(
-                f"**Projected Bill for {pred['target_period']}**: Machine learning forecasts **{pred['predicted_consumption_kwh']:.1f} kWh** "
-                f"(estimated **₹{pred['predicted_bill_inr']:,.2f}** at ₹{tariff:.2f}/kWh, with daily average {pred['daily_average_kwh']:.1f} kWh/day)."
-            )
-        if any(w in p for w in ["current", "bill", "now", "today", "usage", "kwh", "so far"]) or not parts:
-            b_stat = schema_data["current_billing_status"]
-            accrued = b_stat.get("current_cycle_accrued_bill_inr")
-            accrued_str = f"₹{accrued:,.2f}" if accrued is not None else "₹0.00"
-            parts.insert(
-                0,
-                f"### Verified Billing Summary for **{meter_id}** ({cust_name})\n\n"
-                f"**Latest Recorded Billing Status**: For the latest recorded billing cycle (as of {b_stat.get('last_recorded_date')}, Day {b_stat.get('billing_window_elapsed_days')} of 30), "
-                f"recorded usage is **{b_stat.get('cycle_consumption_kwh_so_far', 0):.1f} kWh** (accrued: **{accrued_str}**). "
-                f"Projected month-end total is **{b_stat.get('estimated_month_end_kwh', 0):.1f} kWh** (estimated invoice: **₹{b_stat.get('estimated_month_end_bill_inr', 0):,.2f}**)."
-            )
-        return "\n\n".join(parts), False
-
     @staticmethod
-    def _is_energy_related_query(prompt: str, history: list[dict[str, Any]] | None = None) -> bool:
-        """Evaluate if user prompt relates to household energy, billing, power, appliances, or standards."""
-        p = prompt.lower().strip()
-        # Conversational continuation or affirmative command in active session
-        if is_affirmative_or_continuation(prompt):
-            return True
+    def _format_verified_billing_context(context: dict[str, Any]) -> str | None:
+        """Format an accrued charge from recorded cycle usage when generation is unavailable."""
+        billing = context.get("billingCycleStatus") or {}
+        identity = context.get("householdIdentity") or {}
+        provenance = context.get("dataProvenance") or {}
+        cycle_kwh = billing.get("actualCycleKwhSoFar")
+        tariff = identity.get("tariffRateInrPerKwh")
 
-        # Common arithmetic or numbers (e.g. 2+2)
-        if all(c in "0123456789+-*/. ()?" for c in p) and any(c in "+-*/" for c in p):
-            return True
+        try:
+            cycle_kwh = float(cycle_kwh)
+            tariff = float(tariff)
+        except (TypeError, ValueError):
+            return None
+        if not math.isfinite(cycle_kwh) or not math.isfinite(tariff):
+            return None
 
-        energy_terms = [
-            "bill", "tariff", "kwh", "consumption", "usage", "meter", "reading", "cost",
-            "yesterday", "forecast", "predict", "daily", "average", "peak", "power", "electricity",
-            "energy", "standard", "code", "regulation", "is 732", "is732", "nec", "bee", "cea",
-            "voltage", "amp", "load", "ac", "air condition", "air conditioner", "inverter", "star",
-            "appliance", "refrigerator", "fridge", "fan", "bldc", "geyser", "heater", "solar", "pv",
-            "saving", "save", "cut bill", "reduce bill", "efficiency", "electrical", "wiring", "circuit",
-            "rccb", "mcb", "earthing", "neutral", "phase", "sub-circuit", "lighting", "bedroom",
-            "house", "home", "planning", "layout", "gridvision", "spend", "owing", "payback",
-            "show", "summary", "overview", "status", "profile", "baseline", "telemetry", "month",
-            "query", "database", "record", "records", "actual", "find",
-            "hi", "hello", "hey", "help", "thank"
-        ]
-        return any(term in p for term in energy_terms)
-
-    def _determine_tool_scope(self, prompt: str) -> str:
-        """Dynamically select a focused tool scope to optimize prompt tokens and latency while preserving AI flexibility."""
-        p = prompt.lower()
-        if any(w in p for w in [
-            "standard", "code", "regulation", "is 732", "is732", "nec", "bee", "cea",
-            "clause", "wire", "wiring", "safety", "guideline", "guidelines", "precaution",
-            "precautions", "hazard", "shock", "electric shock", "earthing", "grounding",
-            "rccb", "elcb", "mcb", "fuse", "overload", "fire", "electrical safety", "neutral", "insulation"
-        ]):
-            return "regulatory_and_standards"
-        elif any(w in p for w in ["plan house", "new house", "layout", "connected load", "appliance", "replace", "upgrade", "bldc", "iseer", "inverter ac", "fan", "geyser", "refrigerator", "payback", "purchase", "scenario"]):
-            return "planning_and_upgrades"
-        elif any(w in p for w in ["bill", "consumption", "usage", "history", "trend", "predict", "forecast", "yesterday", "tariff", "peak", "reduce bill", "cost management", "saving", "all-time"]):
-            return "telemetry_and_billing"
-        return "balanced_core"
+        recorded_date = billing.get("lastRecordedDate") or provenance.get(
+            "lastRecordedDate"
+        )
+        date_text = f" through **{recorded_date}**" if recorded_date else ""
+        accrued_charge = cycle_kwh * tariff
+        return (
+            f"Recorded usage for this billing cycle is **{cycle_kwh:.1f} kWh**"
+            f"{date_text}. At the verified tariff of **₹{tariff:.2f}/kWh**, "
+            f"the accrued energy charge is **₹{accrued_charge:,.2f}**. "
+            "This is based on the latest recorded meter data, not a live reading "
+            "or an official invoice."
+        )
 
     def _calculate_adaptive_timeout(self, prompt: str) -> float:
         """Calculate dynamic timeout: generous for complex/lengthy queries, baseline for short queries.
@@ -490,14 +208,7 @@ class ResidentialAssistantOrchestrator:
         than hardcoded low caps that caused premature fallback with qwen3:8b inference times.
         """
         p_len = len(prompt.strip())
-        is_complex = (
-            p_len > 120
-            or any(w in prompt.lower() for w in [
-                "compare", "detailed", "breakdown", "plan", "scenario", "investment", "payback",
-                "recommendation", "package", "multi", "versus", "vs", "timeline", "future",
-                "step by step", "bedroom", "built-up", "ac", "refrigerator"
-            ])
-        )
+        is_complex = p_len > 120
         base = getattr(self.agent_factory, "timeout", BaseConfig.ASSISTANT_TIMEOUT_SECONDS) if self.agent_factory else BaseConfig.ASSISTANT_TIMEOUT_SECONDS
         complex_timeout = getattr(self.agent_factory, "complex_timeout", getattr(BaseConfig, "ASSISTANT_COMPLEX_TIMEOUT_SECONDS", 75.0)) if self.agent_factory else getattr(BaseConfig, "ASSISTANT_COMPLEX_TIMEOUT_SECONDS", 75.0)
         if is_complex or p_len > 250:
@@ -603,24 +314,30 @@ class ResidentialAssistantOrchestrator:
             conversation_id=conversation_id,
         )
         resolved_state = turn_ctx.resolved_state
-        classified_intent = None
-        if resolved_state.follow_up_type not in {
-            "answer_to_pending",
-            "partial_answer",
-            "correction",
-            "reference_to_result",
-        }:
-            classified_intent = self.router.classify_intent(
-                prompt=clean_user_prompt,
-                llm_provider=self.llm_provider,
-                history=turn_ctx.recent_messages,
-            )
+        classified_intent = self.router.classify_intent(
+            prompt=resolved_state.effective_prompt or clean_user_prompt,
+            llm_provider=self.llm_provider,
+            history=turn_ctx.recent_messages,
+        )
         routing_plan = self.router.create_routing_plan(
             prompt=clean_user_prompt,
             resolved_state=resolved_state,
             active_state=turn_ctx.active_state,
             classified_intent=classified_intent,
         )
+        if routing_plan.primary_intent == "classification_unavailable":
+            return {
+                "answer": (
+                    "I couldn't confidently route this request with the residential assistant, "
+                    "so I did not call a data tool or create an estimate. No unverified answer was generated; please try again."
+                ),
+                "persona": "household",
+                "entityId": meter_id,
+                "customerName": customer_name,
+                "conversationId": turn_ctx.conversation_id,
+                "status": "error",
+                "isLlmGenerated": False,
+            }
         effective_prompt = routing_plan.effective_prompt
         tool_scope = routing_plan.resolved_tool_scope
         is_continuation = routing_plan.is_continuation
@@ -648,7 +365,6 @@ class ResidentialAssistantOrchestrator:
 
         if (
             tool_scope != "context_only"
-            and routing_plan.primary_intent not in direct_rag_intents
             and self.agent_factory
             and (
                 self.agent_factory.custom_chat_model is not None
@@ -658,38 +374,84 @@ class ResidentialAssistantOrchestrator:
             try:
                 effective_timeout = self._calculate_adaptive_timeout(effective_prompt)
 
-                agent = self.agent_factory.create_agent_for_household(
-                    meter_id=meter_id,
-                    system_prompt=enriched_system_prompt,
-                    prediction_service=self.prediction_service,
-                    tariff_rate=self.tariff_rate,
-                    include_knowledge_tools=True,
-                    retriever=getattr(self, "retriever", None),
-                    resolver=getattr(self, "resolver", None),
-                    tool_scope=tool_scope,
-                    recommended_tools=routing_plan.recommended_tools,
-                    routed_tool_arguments=routing_plan.routed_tool_arguments,
-                    requires_tool_execution=routing_plan.requires_tool_execution,
-                    timeout=effective_timeout,
-                )
                 agent_messages = self.agent_factory.sanitize_history_and_prompt(
                     prompt=effective_prompt,
                     history=compacted_history,
                 )
-                res = agent.invoke({"messages": agent_messages})
+                model_candidates = self.agent_factory.groq_model_candidates() or [None]
+                fallback_api_keys = self.agent_factory.groq_fallback_api_keys()
+                model_api_candidates = [
+                    (model_override, api_key_override)
+                    for model_override in model_candidates
+                    for api_key_override in (None, *fallback_api_keys)
+                ]
+                res = None
+                for candidate_index, (model_override, api_key_override) in enumerate(
+                    model_api_candidates
+                ):
+                    try:
+                        agent = self.agent_factory.create_agent_for_household(
+                            meter_id=meter_id,
+                            system_prompt=enriched_system_prompt,
+                            prediction_service=self.prediction_service,
+                            tariff_rate=self.tariff_rate,
+                            include_knowledge_tools=True,
+                            retriever=getattr(self, "retriever", None),
+                            resolver=getattr(self, "resolver", None),
+                            tool_scope=tool_scope,
+                            recommended_tools=routing_plan.recommended_tools,
+                            routed_tool_arguments=routing_plan.routed_tool_arguments,
+                            requires_tool_execution=routing_plan.requires_tool_execution,
+                            timeout=effective_timeout,
+                            model_override=model_override,
+                            api_key_override=api_key_override,
+                        )
+                        res = agent.invoke({"messages": agent_messages})
+                        break
+                    except Exception as exc:
+                        is_rate_limited = _is_provider_rate_limit_error(exc)
+                        rate_limit_encountered = is_rate_limited
+                        has_fallback = candidate_index + 1 < len(model_api_candidates)
+                        if not is_rate_limited or not has_fallback:
+                            raise
+                        next_model, next_api_key = model_api_candidates[candidate_index + 1]
+                        logger.warning(
+                            "Groq tool-calling request was rate limited; retrying "
+                            "with model '%s' and %s.",
+                            next_model or self.agent_factory.model_name,
+                            "the secondary API key" if next_api_key else "the primary API key",
+                        )
                 if res and "messages" in res and res["messages"]:
-                    if routing_plan.requires_tool_execution and routing_plan.recommended_tools:
-                        completed_tool_names = {
-                            getattr(message, "name", None)
-                            for message in res["messages"]
-                            if getattr(message, "type", None) == "tool"
-                        }
-                        if not completed_tool_names.intersection(
-                            routing_plan.recommended_tools
-                        ):
+                    tool_messages = [
+                        message for message in res["messages"]
+                        if getattr(message, "type", None) == "tool"
+                    ]
+                    completed_tool_names = {
+                        getattr(message, "name", None) for message in tool_messages
+                    }
+                    if routing_plan.requires_tool_execution:
+                        expected_tool_ran = (
+                            bool(completed_tool_names.intersection(routing_plan.recommended_tools))
+                            if routing_plan.recommended_tools
+                            else bool(completed_tool_names)
+                        )
+                        if not expected_tool_ran:
                             raise RuntimeError(
                                 "The required routed tool did not execute before the model answered."
                             )
+                        for tool_message in tool_messages:
+                            try:
+                                tool_result = json.loads(str(tool_message.content))
+                            except (TypeError, ValueError):
+                                continue
+                            if isinstance(tool_result, dict) and (
+                                tool_result.get("error")
+                                or str(tool_result.get("status", "")).lower()
+                                in {"error", "failed", "unavailable"}
+                            ):
+                                raise RuntimeError(
+                                    "A required residential tool returned an error; its result cannot be replaced with an estimate."
+                                )
                     last_msg = res["messages"][-1]
                     raw_ans = last_msg.content if hasattr(last_msg, "content") else str(last_msg)
                     if isinstance(raw_ans, list):
@@ -705,12 +467,7 @@ class ResidentialAssistantOrchestrator:
                 )
         elif (
             routing_plan.requires_tool_execution
-            and routing_plan.primary_intent not in direct_rag_intents
             and not routing_plan.primary_intent.startswith("answer_")
-            and routing_plan.resolved_tool_scope in {
-                "telemetry_and_billing",
-                "complaint_guidance",
-            }
         ):
             required_tool_execution_failed = True
             logger.warning(
@@ -723,12 +480,32 @@ class ResidentialAssistantOrchestrator:
         max_budget = getattr(BaseConfig, "ASSISTANT_COMPLEX_TIMEOUT_SECONDS", 75.0)
         if (
             not answer
+            and routing_plan.primary_intent != "current_billing_summary"
             and not routing_plan.requires_tool_execution
-            and tool_scope != "context_only"
+            and (
+                tool_scope != "context_only"
+                or routing_plan.primary_intent
+                in {
+                    "current_billing_summary",
+                    "conversation_continuation",
+                    "general_chat",
+                    "irrelevant",
+                }
+            )
             and not rate_limit_encountered
             and time_elapsed < max_budget
             and self.llm_provider
             and self.llm_provider.is_available()
+            and (
+                tool_scope != "context_only"
+                or routing_plan.primary_intent
+                in {
+                    "current_billing_summary",
+                    "conversation_continuation",
+                    "general_chat",
+                    "irrelevant",
+                }
+            )
         ):
             try:
                 answer = self.llm_provider.generate_chat_completion(
@@ -743,32 +520,20 @@ class ResidentialAssistantOrchestrator:
             except Exception as exc:
                 logger.error("Unexpected error during LLM generation: %s", exc)
 
+        if (
+            routing_plan.primary_intent == "current_billing_summary"
+            and tool_scope == "context_only"
+        ):
+            answer = answer or self._format_verified_billing_context(context)
+
         # 7. Specialized Multi-Knowledge Orchestrator (for dedicated house planning, appliance analysis, or standards)
         time_elapsed = time.time() - request_start_time
         contract = None
-        p_low = effective_prompt.lower()
-        is_knowledge_mode = (
-            routing_plan.primary_intent in direct_rag_intents
-            or routing_plan.primary_intent in {
-                "house_energy_planning",
-                "appliance_lifecycle_analysis",
-            }
-            or is_continuation
-            or any(k in p_low for k in [
-            "plan house", "new house", "electrical layout", "connected load", "room", "bedroom",
-            "appliance", "replace", "upgrade", "bldc", "iseer", "inverter ac", "fan", "geyser", "refrigerator", "payback",
-            "reduce bill", "cost management", "saving", "lower consumption", "balanced efficiency",
-            "standard", "code", "regulation", "is 732", "is732", "nec", "bee", "cea", "wiring", "clause",
-            "safety", "guideline", "guidelines", "precaution", "precautions", "hazard", "shock", "earthing",
-            "grounding", "rccb", "elcb", "mcb", "fuse", "overload", "fire", "electrical safety",
-            "yes", "generate", "proceed", "do it"
-            ])
-        )
+        is_knowledge_mode = routing_plan.primary_intent in direct_rag_intents
         if (
             (not answer)
-            and not required_tool_execution_failed
             and is_knowledge_mode
-            and (time_elapsed < 18.0)
+            and (time_elapsed < max_budget)
             and (self.agentic_orchestrator is not None)
         ):
             try:
@@ -778,6 +543,7 @@ class ResidentialAssistantOrchestrator:
                     customer_name=customer_name,
                     history=history,
                     explicit_mode=resolved_state.resolved_mode if is_continuation else None,
+                    classified_intent=routing_plan.primary_intent,
                 )
             except Exception as e:
                 logger.warning("AgenticKnowledgeOrchestrator failed: %s", e)
@@ -865,20 +631,26 @@ class ResidentialAssistantOrchestrator:
         if not answer:
             if routing_plan.requires_tool_execution:
                 required_tool_execution_failed = True
-                answer = (
-                    "I couldn't complete the required verified data lookup because Ollama "
-                    "or the selected energy tool did not finish successfully. No unverified "
-                    "answer was generated; please try again."
-                )
+                if rate_limit_encountered:
+                    answer = (
+                        "The assistant's model provider is currently rate-limited, and I "
+                        "could not complete a verified tool lookup. No unverified answer "
+                        "was generated; please retry shortly."
+                    )
+                else:
+                    answer = (
+                        "I couldn't complete the required verified data lookup because "
+                        "the assistant model or selected energy tool did not finish "
+                        "successfully. No unverified answer was generated; please try again."
+                    )
             else:
-                fallback_ans, fallback_is_llm = self._generate_fallback_response(
-                    clean_user_prompt, context, turn_ctx=turn_ctx
+                required_tool_execution_failed = True
+                answer = (
+                    "The residential language model could not produce a verified response. "
+                    "No estimate was substituted; please try again."
                 )
-                answer = fallback_ans
-                if fallback_is_llm:
-                    is_llm_generated = True
 
-        is_relevant = self._is_energy_related_query(clean_user_prompt)
+        is_relevant = classified_intent != "irrelevant"
         final_mode = (
             resolved_state.resolved_mode
             if is_continuation and resolved_state.resolved_mode

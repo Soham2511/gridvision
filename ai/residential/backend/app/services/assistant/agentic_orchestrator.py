@@ -40,6 +40,7 @@ from app.services.assistant.dialogue_state import (
     is_affirmative_or_continuation,
     resolve_dialogue_context,
 )
+from app.services.assistant.intelligent_router import IntelligentRouter
 from app.services.rag.retriever import HybridDocumentRetriever, RetrievedChunk
 from app.services.reference.resolver import ReferenceResolver
 from app.services.reference.exceptions import ReferenceResolutionError
@@ -71,177 +72,6 @@ class AgenticKnowledgeOrchestrator:
         self.analyze_appliance_uc = AnalyzeApplianceScenarioUseCase(tariff_rate=tariff_rate, resolver=resolver)
         self.manage_cost_uc = ManageEnergyCostUseCase(tariff_rate=tariff_rate)
 
-    def classify_intent(
-        self,
-        prompt: str,
-        history: Optional[List[Dict[str, Any]]] = None,
-        explicit_mode: Optional[str] = None,
-    ) -> Tuple[str, List[str]]:
-        """Classify user query into primary mode and required knowledge sources, with dialogue state awareness."""
-        resolved = resolve_dialogue_context(prompt, history=history, explicit_mode=explicit_mode)
-        primary_mode = resolved.resolved_mode
-
-        # Determine required knowledge sources
-        p = resolved.effective_prompt.lower()
-        sources: List[str] = []
-        if any(k in p for k in ["standard", "code", "regulation", "is 732", "is732", "nec", "bee", "cea", "clause", "wiring", "rule", "safety"]):
-            sources.append(KnowledgeSourceType.DOCUMENT_RAG.value)
-        if any(k in p for k in ["iseer", "emission factor", "star rating", "benchmark", "spec", "efficiency ratio"]):
-            sources.append(KnowledgeSourceType.STRUCTURED_REFERENCE.value)
-        if any(k in p for k in ["my consumption", "previous month", "last month", "higher", "bill", "yesterday", "usage", "history"]):
-            sources.append(KnowledgeSourceType.HOUSEHOLD_TELEMETRY.value)
-        if any(k in p for k in ["predict", "forecast", "next month", "end of month"]):
-            sources.append(KnowledgeSourceType.ML_PREDICTIONS.value)
-        if primary_mode in ("house_planning", "appliance_lifecycle", "cost_management"):
-            sources.append(KnowledgeSourceType.DOMAIN_ENGINE.value)
-
-        # Default fallback sources
-        if not sources:
-            if primary_mode == "house_planning":
-                sources = [KnowledgeSourceType.DOCUMENT_RAG.value, KnowledgeSourceType.DOMAIN_ENGINE.value]
-            elif primary_mode == "appliance_lifecycle":
-                sources = [KnowledgeSourceType.STRUCTURED_REFERENCE.value, KnowledgeSourceType.DOMAIN_ENGINE.value]
-            else:
-                sources = [KnowledgeSourceType.DOCUMENT_RAG.value]
-
-        return primary_mode, sources
-
-    def process_query(
-        self,
-        prompt: str,
-        meter_id: str,
-        customer_name: Optional[str] = None,
-        history: Optional[List[Dict[str, Any]]] = None,
-        explicit_mode: Optional[str] = None,
-    ) -> AssistantResponseContract:
-        """Process query through agentic knowledge routing and return structured response contract."""
-        resolved_state = resolve_dialogue_context(prompt, history=history, explicit_mode=explicit_mode)
-        mode = resolved_state.resolved_mode
-        effective_prompt = resolved_state.effective_prompt
-        _, required_sources = self.classify_intent(effective_prompt, history=history, explicit_mode=explicit_mode)
-        logger.info("Classified prompt '%s' -> mode=%s, sources=%s", prompt[:50], mode, required_sources)
-
-        citations: List[DocumentCitation] = []
-        structured_refs: List[StructuredReferenceProvenance] = []
-        calculations: List[CalculationProvenance] = []
-        assumptions: List[str] = []
-        limitations: List[str] = []
-        missing_info: List[str] = []
-        sources_used: List[str] = []
-
-        # -------------------------------------------------------------
-        # Dispatch to specialized mode workflow
-        # -------------------------------------------------------------
-        if mode == "house_planning":
-            return self._handle_house_planning_mode(
-                prompt=effective_prompt,
-                meter_id=meter_id,
-                customer_name=customer_name,
-                history=history,
-            )
-
-        elif mode == "appliance_lifecycle":
-            return self._handle_appliance_lifecycle_mode(
-                prompt=effective_prompt,
-                meter_id=meter_id,
-                customer_name=customer_name,
-            )
-
-        elif mode == "cost_management":
-            return self._handle_cost_management_mode(
-                prompt=effective_prompt,
-                meter_id=meter_id,
-                customer_name=customer_name,
-            )
-
-        elif mode == "irrelevant":
-            if (
-                self.retriever is not None
-                and KnowledgeSourceType.DOCUMENT_RAG.value in required_sources
-            ):
-                return self._handle_general_chat_mode(
-                    prompt=prompt,
-                    meter_id=meter_id,
-                    customer_name=customer_name,
-                    required_sources=required_sources,
-                )
-            return self._handle_irrelevant_mode(
-                prompt=prompt,
-                meter_id=meter_id,
-                customer_name=customer_name,
-            )
-
-        else:
-            return self._handle_general_chat_mode(
-                prompt=prompt,
-                meter_id=meter_id,
-                customer_name=customer_name,
-                required_sources=required_sources,
-            )
-
-    def _handle_irrelevant_mode(
-
-        self,
-
-        prompt: str,
-
-        meter_id: str,
-
-        customer_name: Optional[str] = None,
-
-    ) -> AssistantResponseContract:
-
-        """Courteous standard response for prompts outside residential energy scope."""
-
-        answer = (
-
-            f"### Domain Scope Notice\n\n"
-
-            f"Hello! I am GridVision's AI Energy Assistant for meter **{meter_id}** ({customer_name or 'Resident'}).\n\n"
-
-            f"Your inquiry (*\"{prompt}\"*) appears outside the domain of residential electricity, billing, appliance efficiency, or electrical planning.\n\n"
-
-            "**Here is what I can help you with:**\n"
-
-            "- **Billing & Consumption:** Check your current cycle charges, daily usage averages, and projected month-end bills.\n"
-
-            "- **Appliance Decisions:** Compare 3-Star vs 5-Star Inverter ACs, refrigerators, and calculate simple payback periods.\n"
-
-            "- **House Electrical Planning:** Sizing connected load, sub-circuit distribution, and solar PV feasibility under IS 732.\n"
-
-            "- **Cost Reduction:** Get prioritized, non-overlapping efficiency strategies to lower your monthly power bills.\n\n"
-
-            "*Feel free to ask any question related to your home's electricity!*"
-
-        )
-
-        return AssistantResponseContract(
-
-            answer=answer,
-
-            mode="irrelevant",
-
-            status="irrelevant",
-
-            relevance="irrelevant",
-
-            entityId=meter_id,
-
-            customerName=customer_name,
-
-            provenance=AssistantProvenance(knowledge_sources_used=["domain_scope_guard"]),
-
-            limitations=["Out-of-scope query: Question does not relate to residential electricity, billing, or appliance standards."],
-
-        )
-
-
-
-    # =================================================================
-
-    # Mode 1: General Chat / Standards / Telemetry / Unsupported
-
-    # =================================================================
     def _synthesize_document_answer(
         self,
         prompt: str,
@@ -367,13 +197,372 @@ class AgenticKnowledgeOrchestrator:
             logger.warning("Grounded household telemetry synthesis failed: %s", exc)
             return None
 
+    def classify_intent(
+        self,
+        prompt: str,
+        history: Optional[List[Dict[str, Any]]] = None,
+        classified_intent: Optional[str] = None,
+    ) -> Tuple[str, List[str]]:
+        """Resolve workflow and knowledge sources from the LLM's classified intent."""
+        intent = classified_intent
+        if intent is None:
+            intent = IntelligentRouter.classify_intent(
+                prompt,
+                llm_provider=self.llm_provider,
+                history=history,
+            )
+        if intent not in IntelligentRouter._CLASSIFIABLE_INTENTS:
+            return "classification_unavailable", []
+
+        workflow_by_intent = {
+            "house_energy_planning": "house_planning",
+            "appliance_lifecycle_analysis": "appliance_lifecycle",
+            "cost_management": "cost_management",
+            "irrelevant": "irrelevant",
+        }
+        sources_by_intent = {
+            "current_billing_summary": [KnowledgeSourceType.HOUSEHOLD_TELEMETRY.value],
+            "historical_telemetry_query": [KnowledgeSourceType.HOUSEHOLD_TELEMETRY.value],
+            "forward_bill_prediction": [
+                KnowledgeSourceType.HOUSEHOLD_TELEMETRY.value,
+                KnowledgeSourceType.ML_PREDICTIONS.value,
+            ],
+            "consumption_period_comparison": [KnowledgeSourceType.HOUSEHOLD_TELEMETRY.value],
+            "tariff_resolution": [
+                KnowledgeSourceType.STRUCTURED_REFERENCE.value,
+                KnowledgeSourceType.CUSTOMER_CONTEXT.value,
+            ],
+            "regulatory_standards_rag": [KnowledgeSourceType.DOCUMENT_RAG.value],
+            "electricity_knowledge_rag": [KnowledgeSourceType.DOCUMENT_RAG.value],
+            "complaint_center_guidance": [KnowledgeSourceType.DOMAIN_ENGINE.value],
+            "house_energy_planning": [
+                KnowledgeSourceType.DOCUMENT_RAG.value,
+                KnowledgeSourceType.DOMAIN_ENGINE.value,
+            ],
+            "appliance_lifecycle_analysis": [
+                KnowledgeSourceType.STRUCTURED_REFERENCE.value,
+                KnowledgeSourceType.DOMAIN_ENGINE.value,
+            ],
+            "cost_management": [
+                KnowledgeSourceType.HOUSEHOLD_TELEMETRY.value,
+                KnowledgeSourceType.DOMAIN_ENGINE.value,
+            ],
+            "general_energy_query": [
+                KnowledgeSourceType.DOCUMENT_RAG.value,
+                KnowledgeSourceType.HOUSEHOLD_TELEMETRY.value,
+                KnowledgeSourceType.DOMAIN_ENGINE.value,
+            ],
+            "general_chat": [KnowledgeSourceType.CONVERSATION_SESSION.value],
+            "irrelevant": [],
+        }
+        workflow = workflow_by_intent.get(intent, "general_chat")
+        logger.info("LLM routed intent '%s' to workflow '%s'", intent, workflow)
+        return workflow, sources_by_intent[intent]
+
+    def process_query(
+        self,
+        prompt: str,
+        meter_id: str,
+        customer_name: Optional[str] = None,
+        history: Optional[List[Dict[str, Any]]] = None,
+        explicit_mode: Optional[str] = None,
+        classified_intent: Optional[str] = None,
+    ) -> AssistantResponseContract:
+        """Process query through agentic knowledge routing and return structured response contract."""
+        resolved_state = resolve_dialogue_context(prompt, history=history, explicit_mode=explicit_mode)
+        intent = classified_intent or IntelligentRouter.classify_intent(
+            resolved_state.effective_prompt or prompt,
+            llm_provider=self.llm_provider,
+            history=history,
+        )
+        mode, required_sources = self.classify_intent(
+            resolved_state.effective_prompt or prompt,
+            history=history,
+            classified_intent=intent,
+        )
+        effective_prompt = resolved_state.effective_prompt
+        if mode == "classification_unavailable":
+            return AssistantResponseContract(
+                answer=(
+                    "I couldn't confidently route this request with the residential "
+                    "assistant. No data tool was called or unverified answer generated; "
+                    "please try again."
+                ),
+                mode="general_chat",
+                entityId=meter_id,
+                customerName=customer_name,
+                status="unsupported",
+                missing_information=["The LLM did not return a valid supported intent."],
+            )
+        logger.info(
+            "LLM classified prompt '%s' -> mode=%s, sources=%s",
+            prompt[:50],
+            mode,
+            required_sources,
+        )
+
+        citations: List[DocumentCitation] = []
+        structured_refs: List[StructuredReferenceProvenance] = []
+        calculations: List[CalculationProvenance] = []
+        assumptions: List[str] = []
+        limitations: List[str] = []
+        missing_info: List[str] = []
+        sources_used: List[str] = []
+
+        # -------------------------------------------------------------
+        # Dispatch to specialized mode workflow
+        # -------------------------------------------------------------
+        if mode == "house_planning":
+            return self._handle_house_planning_mode(
+                prompt=effective_prompt,
+                meter_id=meter_id,
+                customer_name=customer_name,
+                history=history,
+            )
+
+        elif mode == "appliance_lifecycle":
+            return self._handle_appliance_lifecycle_mode(
+                prompt=effective_prompt,
+                meter_id=meter_id,
+                customer_name=customer_name,
+            )
+
+        elif mode == "cost_management":
+            return self._handle_cost_management_mode(
+                prompt=effective_prompt,
+                meter_id=meter_id,
+                customer_name=customer_name,
+            )
+
+        elif mode == "irrelevant":
+            if (
+                self.retriever is not None
+                and KnowledgeSourceType.DOCUMENT_RAG.value in required_sources
+            ):
+                return self._handle_general_chat_mode(
+                    prompt=prompt,
+                    meter_id=meter_id,
+                    customer_name=customer_name,
+                    required_sources=required_sources,
+                    history=history,
+                )
+            return self._handle_irrelevant_mode(
+                prompt=prompt,
+                meter_id=meter_id,
+                customer_name=customer_name,
+            )
+
+        else:
+            return self._handle_general_chat_mode(
+                prompt=prompt,
+                meter_id=meter_id,
+                customer_name=customer_name,
+                required_sources=required_sources,
+                knowledge_intent=(
+                    intent
+                    if intent in {"regulatory_standards_rag", "electricity_knowledge_rag"}
+                    else None
+                ),
+                history=history,
+            )
+
+    def _handle_irrelevant_mode(
+
+        self,
+
+        prompt: str,
+
+        meter_id: str,
+
+        customer_name: Optional[str] = None,
+
+    ) -> AssistantResponseContract:
+
+        """Courteous standard response for prompts outside residential energy scope."""
+
+        answer = (
+
+            f"### Domain Scope Notice\n\n"
+
+            f"Hello! I am GridVision's AI Energy Assistant for meter **{meter_id}** ({customer_name or 'Resident'}).\n\n"
+
+            f"Your inquiry (*\"{prompt}\"*) appears outside the domain of residential electricity, billing, appliance efficiency, or electrical planning.\n\n"
+
+            "**Here is what I can help you with:**\n"
+
+            "- **Billing & Consumption:** Check your current cycle charges, daily usage averages, and projected month-end bills.\n"
+
+            "- **Appliance Decisions:** Compare 3-Star vs 5-Star Inverter ACs, refrigerators, and calculate simple payback periods.\n"
+
+            "- **House Electrical Planning:** Sizing connected load, sub-circuit distribution, and solar PV feasibility under IS 732.\n"
+
+            "- **Cost Reduction:** Get prioritized, non-overlapping efficiency strategies to lower your monthly power bills.\n\n"
+
+            "*Feel free to ask any question related to your home's electricity!*"
+
+        )
+
+        return AssistantResponseContract(
+
+            answer=answer,
+
+            mode="irrelevant",
+
+            status="irrelevant",
+
+            relevance="irrelevant",
+
+            entityId=meter_id,
+
+            customerName=customer_name,
+
+            provenance=AssistantProvenance(knowledge_sources_used=["domain_scope_guard"]),
+
+            limitations=["Out-of-scope query: Question does not relate to residential electricity, billing, or appliance standards."],
+
+        )
+
+
+
+    # =================================================================
+
+    # Mode 1: General Chat / Standards / Telemetry / Unsupported
+
+    # =================================================================
+    def _handle_document_knowledge_query(
+        self,
+        prompt: str,
+        meter_id: str,
+        customer_name: Optional[str],
+        intent: str,
+        history: Optional[List[Dict[str, Any]]] = None,
+    ) -> AssistantResponseContract:
+        """Answer a document-knowledge route without keyword-based source dispatch."""
+        if self.retriever is None:
+            return AssistantResponseContract(
+                answer=(
+                    "The verified electricity knowledge base is unavailable, so I "
+                    "couldn't verify an answer to that request."
+                ),
+                mode="general_chat",
+                entityId=meter_id,
+                customerName=customer_name,
+                status="unsupported",
+                missing_information=["The document retriever is not configured."],
+            )
+
+        regulatory_request = intent == "regulatory_standards_rag"
+        prior_context = [
+            f"{message.get('role', '')}: {str(message.get('content', '')).strip()}"
+            for message in (history or [])[-4:]
+            if message.get("role") in {"user", "assistant"}
+            and str(message.get("content", "")).strip()
+        ]
+        if prior_context:
+            search_queries = [
+                f"{prompt}\nRelevant prior conversation:\n"
+                + "\n".join(prior_context)[-1600:]
+            ]
+        else:
+            search_queries = [prompt]
+        if regulatory_request and not prior_context:
+            search_queries.append(
+                f"{prompt} conductor sizing minimum copper cross-section "
+                "sub-circuit lighting circuit earthing RCD residual current protection"
+            )
+        elif not regulatory_request and not prior_context:
+            search_queries.append(f"{prompt} electrical standards")
+
+        retrieved_by_id: Dict[str, RetrievedChunk] = {}
+        for search_query in search_queries:
+            for doc in self.retriever.search(query=search_query, top_k=None):
+                current = retrieved_by_id.get(doc.chunk_id)
+                if current is None or doc.score > current.score:
+                    retrieved_by_id[doc.chunk_id] = doc
+        ranked_docs = sorted(
+            retrieved_by_id.values(),
+            key=lambda doc: doc.score,
+            reverse=True,
+        )
+        source_counts: Dict[tuple[str, str], int] = {}
+        docs: List[RetrievedChunk] = []
+        for doc in ranked_docs:
+            source_key = (doc.publisher, doc.document_identifier)
+            if source_counts.get(source_key, 0) >= 2:
+                continue
+            source_counts[source_key] = source_counts.get(source_key, 0) + 1
+            docs.append(doc)
+
+        if not docs:
+            return AssistantResponseContract(
+                answer=(
+                    "I couldn't find a sufficiently relevant passage in the verified "
+                    "electricity knowledge base for that question."
+                ),
+                mode="general_chat",
+                entityId=meter_id,
+                customerName=customer_name,
+                status="unsupported",
+                provenance=AssistantProvenance(
+                    knowledge_sources_used=[KnowledgeSourceType.DOCUMENT_RAG.value]
+                ),
+                missing_information=[
+                    "No relevant verified document passage was retrieved."
+                ],
+            )
+
+        answer = self._synthesize_document_answer(
+            prompt=prompt,
+            docs=docs,
+            safety_specific=regulatory_request,
+        )
+        limitations: List[str] = []
+        if not answer:
+            excerpts = [
+                f"[{doc.publisher}] {doc.document_identifier} — "
+                f"{doc.heading or 'Retrieved passage'}\n{doc.content.strip()}"
+                for doc in docs
+            ]
+            answer = (
+                "Retrieved source passages (shown without generated interpretation):\n\n"
+                + "\n\n".join(excerpts)
+            )
+            limitations.append(
+                "LLM synthesis was unavailable; retrieved passages are shown without additional interpretation."
+            )
+
+        return AssistantResponseContract(
+            answer=answer,
+            mode="general_chat",
+            entityId=meter_id,
+            customerName=customer_name,
+            status="success",
+            citations=[doc.to_citation() for doc in docs],
+            provenance=AssistantProvenance(
+                knowledge_sources_used=[KnowledgeSourceType.DOCUMENT_RAG.value]
+            ),
+            assumptions=["Answer grounded in passages retrieved from the document knowledge base."],
+            limitations=limitations,
+        )
+
     def _handle_general_chat_mode(
         self,
         prompt: str,
         meter_id: str,
         customer_name: Optional[str],
         required_sources: List[str],
+        knowledge_intent: Optional[str] = None,
+        history: Optional[List[Dict[str, Any]]] = None,
     ) -> AssistantResponseContract:
+        if knowledge_intent:
+            return self._handle_document_knowledge_query(
+                prompt=prompt,
+                meter_id=meter_id,
+                customer_name=customer_name,
+                intent=knowledge_intent,
+                history=history,
+            )
+
         p = prompt.lower()
         citations: List[DocumentCitation] = []
         structured_refs: List[StructuredReferenceProvenance] = []
@@ -534,13 +723,13 @@ class AgenticKnowledgeOrchestrator:
             )
             if is_safety_specific:
                 safety_query = f"{prompt} IS 732 Clause 6 Protective Earthing Shock Hazards RCCB residential home safety"
-                docs: List[RetrievedChunk] = self.retriever.search(query=safety_query, top_k=4)
+                docs: List[RetrievedChunk] = self.retriever.search(query=safety_query, top_k=None)
             else:
-                docs = self.retriever.search(query=prompt, top_k=4)
+                docs = self.retriever.search(query=prompt, top_k=None)
                 # Adaptive Bounded Loop: If initial retrieval yielded low scores or empty, refine query
                 if not docs or docs[0].score < 0.012:
                     refined_query = f"{prompt} electrical standards wiring safety BEE CEA IS 732"
-                    docs = self.retriever.search(query=refined_query, top_k=4)
+                    docs = self.retriever.search(query=refined_query, top_k=None)
 
             if not docs:
                 return AssistantResponseContract(
@@ -562,10 +751,9 @@ class AgenticKnowledgeOrchestrator:
             for d in docs:
                 citations.append(d.to_citation())
 
-            # Format answer grounded in retrieved document chunks
             answer = self._synthesize_document_answer(
                 prompt=prompt,
-                docs=docs[:4],
+                docs=docs,
                 safety_specific=is_safety_specific,
             )
             if not answer:

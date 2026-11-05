@@ -29,11 +29,13 @@ class SearchRegulatoryDocumentsInput(BaseModel):
         default=None,
         description="Optional specific document code (e.g. 'IS 732', 'BEE/S&L/AC/Schedule-2022')",
     )
-    top_k: int = Field(
-        default=3,
+    top_k: Optional[int] = Field(
+        default=None,
         ge=1,
-        le=8,
-        description="Maximum number of relevant document passages to return",
+        description=(
+            "Optional maximum number of relevant passages. Omit to search across all "
+            "indexed documents, returning up to two relevant passages per source document."
+        ),
     )
 
 
@@ -42,9 +44,11 @@ class SearchRegulatoryDocumentsTool(BaseTool):
 
     name: str = "search_regulatory_documents"
     description: str = (
-        "Search authoritative official energy regulations, electrical codes, and government standards "
-        "(e.g., National Electrical Code IS 732, BEE Star Rating Schedules, CEA Grid Emission Database, "
-        "and State DISCOM retail supply orders). Returns verified excerpts with section citations."
+        "Search the indexed official documents for evidence-backed answers about Indian electricity "
+        "regulations, electrical safety, BIS/IS standards, CEA rules, BEE schedules, or DISCOM "
+        "orders. Use for a technical/topic question that needs relevant passages or citations. "
+        "Provide the user's subject and, when known, publisher/document_identifier. Returns "
+        "retrieved excerpts and citations; do not use this for numeric household telemetry."
     )
     args_schema: Type[BaseModel] = SearchRegulatoryDocumentsInput
     retriever: Any = None
@@ -58,7 +62,7 @@ class SearchRegulatoryDocumentsTool(BaseTool):
         query: str,
         publisher: Optional[str] = None,
         document_identifier: Optional[str] = None,
-        top_k: int = 3,
+        top_k: Optional[int] = None,
     ) -> str:
         if not self.retriever:
             return json.dumps({"error": "Retriever not configured on SearchRegulatoryDocumentsTool."})
@@ -100,15 +104,26 @@ class SearchRegulatoryDocumentsTool(BaseTool):
 class GetDocumentClauseInput(BaseModel):
     """Input for retrieving a specific regulatory clause by identifier."""
 
-    document_identifier: str = Field(..., description="Document identifier, e.g. 'IS 732 / NEC India'")
-    clause_id: str = Field(..., description="Specific clause number, e.g. 'clause_4.1', 'clause_5.1'")
+    document_identifier: str = Field(
+        ...,
+        description="Exact known standard or document identifier, e.g. 'IS 732'.",
+    )
+    clause_id: str = Field(
+        ...,
+        description="Exact known clause/section number; use search_regulatory_documents if unknown.",
+    )
 
 
 class GetDocumentClauseTool(BaseTool):
     """Retrieves an exact verified clause from an official standard or gazette."""
 
     name: str = "get_document_clause"
-    description: str = "Look up the exact text and specifications of a specific clause in an official standard."
+    description: str = (
+        "Retrieve the indexed text of one exact clause from a known official standard. Use only "
+        "when both the document identifier and clause number are known or stated by the user. "
+        "If the relevant clause is not known, use search_regulatory_documents to discover it. "
+        "Returns source details and a citation; never invent clause text."
+    )
     args_schema: Type[BaseModel] = GetDocumentClauseInput
     retriever: Any = None
 
@@ -140,4 +155,3 @@ class GetDocumentClauseTool(BaseTool):
             "content": target.content,
             "citation": target.to_citation(),
         }, indent=2)
-

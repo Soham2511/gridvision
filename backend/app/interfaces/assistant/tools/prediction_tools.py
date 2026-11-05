@@ -16,7 +16,14 @@ class PredictUsageAndBillInput(BaseModel):
 
     target_month: str = Field(
         ...,
-        description="Future target calendar month to forecast in YYYY-MM format (e.g. '2027-02')",
+        pattern=r"^\d{4}-(0[1-9]|1[0-2])$",
+        description=(
+            "Target future calendar month in YYYY-MM format (for example 2019-02 for "
+            "February 2019). Convert a month name and stated year to this format exactly; "
+            "do not change or infer the year. Use the user's exact requested month, even "
+            "when the date is far ahead, and let the prediction service report if it cannot "
+            "produce a supported forecast."
+        ),
         examples=["2027-02"],
     )
     cutoff_day: int = Field(
@@ -30,14 +37,14 @@ class PredictUsageAndBillTool(BaseTool):
 
     name: str = "predict_usage_and_bill"
     description: str = (
-        "Forecast full-month electricity consumption demand (in kWh) and estimated bill cost (in ₹ INR) "
-        "for an upcoming calendar month using GridVision's trained Machine Learning model "
-        "(customer-bill-prediction champion pipeline). "
-        "Returns the ML-predicted monthly kWh, expected invoice in INR, daily average, confidence intervals (±10%), "
-        "and model validation metrics. "
-        "Use this tool only when the customer explicitly asks to predict future usage or forecast an upcoming month "
-        "(e.g. 'predict next month usage' or 'forecast my upcoming bill'). "
-        "For completed months or actual historical bills, use query_consumption_history instead."
+        "Use this tool for a prediction of a specific upcoming calendar month's total household "
+        "electricity consumption or bill, including requests such as 'what will my February "
+        "2019 bill be?' or 'predict usage for 2027-02'. Provide target_month as YYYY-MM and "
+        "preserve the year the customer stated. It runs the trained customer-bill prediction "
+        "model and returns predicted monthly kWh, estimated bill in INR, daily average, "
+        "confidence bounds, and model status. This is the correct tool for a monthly bill "
+        "estimate; do not use forecast_consumption for a full-month invoice. For actual "
+        "recorded consumption or completed-month bills, use query_consumption_history."
     )
     args_schema: Type[BaseModel] = PredictUsageAndBillInput
 

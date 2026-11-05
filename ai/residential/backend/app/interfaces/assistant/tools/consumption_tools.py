@@ -34,10 +34,12 @@ class QueryConsumptionHistoryTool(BaseTool):
 
     name: str = "query_consumption_history"
     description: str = (
-        "Retrieve verified household electricity consumption for a specific date range and "
-        "aggregation granularity (hourly, daily, weekly, monthly, yearly). "
-        "Use this tool when the customer asks for consumption details, daily usage, or timeline "
-        "records for specific dates or months not fully detailed in the summary."
+        "Retrieve actual recorded household electricity use for a date range, aggregated hourly, "
+        "daily, weekly, monthly, or yearly. Use for historical or current-period usage, and for "
+        "actual consumption in a completed named month; set start_date and end_date to the "
+        "inclusive calendar range and choose monthly granularity for a month total. This returns "
+        "meter records, not a future prediction. For a future named month's predicted bill, use "
+        "predict_usage_and_bill instead. The authorized meter is injected by the server."
     )
     args_schema: Type[BaseModel] = QueryConsumptionHistoryInput
 

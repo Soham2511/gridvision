@@ -207,8 +207,6 @@ def create_residential_tools(
                 "resolve_reference_parameter",
                 "lookup_appliance_benchmark",
                 "lookup_grid_emission_factor",
-                "plan_house_energy",
-                "analyze_appliance_scenario",
             },
             "planning_and_upgrades": {
                 "plan_house_energy",
@@ -235,11 +233,10 @@ def create_residential_tools(
                 "get_residential_complaint_categories",
             },
         }
-        allowed_names = scope_map.get(tool_scope, set())
-        if allowed_names:
-            selected_tools = [t for t in all_tools if t.name in allowed_names]
-        else:
-            selected_tools = all_tools
+        if tool_scope not in scope_map:
+            raise ValueError(f"Unsupported residential assistant tool scope: {tool_scope!r}")
+        allowed_names = scope_map[tool_scope]
+        selected_tools = [t for t in all_tools if t.name in allowed_names]
 
     logger.info(
         "Registered %d residential LangChain tools (scope='%s') for authorized meter '%s'",

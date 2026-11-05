@@ -123,7 +123,7 @@ class HybridDocumentRetriever:
     def search(
         self,
         query: str,
-        top_k: int = 5,
+        top_k: Optional[int] = 5,
         publisher: Optional[str] = None,
         document_identifier: Optional[str] = None,
         chunk_type: Optional[str] = None,
@@ -197,7 +197,23 @@ class HybridDocumentRetriever:
 
             rrf_scores[c_id] = score
 
-        top_candidates = sorted(rrf_scores.items(), key=lambda x: x[1], reverse=True)[:top_k]
+        ranked_candidates = sorted(
+            rrf_scores.items(),
+            key=lambda item: item[1],
+            reverse=True,
+        )
+        if top_k is None:
+            source_counts: Dict[tuple[str, str], int] = {}
+            top_candidates = []
+            for candidate in ranked_candidates:
+                chunk = self._chunk_cache[candidate[0]]
+                source_key = (chunk.publisher, chunk.document_identifier)
+                if source_counts.get(source_key, 0) >= 2:
+                    continue
+                source_counts[source_key] = source_counts.get(source_key, 0) + 1
+                top_candidates.append(candidate)
+        else:
+            top_candidates = ranked_candidates[:top_k]
 
         results: List[RetrievedChunk] = []
         for c_id, score in top_candidates:

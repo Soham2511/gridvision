@@ -94,12 +94,7 @@ class BaseConfig:
         staticmethod(_default_report_identity) if AI_DEMO_MODE else None
     )
 
-    # Residential assistant provider selection.
-    RESIDENTIAL_ASSISTANT_PROVIDER = os.getenv(
-        "RESIDENTIAL_ASSISTANT_PROVIDER", "groq"
-    ).strip().lower()
-
-    # Ollama remains available as an explicit residential assistant option.
+    # LLM Assistant Settings (Ollama Active Runtime)
     OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL") or (
         "http://ollama:11434"
         if os.getenv("CONTAINERIZED", "false").lower() == "true" or os.path.exists("/.dockerenv")
@@ -107,12 +102,22 @@ class BaseConfig:
     )
     OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3:8b")
 
-    # Inactive Groq Settings (Retained for manual switch-back)
+    # Residential assistant Groq settings; other personas keep their own providers.
     GROQ_API_KEY = os.getenv("GROQ_API_KEY", "")
+    GROQ_API_KEY_2 = os.getenv("GROQ_API_KEY_2", "")
     GROQ_BASE_URL = os.getenv("GROQ_BASE_URL", "https://api.groq.com/openai/v1")
-    GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-120b")
-    RESIDENTIAL_GROQ_MODEL = os.getenv(
-        "RESIDENTIAL_GROQ_MODEL", "openai/gpt-oss-20b"
+    GROQ_MODEL = os.getenv("GROQ_MODEL", "openai/gpt-oss-20b")
+    RESIDENTIAL_GROQ_FALLBACK_MODELS = tuple(
+        dict.fromkeys(
+            model.strip()
+            for model in os.getenv(
+                "RESIDENTIAL_GROQ_FALLBACK_MODELS",
+                "openai/gpt-oss-20b,qwen/qwen3.8-27b,openai/gpt-oss-120b,"
+                "allam-2-7b,meta-llama/llama-prompt-guard-2-22m,"
+                "meta-llama/llama-prompt-guard-2-86m",
+            ).split(",")
+            if model.strip()
+        )
     )
     ASSISTANT_TEMPERATURE = float(os.getenv("ASSISTANT_TEMPERATURE", "0.2"))
     ASSISTANT_MAX_TOKENS = int(os.getenv("ASSISTANT_MAX_TOKENS", "800"))

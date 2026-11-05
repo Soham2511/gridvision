@@ -15,16 +15,16 @@ from app.domain.energy.schemas import PeakAnalysisQueryRequest
 class GetPeakConsumptionPeriodsInput(BaseModel):
     """Input parameters for analyzing peak and low consumption periods."""
 
-    start_date: str = Field(..., description="Start date (YYYY-MM-DD)")
-    end_date: str = Field(..., description="End date (YYYY-MM-DD)")
+    start_date: str = Field(..., description="Inclusive first date to rank, YYYY-MM-DD.")
+    end_date: str = Field(..., description="Inclusive last date to rank, YYYY-MM-DD.")
     granularity: str = Field(
         default="daily",
-        description="Granularity of periods to rank: 'hourly', 'daily', or 'monthly'",
+        description="Unit to rank: hourly intervals, daily totals, or monthly totals.",
     )
-    top_n: int = Field(default=5, ge=1, le=20, description="Number of extreme periods to return (1-20)")
+    top_n: int = Field(default=5, ge=1, le=20, description="How many highest/lowest periods to return (1-20).")
     ranking_direction: Literal["highest", "lowest"] = Field(
         default="highest",
-        description="Ranking direction: 'highest' (peaks) or 'lowest' (troughs)",
+        description="Return largest usage periods ('highest') or smallest usage periods ('lowest').",
     )
 
 
@@ -33,9 +33,10 @@ class GetPeakConsumptionPeriodsTool(BaseTool):
 
     name: str = "get_peak_consumption_periods"
     description: str = (
-        "Find the highest (peak) or lowest (trough) consumption periods for the household within a date range. "
-        "Allows ranking by hourly intervals, days, or months. "
-        "Use this tool when the customer asks for their highest-usage days, lowest days, or peak consumption hours."
+        "Rank a household's actual consumption within a date range to find its highest-use "
+        "peaks or lowest-use troughs, by hour, day, or month. Use for questions like 'which "
+        "day used the most power?' or 'what are my peak hours?'. Set ranking_direction to "
+        "'highest' or 'lowest' and top_n to the requested count. This does not predict future usage."
     )
     args_schema: Type[BaseModel] = GetPeakConsumptionPeriodsInput
 

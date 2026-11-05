@@ -97,8 +97,10 @@ class GetCustomerPremisesProfileTool(BaseTool):
 
     name: str = "get_customer_premises_profile"
     description: str = (
-        "Retrieve verified household property specifications (built-up area in m², bedrooms count, "
-        "sanctioned load kW, location city, and solar status) strictly for the authorized customer."
+        "Retrieve the authenticated household's registered premises facts: property type, built-up "
+        "area, bedrooms/floors, occupants, city, sanctioned load, phase, and solar status. Use "
+        "before home design or load-planning calculations when these facts are not supplied in "
+        "the conversation. Takes no customer ID; authorization is bound server-side."
     )
     args_schema: Type[BaseModel] = EmptyInput
     authorized_meter_id: str = ""
@@ -142,8 +144,10 @@ class GetCustomerApplianceInventoryTool(BaseTool):
 
     name: str = "get_customer_appliance_inventory"
     description: str = (
-        "Retrieve the inventory of verified electrical appliances owned by this specific household, "
-        "including make, star rating, rated wattage, age, and typical operating hours."
+        "Retrieve the authenticated household's registered appliance inventory, including "
+        "category, equipment attributes, age, room, and typical usage where recorded. Use before "
+        "an appliance replacement/savings analysis when existing equipment details are needed. "
+        "Takes no customer ID; authorization is bound server-side."
     )
     args_schema: Type[BaseModel] = EmptyInput
     authorized_meter_id: str = ""
@@ -175,4 +179,3 @@ class GetCustomerApplianceInventoryTool(BaseTool):
             "total_appliances": len(profile["appliances"]),
             "appliances": profile["appliances"],
         }, indent=2)
-

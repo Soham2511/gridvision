@@ -14,11 +14,14 @@ from app.domain.energy.schemas import ComparisonQueryRequest, DatePeriod
 class CompareConsumptionPeriodsInput(BaseModel):
     """Input parameters for comparing two specific consumption periods."""
 
-    start_date_a: str = Field(..., description="Start date of Period A (YYYY-MM-DD)")
-    end_date_a: str = Field(..., description="End date of Period A (YYYY-MM-DD)")
-    start_date_b: str = Field(..., description="Start date of Period B (YYYY-MM-DD)")
-    end_date_b: str = Field(..., description="End date of Period B (YYYY-MM-DD)")
-    metric: str = Field(default="consumption", description="Metric to compare: 'consumption' or 'daily_average'")
+    start_date_a: str = Field(..., description="Inclusive start date for the first period, YYYY-MM-DD.")
+    end_date_a: str = Field(..., description="Inclusive end date for the first period, YYYY-MM-DD.")
+    start_date_b: str = Field(..., description="Inclusive start date for the second period, YYYY-MM-DD.")
+    end_date_b: str = Field(..., description="Inclusive end date for the second period, YYYY-MM-DD.")
+    metric: str = Field(
+        default="consumption",
+        description="Compare total consumption ('consumption') or normalized daily average ('daily_average').",
+    )
 
 
 class CompareConsumptionPeriodsTool(BaseTool):
@@ -26,9 +29,11 @@ class CompareConsumptionPeriodsTool(BaseTool):
 
     name: str = "compare_consumption_periods"
     description: str = (
-        "Compare electricity consumption and average daily usage between two user-specified periods. "
-        "Returns absolute kWh differences, normalized daily changes, percentage changes, and comparability status. "
-        "Use this tool when the customer asks to compare two months, two weeks, or custom date ranges."
+        "Compare actual household electricity consumption across exactly two date periods. "
+        "Use when asked whether one month/week/period used more than another. Supply inclusive "
+        "start and end dates for both periods; choose metric='daily_average' when their lengths "
+        "differ and a fair per-day comparison is wanted, otherwise use 'consumption'. Returns "
+        "kWh changes, percentage change, and whether the periods are comparable. This is not a forecast."
     )
     args_schema: Type[BaseModel] = CompareConsumptionPeriodsInput
 

@@ -41,11 +41,12 @@ class ForecastConsumptionTool(BaseTool):
 
     name: str = "forecast_consumption"
     description: str = (
-        "Forecast and project household electricity consumption across a bounded forward horizon "
-        "(1 to 30 days maximum, e.g. next 7 days, 14 days, or next month). "
-        "Returns projected daily consumption points, expected total kWh, confidence interval bounds, "
-        "and estimated bill cost in INR based on historical load patterns. "
-        "Use this tool whenever the customer asks to predict, forecast, or estimate future usage."
+        "Forecast household electricity day by day for a bounded horizon of 1-30 days. "
+        "Use for requests such as the next 7 or 14 days, or another short daily forecast, "
+        "when a date range and daily points are appropriate. Returns projected daily kWh, "
+        "period total, confidence bounds, and an estimated charge. For a prediction of a "
+        "named calendar month's complete usage or bill, use predict_usage_and_bill instead; "
+        "do not treat this limited daily horizon as a full-month bill prediction."
     )
     args_schema: Type[BaseModel] = ForecastConsumptionInput
 
