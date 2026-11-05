@@ -1,8 +1,12 @@
 # GridVision Commercial Agent Skills
 
-This file is the maintained capability and tool-use guide for the Commercial
-multi-agent system. It describes implemented behavior separately from
-integrations that are still unavailable.
+This file is the shared capability and tool-use guide for the Commercial
+multi-agent system. The four specialist prompts are maintained separately at
+`skills/peak_prediction/skills.md`, `skills/operations/skills.md`,
+`skills/renewable/skills.md`, and `skills/cost_optimization/skills.md`. The
+Groq supervisor loads those documents into
+its routing prompt and chooses specialist names from that fixed skill set.
+These documents guide selection; they do not grant tool permissions.
 
 ## Shared rules
 
@@ -35,6 +39,12 @@ integrations that are still unavailable.
 | Cost Optimization | Optimize an explicit schedule against tariffs and constraints | `cost_optimizer` | OR-Tools CP-SAT enforces job windows, precedence, single-job machine capacity, maintenance windows, optional demand limits, and optional battery SOC/efficiency/power constraints; requires a complete validated schedule input |
 | Validator / Critic | Check evidence, assumptions, conflicts, and completeness | None | Implemented as a workflow node; it does not call external tools |
 | Finalizer | Produce a structured, evidence-backed response | None | Implemented as a workflow node; it does not call external tools |
+
+The Commercial chat UI sends at most the last four successful user/assistant
+turns with each workflow request. This bounded short-term context is held in
+page memory, is not persisted to the server, and is cleared on sign-out or a
+fresh login. It is used to resolve follow-up references for routing and
+document retrieval; the current request remains authoritative.
 
 Unavailable integrations return structured unavailable results rather than
 placeholder values. When Tavily is unavailable, a renewable calculation based

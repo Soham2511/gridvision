@@ -7,6 +7,7 @@ from typing import Annotated, Any, TypedDict
 
 from ai.commercial.schemas.communication import (
     AgentResult,
+    CommercialConversationMessage,
     EvidenceRef,
     TaskAssignment,
     ValidationReport,
@@ -58,6 +59,7 @@ class CommercialState(TypedDict, total=False):
     factory_id: str | None
     building_id: str | None
     user_goal: str
+    conversation_history: list[CommercialConversationMessage]
     plan: list[str]
     assignments: list[TaskAssignment]
     specialist_results: Annotated[

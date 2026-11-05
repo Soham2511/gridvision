@@ -461,6 +461,12 @@ class OllamaProvider:
             "stream": False,
             "options": {"temperature": 0.0 if json_mode else 0.25},
         }
+        if self.model.lower().startswith("qwen3"):
+            # Qwen3's hidden reasoning can consume a short structured-output
+            # budget and leave `message.content` empty. The assistant uses the
+            # returned content as JSON, so request a direct answer for this
+            # constrained interpreter call.
+            payload["think"] = False
         if response_schema is not None:
             payload["format"] = response_schema
         elif json_mode:

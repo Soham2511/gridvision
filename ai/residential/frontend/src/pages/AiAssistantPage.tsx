@@ -39,6 +39,7 @@ interface ChatMessage {
   assumptions?: string[];
   limitations?: string[];
   missingInformation?: string[];
+  artifacts?: Array<{ format: string; label: string; url: string }>;
 }
 
 const AssistantMessageBubble: React.FC<{ message: ChatMessage }> = ({ message }) => {
@@ -153,6 +154,24 @@ const AssistantMessageBubble: React.FC<{ message: ChatMessage }> = ({ message })
 
         {/* Formatted Markdown Content */}
         <ChatMessageRenderer content={message.text} isUser={false} />
+
+        {message.artifacts?.map((artifact, index) => (
+          <div key={`${artifact.url}-${index}`} style={{ marginTop: '0.5rem' }}>
+            {artifact.format.toLowerCase() === 'png' ? (
+              <a href={artifact.url} target="_blank" rel="noreferrer" style={{ display: 'block' }}>
+                <img
+                  src={artifact.url}
+                  alt={artifact.label}
+                  style={{ display: 'block', maxWidth: '100%', maxHeight: '520px', borderRadius: '8px', border: '1px solid #E2E8F0' }}
+                />
+              </a>
+            ) : (
+              <a href={artifact.url} download style={{ color: '#087EBD', fontWeight: 600 }}>
+                Download {artifact.label} ({artifact.format.toUpperCase()})
+              </a>
+            )}
+          </div>
+        ))}
 
         {/* Verified Regulatory Citations */}
         {citations.length > 0 && (
@@ -544,13 +563,16 @@ export const AiAssistantPage: React.FC = () => {
         role: m.sender === 'user' ? ('user' as const) : ('assistant' as const),
         content: m.text,
       }));
+    // Government follow-ups are backed by the saved conversation on the server.
+    // Avoid echoing long generated plans (which can exceed the API history limit).
+    const requestHistory = persona === 'government' ? [] : formattedHistory;
 
     try {
       const res = await analyticsService.askAssistant(
         trimmed,
         persona,
         effectiveEntity,
-        formattedHistory,
+        requestHistory,
         activeConversationId || undefined
       );
       const replyMsg: ChatMessage = {
@@ -564,6 +586,7 @@ export const AiAssistantPage: React.FC = () => {
         assumptions: res.assumptions || [],
         limitations: res.limitations || [],
         missingInformation: res.missing_information || [],
+        artifacts: res.artifacts || [],
       };
       setMessages((prev) => [...prev, replyMsg]);
 

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+from contextlib import contextmanager
 import json
+import os
 from pathlib import Path
 import sys
 from types import SimpleNamespace
@@ -719,14 +721,29 @@ def test_optional_langsmith_wrapper_uses_redacted_payloads(
 
         return decorate
 
+    class FakeClient:
+        def __init__(self, *, api_key: str) -> None:
+            captured["client_key"] = api_key
+
+    @contextmanager
+    def fake_tracing_context(**options: Any) -> Any:
+        captured["trace_context"] = options
+        yield
+
     monkeypatch.setitem(
         sys.modules,
         "langsmith",
-        SimpleNamespace(traceable=fake_traceable),
+        SimpleNamespace(
+            Client=FakeClient,
+            traceable=fake_traceable,
+            tracing_context=fake_tracing_context,
+        ),
     )
-    monkeypatch.setenv("LANGSMITH_TRACING", "true")
+    monkeypatch.setenv("GOVT_ASSISTANT_LANGSMITH_TRACING", "true")
     monkeypatch.setenv("LANGSMITH_API_KEY", "test-langsmith-key")
     monkeypatch.setattr(assistant_module, "_LANGSMITH_TRACE_HANDLER", None)
+    monkeypatch.setattr(assistant_module, "_LANGSMITH_TRACE_CONTEXT", None)
+    monkeypatch.setattr(assistant_module, "_LANGSMITH_CLIENT", None)
     traced_handler = assistant_module._with_optional_langsmith_trace(
         lambda query: assistant_module.AssistantResult(
             text=f"response contains: {query}"
@@ -737,6 +754,9 @@ def test_optional_langsmith_wrapper_uses_redacted_payloads(
 
     assert captured["inputs"] == {"query_length": len("private question")}
     assert "private question" not in repr(captured)
+    assert captured["client_key"] == "test-langsmith-key"
+    assert captured["trace_context"]["enabled"] is True
+    assert captured["trace_context"]["project_name"] == "GridVision-Government-Assistant"
     assert captured["outputs"]["status"] == "completed"
 
 
@@ -747,14 +767,22 @@ def test_optional_langsmith_wrapper_reads_key_file_only_when_enabled(
     key_path = tmp_path / "langsmith.key"
     key_path.write_text("test-langsmith-key\n", encoding="utf-8")
     monkeypatch.delenv("LANGSMITH_API_KEY", raising=False)
-    monkeypatch.setenv("LANGSMITH_TRACING", "true")
+    monkeypatch.setenv("GOVT_ASSISTANT_LANGSMITH_TRACING", "true")
     monkeypatch.setattr(assistant_module, "DEFAULT_LANGSMITH_KEY_PATH", key_path)
     monkeypatch.setattr(assistant_module, "_LANGSMITH_TRACE_HANDLER", None)
-    observed: dict[str, str] = {}
+    monkeypatch.setattr(assistant_module, "_LANGSMITH_TRACE_CONTEXT", None)
+    monkeypatch.setattr(assistant_module, "_LANGSMITH_CLIENT", None)
+    observed: dict[str, Any] = {}
+
+    class FakeClient:
+        def __init__(self, *, api_key: str) -> None:
+            observed["key"] = api_key
+
+    @contextmanager
+    def fake_tracing_context(**_options: Any) -> Any:
+        yield
 
     def fake_traceable(**_options: Any) -> Any:
-        observed["key"] = __import__("os").environ["LANGSMITH_API_KEY"]
-
         def decorate(handler: Any) -> Any:
             return handler
 
@@ -763,7 +791,11 @@ def test_optional_langsmith_wrapper_reads_key_file_only_when_enabled(
     monkeypatch.setitem(
         sys.modules,
         "langsmith",
-        SimpleNamespace(traceable=fake_traceable),
+        SimpleNamespace(
+            Client=FakeClient,
+            traceable=fake_traceable,
+            tracing_context=fake_tracing_context,
+        ),
     )
     handler = assistant_module._with_optional_langsmith_trace(
         lambda: assistant_module.AssistantResult(text="complete")
@@ -772,6 +804,7 @@ def test_optional_langsmith_wrapper_reads_key_file_only_when_enabled(
     handler()
 
     assert observed["key"] == "test-langsmith-key"
+    assert "LANGSMITH_API_KEY" not in os.environ
     assert "test-langsmith-key" not in repr(
         assistant_module._langsmith_trace_outputs(
             assistant_module.AssistantResult(text="complete")

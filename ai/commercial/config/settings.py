@@ -17,15 +17,15 @@ class CommercialSettings(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    llm_provider: Literal["mock", "ollama"] = "mock"
-    ollama_base_url: str = Field(
-        default="http://127.0.0.1:11434",
+    llm_provider: Literal["mock", "groq"] = "mock"
+    groq_api_key_file: Path = PROJECT_ROOT / "key_vault" / "groq" / "api.key"
+    groq_base_url: str = Field(
+        default="https://api.groq.com",
         min_length=1,
         max_length=500,
     )
-    ollama_primary_model: str = Field(default="qwen3:8b", min_length=1)
-    ollama_fallback_model: str = Field(default="gemma3:4b", min_length=1)
-    ollama_timeout_seconds: float = Field(default=180.0, gt=0, le=600)
+    groq_model: str = Field(default="openai/gpt-oss-20b", min_length=1)
+    groq_timeout_seconds: float = Field(default=60.0, gt=0, le=600)
     tavily_api_key_file: Path = PROJECT_ROOT / "key_vault" / "tavily" / "api.key"
     tavily_timeout_seconds: float = Field(default=12.0, gt=0, le=30)
     commercial_forecast_api_base_url: str = Field(
@@ -99,24 +99,25 @@ class CommercialSettings(BaseModel):
     def from_env(cls) -> CommercialSettings:
         """Load validated execution limits from Commercial-specific variables."""
         llm_provider = os.getenv(
-            "COMMERCIAL_LLM_PROVIDER", "ollama"
+            "COMMERCIAL_LLM_PROVIDER", "groq"
         ).lower()
-        if llm_provider in {"auto", "groq"}:
-            llm_provider = "ollama"
         return cls(
             llm_provider=llm_provider,
-            ollama_base_url=os.getenv(
-                "COMMERCIAL_OLLAMA_BASE_URL",
-                "http://127.0.0.1:11434",
+            groq_api_key_file=Path(
+                os.getenv(
+                    "COMMERCIAL_GROQ_API_KEY_FILE",
+                    str(PROJECT_ROOT / "key_vault" / "groq" / "api.key"),
+                )
+            ).expanduser(),
+            groq_base_url=os.getenv(
+                "COMMERCIAL_GROQ_BASE_URL",
+                "https://api.groq.com",
             ),
-            ollama_primary_model=os.getenv(
-                "COMMERCIAL_OLLAMA_PRIMARY_MODEL", "qwen3:8b"
+            groq_model=os.getenv(
+                "COMMERCIAL_GROQ_MODEL", "openai/gpt-oss-20b"
             ),
-            ollama_fallback_model=os.getenv(
-                "COMMERCIAL_OLLAMA_FALLBACK_MODEL", "gemma3:4b"
-            ),
-            ollama_timeout_seconds=float(
-                os.getenv("COMMERCIAL_OLLAMA_TIMEOUT_SECONDS", "180")
+            groq_timeout_seconds=float(
+                os.getenv("COMMERCIAL_GROQ_TIMEOUT_SECONDS", "60")
             ),
             tavily_api_key_file=Path(
                 os.getenv(

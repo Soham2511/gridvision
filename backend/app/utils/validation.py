@@ -4,7 +4,10 @@ from __future__ import annotations
 
 from datetime import datetime
 from typing import Any, Literal
+
 from pydantic import BaseModel, ConfigDict, Field
+
+from ai.commercial.schemas.communication import CommercialConversationMessage
 from ai.commercial.schemas.optimization import ScheduleInput
 
 
@@ -74,6 +77,18 @@ class CommercialWorkflowRequestModel(BaseModel):
     )
     user_goal: str = Field(min_length=1, max_length=2000)
     optimization_inputs: ScheduleInput | None = None
+    conversation_history: list[CommercialConversationMessage] = Field(
+        default_factory=list,
+        max_length=8,
+    )
+
+
+class CommercialWebSearchRequestModel(BaseModel):
+    """Explicitly confirmed user request for a general web lookup."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    query: str = Field(min_length=1, max_length=2000)
 
 
 class ScheduleApprovalRequestModel(BaseModel):

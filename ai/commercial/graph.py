@@ -14,7 +14,11 @@ from ai.commercial.agents.cost_optimization import run_cost_optimization
 from ai.commercial.agents.finalizer import finalize_response
 from ai.commercial.agents.operations import run_operations
 from ai.commercial.agents.peak_prediction import run_peak_prediction
-from ai.commercial.agents.planner import OllamaPlanner
+from ai.commercial.agents.planner import (
+    CommercialPlanner,
+    GroqPlanner,
+    GroqPlannerError,
+)
 from ai.commercial.agents.renewable import run_renewable
 from ai.commercial.agents.supervisor import plan_request
 from ai.commercial.agents.validator import validate_results
@@ -120,6 +124,15 @@ def _traced_node(
     def invoke(state: CommercialState) -> dict[str, Any]:
         started = time.perf_counter()
         request_id = state.get("request_id")
+        logger.info(
+            "commercial_node_started",
+            extra={
+                "event": {
+                    "request_id": request_id,
+                    "node_id": node_name,
+                }
+            },
+        )
         try:
             result = handler(state)
         except Exception as exc:
@@ -228,6 +241,7 @@ def _validate_request(state: CommercialState) -> dict:
             "building_id",
             "user_goal",
             "optimization_inputs",
+            "conversation_history",
         )
         if key in state
     }
@@ -237,6 +251,7 @@ def _validate_request(state: CommercialState) -> dict:
         "factory_id": request.factory_id,
         "building_id": request.building_id,
         "user_goal": request.user_goal,
+        "conversation_history": list(request.conversation_history),
         "optimization_inputs": (
             request.optimization_inputs.model_dump(mode="python")
             if request.optimization_inputs is not None
@@ -334,12 +349,12 @@ def build_commercial_graph(
         build_commercial_tool_registry(provider_tools)
     )
     planner = None
-    if resolved_settings.llm_provider == "ollama":
-        planner = OllamaPlanner(
-            base_url=resolved_settings.ollama_base_url,
-            primary_model=resolved_settings.ollama_primary_model,
-            fallback_model=resolved_settings.ollama_fallback_model,
-            timeout_seconds=resolved_settings.ollama_timeout_seconds,
+    if resolved_settings.llm_provider == "groq":
+        planner = GroqPlanner(
+            api_key_file=resolved_settings.groq_api_key_file,
+            base_url=resolved_settings.groq_base_url,
+            model=resolved_settings.groq_model,
+            timeout_seconds=resolved_settings.groq_timeout_seconds,
         )
 
     workflow = StateGraph(
@@ -403,7 +418,10 @@ def build_commercial_graph(
     )
     workflow.add_node(
         "finalizer",
-        _traced_node("finalizer", finalize_response),
+        _traced_node(
+            "finalizer",
+            lambda state: finalize_response(state, planner),
+        ),
     )
 
     workflow.add_edge(START, "validate_request")
@@ -449,7 +467,7 @@ def build_commercial_graph(
 def _plan_with_provider(
     state: CommercialState,
     settings: CommercialSettings,
-    planner: OllamaPlanner | None,
+    planner: CommercialPlanner | None,
 ) -> dict:
     if GREETING_PATTERN.fullmatch(state.get("user_goal", "").strip()):
         return {
@@ -462,12 +480,14 @@ def _plan_with_provider(
     try:
         result = plan_request(state, settings, planner)
     except Exception as exc:
+        provider = settings.llm_provider.upper()
+        error = f"{provider}_PLANNING_FAILED: {type(exc).__name__}"
+        if isinstance(exc, GroqPlannerError):
+            error = f"{error}: {exc}"
         return {
-            "plan": ["Escalate: Ollama planning failed."],
+            "plan": [f"Escalate: {provider} planning failed."],
             "assignments": [],
-            "errors": [
-                f"OLLAMA_PLANNING_FAILED: {type(exc).__name__}"
-            ],
+            "errors": [error],
             "llm_call_count": 1,
             "step_count": 1,
         }

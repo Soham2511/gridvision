@@ -1,4 +1,4 @@
-"""Local, bounded document ingestion with optional local PDF OCR fallback."""
+"""Local, bounded document ingestion with optional local OCR."""
 
 from __future__ import annotations
 
@@ -11,6 +11,9 @@ from pathlib import Path
 
 from pypdf import PdfReader
 from pypdf.errors import PdfReadError
+
+IMAGE_EXTENSIONS = (".png", ".jpg", ".jpeg", ".tif", ".tiff", ".bmp", ".webp")
+MAX_IMAGE_PIXELS = 50_000_000
 
 
 class DocumentIngestionError(ValueError):
@@ -169,7 +172,7 @@ def fingerprint_document(
             ".xlsx",
             ".html",
             ".csv",
-        ),
+        ) + IMAGE_EXTENSIONS,
     )
     digest = hashlib.sha256()
     with resolved_path.open("rb") as source:
@@ -417,6 +420,17 @@ def ingest_document(
             tesseract_cmd=tesseract_cmd,
         )
 
+    if path.suffix.casefold() in IMAGE_EXTENSIONS:
+        return ingest_image(
+            path,
+            allowed_root=allowed_root,
+            max_document_bytes=max_document_bytes,
+            max_extracted_characters=max_extracted_characters,
+            ocr_enabled=ocr_enabled,
+            ocr_timeout_seconds=ocr_timeout_seconds,
+            tesseract_cmd=tesseract_cmd,
+        )
+
     resolved_path, size_bytes, content_sha256 = fingerprint_document(
         path,
         allowed_root=allowed_root,
@@ -507,6 +521,103 @@ def ingest_document(
             for page_number, page_text in enumerate(extracted, start=1)
         ),
         ocr_pages=(),
+        synthetic=_contains_synthetic_marker(text),
+    )
+
+
+def ingest_image(
+    path: Path,
+    *,
+    allowed_root: Path,
+    max_document_bytes: int = 50_000_000,
+    max_extracted_characters: int = 10_000_000,
+    ocr_enabled: bool = True,
+    ocr_timeout_seconds: int = 30,
+    tesseract_cmd: Path | None = None,
+) -> IngestedDocument:
+    """Extract text from one bounded image using the local Tesseract OCR engine."""
+    resolved_path, size_bytes, content_sha256 = fingerprint_document(
+        path,
+        allowed_root=allowed_root,
+        max_document_bytes=max_document_bytes,
+    )
+    if not ocr_enabled:
+        raise DocumentIngestionError(
+            "Image OCR is disabled; enable local OCR to ingest image documents."
+        )
+
+    try:
+        from PIL import Image, UnidentifiedImageError
+        import pytesseract
+    except ImportError as exc:
+        raise DocumentIngestionError(
+            "Pillow and pytesseract are required for image OCR. Install the "
+            "commercial-rag-ocr dependency group."
+        ) from exc
+
+    tesseract_command = _resolve_tesseract_command(tesseract_cmd)
+    if tesseract_command is not None:
+        pytesseract.pytesseract.tesseract_cmd = tesseract_command
+
+    try:
+        with Image.open(resolved_path) as image:
+            width, height = image.size
+            if width <= 0 or height <= 0 or width * height > MAX_IMAGE_PIXELS:
+                raise DocumentIngestionError(
+                    f"Image exceeds the configured {MAX_IMAGE_PIXELS}-pixel limit."
+                )
+            image.verify()
+        with Image.open(resolved_path) as image:
+            with image.convert("RGB") as rgb_image:
+                text = pytesseract.image_to_string(
+                    rgb_image,
+                    timeout=ocr_timeout_seconds,
+                )
+    except DocumentIngestionError:
+        raise
+    except Image.DecompressionBombError as exc:
+        raise DocumentIngestionError(
+            f"Image exceeds the configured {MAX_IMAGE_PIXELS}-pixel limit."
+        ) from exc
+    except UnidentifiedImageError as exc:
+        raise DocumentIngestionError(
+            "The selected file is not a valid supported image."
+        ) from exc
+    except pytesseract.TesseractNotFoundError as exc:
+        raise DocumentIngestionError(
+            "Image OCR requires the local Tesseract executable, which is not "
+            "installed or configured."
+        ) from exc
+    except pytesseract.TesseractError as exc:
+        raise DocumentIngestionError(
+            f"Local image OCR failed ({type(exc).__name__})."
+        ) from exc
+    except OSError as exc:
+        raise DocumentIngestionError(
+            f"The image could not be decoded ({type(exc).__name__})."
+        ) from exc
+
+    if len(text) > max_extracted_characters:
+        raise DocumentIngestionError(
+            "Image exceeds the configured extracted-text character limit."
+        )
+    if not text.strip():
+        raise DocumentIngestionError(
+            "No searchable text could be extracted from the image."
+        )
+    return IngestedDocument(
+        path=resolved_path,
+        source_id=resolved_path.name,
+        sha256=content_sha256,
+        size_bytes=size_bytes,
+        pages=(
+            IngestedPage(
+                page_number=1,
+                text=text,
+                extraction_method="local_ocr",
+            ),
+        ),
+        ocr_pages=(1,),
         synthetic=_contains_synthetic_marker(text),
     )
 

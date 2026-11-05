@@ -230,11 +230,11 @@ services:
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8082,http://127.0.0.1:8082,http://localhost:5173,http://127.0.0.1:5173}
       DEMO_USER_ID: ${DEMO_USER_ID:?Set DEMO_USER_ID in your local .env}
       DEMO_PASSWORD: ${DEMO_PASSWORD:?Set DEMO_PASSWORD in your local .env}
-      COMMERCIAL_LLM_PROVIDER: ${COMMERCIAL_LLM_PROVIDER:-ollama}
-      COMMERCIAL_OLLAMA_BASE_URL: ${COMMERCIAL_OLLAMA_BASE_URL:-${GRIDVISION_OLLAMA_BASE_URL:-http://host.docker.internal:11434}}
-      COMMERCIAL_OLLAMA_PRIMARY_MODEL: ${COMMERCIAL_OLLAMA_PRIMARY_MODEL:-qwen3:8b}
-      COMMERCIAL_OLLAMA_FALLBACK_MODEL: ${COMMERCIAL_OLLAMA_FALLBACK_MODEL:-gemma3:4b}
-      COMMERCIAL_OLLAMA_TIMEOUT_SECONDS: ${COMMERCIAL_OLLAMA_TIMEOUT_SECONDS:-180}
+      COMMERCIAL_LLM_PROVIDER: ${COMMERCIAL_LLM_PROVIDER:-groq}
+      COMMERCIAL_GROQ_API_KEY_FILE: /run/secrets/groq_api_key
+      COMMERCIAL_GROQ_BASE_URL: ${COMMERCIAL_GROQ_BASE_URL:-https://api.groq.com/openai/v1}
+      COMMERCIAL_GROQ_MODEL: ${COMMERCIAL_GROQ_MODEL:-openai/gpt-oss-20b}
+      COMMERCIAL_GROQ_TIMEOUT_SECONDS: ${COMMERCIAL_GROQ_TIMEOUT_SECONDS:-60}
       COMMERCIAL_RAG_UPLOAD_ROOT: /app/data/commercial/rag/uploads
     volumes:
       - ${GRIDVISION_DATA_DIR:?Set GRIDVISION_DATA_DIR}/backend:/data
@@ -261,6 +261,7 @@ services:
       - ./ai/anamoly/knowledge_base:/app/ai/anamoly/knowledge_base:ro
       - ./ai/anamoly/raw_knowledge_base:/app/ai/anamoly/raw_knowledge_base
       - ./ai/anamoly/Key:/run/secrets/gridvision-anomaly:ro
+      - ./key_vault/groq/api.key:/run/secrets/groq_api_key:ro
       - ./ai/anamoly/vector_store/storage/chroma/persistent_db:/app/ai/anamoly/vector_store/storage/chroma/persistent_db
       - ./docs/customer_segmentation/reports:/docs/customer_segmentation/reports:ro
       - ./docs/ai_commercial:/app/docs/ai_commercial:ro

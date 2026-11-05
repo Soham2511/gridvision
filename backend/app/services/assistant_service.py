@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import importlib
 import logging
+import re
 from pathlib import Path
 from typing import Any
 
@@ -182,7 +183,40 @@ class AssistantService:
                         if isinstance(turn, dict)
                     ]
                 )
-            route = route_query(prompt, prior_context=prior_context)
+            previous_request = history.get("last_successful_request")
+            artifact_follow_up = bool(
+                re.search(r"\b(image|png|visuali[sz]ation|csv|spreadsheet)\b", prompt, re.I)
+                and re.search(r"\b(give me|generate|create|make|show|export)\b", prompt, re.I)
+                and not re.search(r"\b(anomaly|power quality|outage)\b", prompt, re.I)
+            )
+            has_previous_government_result = bool(
+                previous_request is not None
+                and getattr(previous_request, "forecast_date", None)
+                and getattr(previous_request, "intent", None)
+                in {
+                    "plan", "summary", "hourly_summary", "surplus_deficit",
+                    "transfers", "losses", "grid_plan", "compare_hours",
+                    "compare_grids", "unmet_demand", "demand_solution",
+                    "image_generation", "csv_generation",
+                }
+            )
+            if artifact_follow_up and has_previous_government_result:
+                # The file type is a follow-up to the successful Government
+                # result in this conversation. Avoid an ambiguous second LLM
+                # routing decision (which can otherwise ask for clarification
+                # or send it to anomaly handling).
+                from ai.govt.router import AssistantRoute
+
+                route = AssistantRoute(
+                    "government",
+                    "Artifact request follows the previous Government result.",
+                )
+            else:
+                route = route_query(
+                    prompt,
+                    prior_context=prior_context,
+                    default_assistant="government",
+                )
             logger.info(
                 "government_assistant_route_selected",
                 extra={

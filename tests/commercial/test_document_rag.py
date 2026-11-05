@@ -96,6 +96,133 @@ def test_uploaded_text_document_is_indexed_and_retrievable(
         for reference in observation.evidence_refs
     )
 
+    assert retriever.remove_uploaded_document(uploaded.name)
+    assert not uploaded.exists()
+    assert all(
+        document["source_id"] != uploaded.name
+        for document in retriever.index.indexed_documents()
+    )
+    assert not retriever.remove_uploaded_document(uploaded.name)
+
+
+def test_uploaded_csv_document_is_included_in_indexing(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    upload_root = tmp_path / "uploads"
+    upload_root.mkdir()
+    uploaded = upload_root / "factory-metrics.csv"
+    uploaded.write_text("machine,kwh\nCNC-1,12\n", encoding="utf-8")
+    retriever = PDFDocumentRetriever(
+        (tmp_path / "configured-placeholder.pdf",),
+        allowed_root=tmp_path,
+        upload_root=upload_root,
+        index_path=tmp_path / "index.sqlite3",
+    )
+
+    def reject_ingestion(*args, **kwargs):
+        raise DocumentIngestionError("CSV ingestion test sentinel.")
+
+    monkeypatch.setattr(
+        "ai.commercial.rag.document_retriever.ingest_document",
+        reject_ingestion,
+    )
+    report = retriever.index_documents()
+
+    assert any(
+        document["source_id"] == uploaded.name
+        and document["status"] == "unavailable"
+        and document["message"] == "CSV ingestion test sentinel."
+        for document in report["documents"]
+    )
+
+
+def test_uploaded_image_is_ocr_indexed_and_searchable(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    image_module = pytest.importorskip("PIL.Image")
+    pytesseract = pytest.importorskip("pytesseract")
+    settings = CommercialSettings()
+    upload_root = tmp_path / "uploads"
+    upload_root.mkdir()
+    uploaded = upload_root / "factory-notes.png"
+    image_module.new("RGB", (20, 20), color="white").save(uploaded)
+    monkeypatch.setattr(
+        pytesseract,
+        "image_to_string",
+        lambda image, timeout: (
+            "Compressed air leaks increase factory energy use. "
+            "Inspect filters and pressure settings."
+        ),
+    )
+    retriever = PDFDocumentRetriever(
+        (settings.rag_documents[2],),
+        allowed_root=settings.rag_allowed_root,
+        upload_root=upload_root,
+        index_path=tmp_path / "index.sqlite3",
+    )
+
+    report = retriever.index_documents()
+    observation = retriever.retrieve(
+        "How can compressed air leaks reduce factory energy use?"
+    )
+
+    assert any(
+        document["source_id"] == uploaded.name
+        and document["status"] == "indexed"
+        and document["extraction_methods"] == ["local_ocr"]
+        for document in report["documents"]
+    )
+    assert observation.status == "available"
+    assert any(
+        reference.source_id == uploaded.name
+        for reference in observation.evidence_refs
+    )
+
+
+def test_clear_uploaded_documents_removes_uploads_but_preserves_configured_sources(
+    tmp_path: Path,
+) -> None:
+    allowed_root = tmp_path / "documents"
+    allowed_root.mkdir()
+    configured_document = allowed_root / "factory-guide.txt"
+    configured_document.write_text(
+        "Configured operational guide.",
+        encoding="utf-8",
+    )
+    upload_root = tmp_path / "uploads"
+    upload_root.mkdir()
+    uploaded_documents = [
+        upload_root / "first-upload.txt",
+        upload_root / "second-upload.md",
+    ]
+    for uploaded in uploaded_documents:
+        uploaded.write_text("Temporary uploaded knowledge.", encoding="utf-8")
+    orphaned_upload = upload_root / ".interrupted.upload"
+    orphaned_upload.write_bytes(b"partial")
+
+    retriever = PDFDocumentRetriever(
+        (configured_document,),
+        allowed_root=allowed_root,
+        upload_root=upload_root,
+        index_path=tmp_path / "index.sqlite3",
+    )
+    indexed = retriever.index_documents()
+    assert indexed["index_counts"]["documents"] == 3
+
+    removed_count = retriever.clear_uploaded_documents()
+
+    assert removed_count == 3
+    assert configured_document.exists()
+    assert all(not uploaded.exists() for uploaded in uploaded_documents)
+    assert not orphaned_upload.exists()
+    indexed_sources = {
+        document["source_id"]
+        for document in retriever.index.indexed_documents()
+    }
+    assert indexed_sources == {configured_document.name}
+
 
 def test_factory_specific_query_can_use_uploaded_synthetic_document(
     tmp_path: Path,
@@ -206,6 +333,92 @@ def test_question_is_expanded_to_a_topic_specific_document_query() -> None:
         )
         for passage in observation.data["retrieved_passages"]
     )
+
+
+def test_electricity_bill_query_retrieves_neighboring_demand_definition(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ai.commercial.rag.chunking import DocumentChunk
+
+    handbook = (
+        CommercialSettings().rag_documents[0]
+    )
+    retriever = PDFDocumentRetriever(
+        (handbook,),
+        index_path=tmp_path / "commercial-rag.sqlite3",
+        max_results=4,
+    )
+    chunks = [
+        DocumentChunk(
+            chunk_id="bill-components",
+            source_id=handbook.name,
+            document_sha256="handbook-test-hash",
+            page_number=1,
+            section="1. How industrial electricity costs are formed",
+            text=(
+                "An industrial electricity bill can contain energy charges, "
+                "maximum-demand charges, fixed charges, power-factor-related "
+                "adjustments, taxes and other utility-specific items."
+            ),
+            extraction_method="docling_pdf_text",
+            synthetic=True,
+        ),
+        DocumentChunk(
+            chunk_id="energy-and-demand-definitions",
+            source_id=handbook.name,
+            document_sha256="handbook-test-hash",
+            page_number=1,
+            section="1. How industrial electricity costs are formed",
+            text=(
+                "Energy (kWh) measures electricity consumed over time. Demand "
+                "(kW) measures the rate of electricity use at a point or over "
+                "a defined demand interval."
+            ),
+            extraction_method="docling_pdf_text",
+            synthetic=True,
+        ),
+    ]
+    retriever.index.index_document(
+        source_id=handbook.name,
+        source_path=handbook,
+        content_sha256="handbook-test-hash",
+        size_bytes=1,
+        page_count=1,
+        extraction_methods=("docling_pdf_text",),
+        ingestion_issues=(),
+        chunks=chunks,
+        embedder=retriever.embedder,
+    )
+    monkeypatch.setattr(
+        retriever,
+        "index_documents",
+        lambda: {"documents": [], "index_counts": retriever.index.index_counts()},
+    )
+
+    observation = retriever.retrieve(
+        "According to the uploaded energy handbook, what makes up an "
+        "industrial electricity bill? Explain the difference between energy "
+        "(kWh) and demand (kW), and cite the source page."
+    )
+
+    assert observation.status == "available"
+    passages = observation.data["retrieved_passages"]
+    passage_text = "\n".join(str(passage["text"]) for passage in passages)
+    assert "energy charges" in passage_text
+    assert "Demand (kW) measures" in passage_text
+    assert observation.data["query"]["topics"] == ["electricity_costs"]
+    assert len(
+        {
+            (
+                passage["document_sha256"],
+                passage["page"],
+                passage["section"],
+                passage["text"],
+            )
+            for passage in passages
+        }
+    ) == len(passages)
 
 
 def test_factory_specific_query_does_not_substitute_generic_guidance() -> None:

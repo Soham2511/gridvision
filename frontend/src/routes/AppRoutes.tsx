@@ -8,7 +8,10 @@ import { ProtectedRoute } from '../components/auth/ProtectedRoute';
 import { PersonaDashboardPage } from '../pages/PersonaDashboardPage';
 import { HistoricalAnalysisPage } from '../pages/HistoricalAnalysisPage';
 import { DataModelHealthPage } from '../pages/DataModelHealthPage';
-import { AiAssistantPage } from '../../../ai/residential/frontend/src/pages/AiAssistantPage';
+import {
+  AiAssistantPage,
+  CommercialAssistantPage,
+} from '../pages/AiAssistantPage';
 import { OverviewPage } from '../pages/OverviewPage';
 import { DemandForecastingPage } from '../pages/DemandForecastingPage';
 import { PeakDemandPage } from '../pages/PeakDemandPage';
@@ -48,6 +51,7 @@ export const AppRoutes: React.FC = () => {
       <Route path="/landing" element={<LandingPage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
+      <Route path="/commercial-assistant" element={<CommercialAssistantPage />} />
 
       {/* Dedicated Platform Data & Model Health Page (No Sidebar, Admin Header) */}
       <Route path="/health" element={<DataModelHealthPage />} />

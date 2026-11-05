@@ -169,9 +169,10 @@ possible.
 
 Use the corresponding environment key (`GROQ_API_KEY`,
 `OPENROUTER_API_KEY`, `OLLAMA_API_KEY`, `TAVILY_API_KEY`, or `LANGSMITH_API_KEY`)
-instead of a key file when possible. LangSmith remains disabled unless
-`LANGSMITH_TRACING=true`; Tavily is contacted only for explicit web-research
-requests.
+instead of a key file when possible. Government-assistant tracing is scoped by
+`GOVT_ASSISTANT_LANGSMITH_TRACING=true` and uses the
+`GridVision-Government-Assistant` project by default. Tavily is contacted only
+for explicit web-research requests.
 
 Example setup for this repository (Airflow must produce the gold and history
 Parquet files before the assistant can create uncached forecasts):

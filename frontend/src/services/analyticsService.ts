@@ -96,7 +96,18 @@ export interface CommercialWorkflowResponse {
   validation: { status: string; issues: string[]; evidence_count: number };
   specialist_results: Record<string, CommercialSpecialistResult>;
   execution_trace: CommercialExecutionTraceEvent[];
+  web_search_offer?: boolean;
   schedule_proposal?: CommercialScheduleProposal;
+}
+
+export interface CommercialWebSearchResponse {
+  answer: string;
+  citations: Array<{ title: string; url: string; excerpt: string }>;
+}
+
+export interface CommercialConversationMessage {
+  role: 'user' | 'assistant';
+  content: string;
 }
 
 export interface CommercialExecutionTraceEvent {
@@ -444,14 +455,27 @@ class AnalyticsService {
     userGoal: string,
     credentials: ApiCredentials,
     optimizationInputs?: Record<string, unknown>,
+    conversationHistory: CommercialConversationMessage[] = [],
   ): Promise<CommercialWorkflowResponse> {
     return apiClient.postLongAuthenticated<CommercialWorkflowResponse>(
       '/commercial/workflow',
       {
         user_goal: userGoal,
         factory_id: 'automotive-parts-demo',
+        conversation_history: conversationHistory.slice(-8),
         ...(optimizationInputs ? { optimization_inputs: optimizationInputs } : {}),
       },
+      credentials,
+    );
+  }
+
+  async searchCommercialWeb(
+    query: string,
+    credentials: ApiCredentials,
+  ): Promise<CommercialWebSearchResponse> {
+    return apiClient.postLongAuthenticated<CommercialWebSearchResponse>(
+      '/commercial/web-search',
+      { query },
       credentials,
     );
   }
@@ -480,6 +504,16 @@ class AnalyticsService {
     index_counts: Record<string, number>;
   }> {
     return apiClient.getAuthenticated('/commercial/rag/documents', credentials);
+  }
+
+  async deleteCommercialRagDocument(
+    sourceId: string,
+    credentials: ApiCredentials,
+  ): Promise<{ deleted: boolean; source_id: string }> {
+    return apiClient.deleteAuthenticated(
+      `/commercial/rag/documents/${encodeURIComponent(sourceId)}`,
+      credentials,
+    );
   }
 
   async decideScheduleProposal(

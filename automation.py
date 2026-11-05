@@ -210,69 +210,6 @@ def _compose_command() -> list[str]:
     return [docker, "compose"]
 
 
-def _local_setting(
-    name: str,
-    default: str,
-    env: dict[str, str],
-) -> str:
-    """Read one non-secret Compose setting without exposing other .env values."""
-    if name in env:
-        return env[name]
-    env_file = PROJECT_ROOT / ".env"
-    if not env_file.is_file():
-        return default
-    for line in env_file.read_text(encoding="utf-8").splitlines():
-        candidate = line.strip()
-        if candidate.startswith("export "):
-            candidate = candidate[7:].lstrip()
-        key, separator, value = candidate.partition("=")
-        if separator and key.strip() == name:
-            value = value.strip()
-            if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
-                value = value[1:-1]
-            return value
-    return default
-
-
-def _verify_ollama_models(
-    base_url: str,
-    required_models: tuple[str, ...],
-) -> dict[str, Any]:
-    """Require the configured local Ollama models before expensive automation."""
-    try:
-        with urllib.request.urlopen(
-            f"{base_url.rstrip('/')}/api/tags",
-            timeout=5,
-        ) as response:
-            payload = json.loads(response.read(1_048_576))
-    except (OSError, TimeoutError, json.JSONDecodeError) as exc:
-        raise RuntimeError(
-            "Ollama is not reachable at "
-            f"{base_url}. Start Ollama and verify its local API is available. "
-            "Then run `ollama pull qwen3:8b` and `ollama pull gemma3:4b`."
-        ) from exc
-
-    models = payload.get("models") if isinstance(payload, dict) else None
-    if not isinstance(models, list):
-        raise RuntimeError("Ollama returned an invalid /api/tags response.")
-    installed = {
-        model.get("name")
-        for model in models
-        if isinstance(model, dict) and isinstance(model.get("name"), str)
-    }
-    missing = [model for model in required_models if model not in installed]
-    if missing:
-        commands = " && ".join(f"ollama pull {model}" for model in missing)
-        raise RuntimeError(
-            "Required Ollama models are not installed: "
-            f"{', '.join(missing)}. Install them once with: {commands}"
-        )
-    return {
-        "base_url": base_url,
-        "models": list(required_models),
-    }
-
-
 def _stage_wsl_build_context() -> tempfile.TemporaryDirectory[str] | None:
     """Stage only Docker build inputs off DrvFS, where BuildKit xattrs can fail."""
     if platform.system() != "Linux" or not PROJECT_ROOT.as_posix().startswith("/mnt/"):
@@ -1640,43 +1577,14 @@ def main(argv: list[str] | None = None) -> int:
                     "Required Python modules are missing: "
                     f"{', '.join(missing_modules)}. {install_hint}"
                 )
-            llm_provider = _local_setting(
-                "COMMERCIAL_LLM_PROVIDER",
-                "ollama",
-                env,
-            ).lower()
-            if llm_provider in {"auto", "groq"}:
-                llm_provider = "ollama"
-            ollama = None
-            if llm_provider == "ollama":
-                ollama_host = _local_setting(
-                    "OLLAMA_HOST_BASE_URL",
-                    "http://127.0.0.1:11434",
-                    env,
-                )
-                primary_model = _local_setting(
-                    "COMMERCIAL_OLLAMA_PRIMARY_MODEL",
-                    "qwen3:8b",
-                    env,
-                )
-                fallback_model = _local_setting(
-                    "COMMERCIAL_OLLAMA_FALLBACK_MODEL",
-                    "gemma3:4b",
-                    env,
-                )
-                ollama = _verify_ollama_models(
-                    ollama_host,
-                    (primary_model, fallback_model),
-                )
             return {
                 "airflow": airflow,
                 "docker_compose": compose,
                 "source": str(SOURCE_PATH) if SOURCE_PATH.is_file() else None,
-                "ollama": ollama,
             }
 
         prerequisites = run_step(
-            "Check source data, Python dependencies, Docker Compose, and Ollama",
+            "Check source data, Python dependencies, and Docker Compose",
             check_prerequisites,
         )
         compose = prerequisites["docker_compose"]

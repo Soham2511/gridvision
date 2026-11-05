@@ -59,7 +59,7 @@ def get_in_memory_sqlite_engine():
     return engine
 
 
-def pytest_fixture(*args, **kwargs):
+def fixture_compat(*args, **kwargs):
     if pytest is not None:
         return pytest.fixture(*args, **kwargs)
     if len(args) == 1 and callable(args[0]):
@@ -69,7 +69,7 @@ def pytest_fixture(*args, **kwargs):
     return decorator
 
 
-@pytest_fixture
+@fixture_compat
 def temp_storage_dir() -> Generator[str, None, None]:
     """Yield a temporary directory for document storage testing and clean up."""
     tmp_dir = tempfile.mkdtemp(prefix="gridvision_test_storage_")
@@ -79,7 +79,7 @@ def temp_storage_dir() -> Generator[str, None, None]:
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
-@pytest_fixture
+@fixture_compat
 def sqlite_session() -> Generator[Session, None, None]:
     """Yield an in-memory SQLite session with initialized tables."""
     engine = get_in_memory_sqlite_engine()

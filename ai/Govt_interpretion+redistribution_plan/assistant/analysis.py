@@ -875,6 +875,9 @@ def format_analysis_report(
             "are not part of this demand-only analysis."
         )
     else:
+        accuracy_scope = (
+            "Network-level" if result["grid_count"] == GRID_COUNT else "Selected-grid"
+        )
         lines.extend(
             [
                 f"Historical versus predicted demand for {result['forecast_date']}.",
@@ -883,16 +886,16 @@ def format_analysis_report(
                 f"coverage complete={result['coverage_complete']}.",
                 f"Historical demand: {result['historical_total_demand_kwh']:.2f} kWh; "
                 f"predicted demand: {result['predicted_total_demand_kwh']:.2f} kWh.",
-                "Network-level accuracy (calculated over matched hours only): "
+                f"{accuracy_scope} accuracy (calculated over matched hours only): "
                 f"WAPE {result['network_accuracy']['wape_pct']:.2f}%"
                 if result["network_accuracy"]["wape_pct"] is not None
-                else "Network-level WAPE unavailable because matched actual demand sums to zero.",
+                else f"{accuracy_scope} WAPE unavailable because matched actual demand sums to zero.",
             ]
         )
         network_accuracy = result["network_accuracy"]
         lines.extend(
             [
-                f"Network MAE: {network_accuracy['mae_kwh']:.2f} kWh; "
+                f"{accuracy_scope} MAE: {network_accuracy['mae_kwh']:.2f} kWh; "
                 f"RMSE: {network_accuracy['rmse_kwh']:.2f} kWh; "
                 + (
                     f"MAPE: {network_accuracy['mape_pct']:.2f}%."

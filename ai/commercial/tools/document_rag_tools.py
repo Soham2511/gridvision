@@ -123,6 +123,10 @@ class DocumentRAGCommercialTools:
     ) -> ToolObservation:
         return self._renewable.get_renewable_scenarios(factory_id, goal)
 
+    def search_web(self, query: str) -> ToolObservation:
+        """Search general web sources only after an explicit user confirmation."""
+        return self._renewable.search_web(query)
+
     def optimize(
         self, factory_id: str | None, inputs: dict[str, Any]
     ) -> ToolObservation:

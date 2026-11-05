@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { usePersona } from '../context';
-import { Bot, FileText, LogOut, Send, Sparkles, Upload, User } from 'lucide-react';
+import { Bot, FileText, LogOut, Send, Sparkles, Trash2, Upload, User } from 'lucide-react';
 import { AiAssistantPage as ResidentialAssistantPage } from '../../../ai/residential/frontend/src/pages/AiAssistantPage';
 import {
   analyticsService,
   type AssistantChatResponse,
-  type CommercialExecutionTraceEvent,
+  type CommercialConversationMessage,
   type CommercialWorkflowResponse,
+  type CommercialWebSearchResponse,
   type UploadedRagDocument,
 } from '../services/analyticsService';
 import { ApiClientError, type ApiCredentials } from '../services/apiClient';
@@ -17,68 +18,10 @@ interface ChatMessage {
   text: string;
   timestamp: string;
   response?: CommercialWorkflowResponse;
-  executionTrace?: CommercialExecutionTraceEvent[];
-}
-
-function getErrorExecutionTrace(error: unknown): CommercialExecutionTraceEvent[] {
-  if (
-    !(error instanceof ApiClientError)
-    || typeof error.details !== 'object'
-    || error.details === null
-  ) {
-    return [];
-  }
-  const trace = (error.details as { execution_trace?: unknown }).execution_trace;
-  if (!Array.isArray(trace)) return [];
-  return trace.filter((event): event is CommercialExecutionTraceEvent => {
-    if (typeof event !== 'object' || event === null) return false;
-    const candidate = event as Partial<CommercialExecutionTraceEvent>;
-    return (
-      typeof candidate.node_id === 'string'
-      && ['completed', 'warning', 'error'].includes(candidate.status ?? '')
-      && typeof candidate.duration_ms === 'number'
-    );
-  });
-}
-
-function ExecutionTrace({
-  events,
-}: {
-  events: CommercialExecutionTraceEvent[];
-}) {
-  if (events.length === 0) return null;
-  const hasIssue = events.some((event) => event.status !== 'completed');
-  return (
-    <details
-      open={hasIssue}
-      style={{ borderTop: '1px solid var(--gv-border-subtle)', paddingTop: '0.55rem' }}
-    >
-      <summary style={{ cursor: 'pointer', fontWeight: 700 }}>
-        LangGraph orchestration · {events.length} steps{hasIssue ? ' · attention needed' : ''}
-      </summary>
-      <ol style={{ display: 'grid', gap: '0.4rem', paddingLeft: '1.4rem', marginBottom: 0 }}>
-        {events.map((event, index) => (
-          <li key={`${event.node_id}-${index}`}>
-            <strong>{event.node_id.replace(/_/g, ' ')}</strong>
-            {' — '}
-            {event.status}
-            {' · '}
-            {event.duration_ms.toFixed(1)} ms
-            {event.message && (
-              <p style={{
-                margin: '0.2rem 0 0',
-                color: event.status === 'completed'
-                  ? 'var(--gv-text-secondary)'
-                  : '#b42318',
-              }}>
-                {event.message}
-              </p>
-            )}
-          </li>
-        ))}
-      </ol>
-    </details>
-  );
+  webSearchQuery?: string;
+  webSearchOffer?: boolean;
+  webSearchError?: string;
+  webCitations?: CommercialWebSearchResponse['citations'];
 }
 
 const DEMO_SCHEDULE = JSON.stringify(
@@ -150,7 +93,11 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'An unexpected error occurred.';
 }
 
-const CommercialAssistantPage: React.FC = () => {
+function uploadedDocumentName(sourceId: string): string {
+  return sourceId.replace(/^[a-f\d]{32}_/i, '');
+}
+
+export const CommercialAssistantPage: React.FC = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [credentials, setCredentials] = useState<ApiCredentials | null>(null);
@@ -162,6 +109,8 @@ const CommercialAssistantPage: React.FC = () => {
   const [isTyping, setIsTyping] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadMessage, setUploadMessage] = useState('');
+  const [uploadError, setUploadError] = useState(false);
+  const [deletingDocument, setDeletingDocument] = useState('');
   const [uploadedDocuments, setUploadedDocuments] = useState<UploadedRagDocument[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
@@ -171,6 +120,9 @@ const CommercialAssistantPage: React.FC = () => {
       timestamp: 'Just now',
     },
   ]);
+  const [conversationHistory, setConversationHistory] = useState<
+    CommercialConversationMessage[]
+  >([]);
 
   const prompts = [
     'What production constraints and maintenance windows are in the demo knowledge base?',
@@ -196,6 +148,7 @@ const CommercialAssistantPage: React.FC = () => {
           timestamp: 'Just now',
         },
       ]);
+      setConversationHistory([]);
       try {
         const ragData = await analyticsService.getCommercialRagDocuments(newCredentials);
         setUploadedDocuments(ragData.documents);
@@ -214,6 +167,7 @@ const CommercialAssistantPage: React.FC = () => {
     setPassword('');
     setUsername('');
     setUploadedDocuments([]);
+    setConversationHistory([]);
     setUploadMessage('');
     setMessages([
       {
@@ -263,13 +217,8 @@ const CommercialAssistantPage: React.FC = () => {
         trimmed,
         credentials,
         optimizationInputs,
+        conversationHistory.slice(-8),
       );
-      if (response.execution_trace.length > 0) {
-        console.info('LangGraph execution trace', {
-          requestId: response.request_id,
-          steps: response.execution_trace,
-        });
-      }
       setMessages((previous) => [
         ...previous,
         {
@@ -278,22 +227,29 @@ const CommercialAssistantPage: React.FC = () => {
           text: response.summary,
           timestamp: 'Just now',
           response,
+          ...(response.web_search_offer ? {
+            webSearchQuery: trimmed,
+            webSearchOffer: true,
+          } : {}),
         },
       ]);
+      setConversationHistory((previous) => {
+        const nextHistory: CommercialConversationMessage[] = [
+          ...previous,
+          { role: 'user', content: trimmed },
+          { role: 'assistant', content: response.summary.slice(0, 2000) },
+        ];
+        return nextHistory.slice(-8);
+      });
       if (optimizationInputs) setScheduleJson('');
     } catch (error) {
-      const executionTrace = getErrorExecutionTrace(error);
-      if (executionTrace.length > 0) {
-        console.info('LangGraph execution trace', { steps: executionTrace });
-      }
       setMessages((previous) => [
         ...previous,
         {
           id: `ast-${Date.now()}`,
           sender: 'assistant',
-          text: `The master workflow could not complete this request: ${errorMessage(error)}`,
+          text: `I couldn't complete that request: ${errorMessage(error)}`,
           timestamp: 'Just now',
-          executionTrace,
         },
       ]);
     } finally {
@@ -301,37 +257,134 @@ const CommercialAssistantPage: React.FC = () => {
     }
   };
 
-  const handleUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.currentTarget.files?.[0];
-    event.currentTarget.value = '';
-    if (!file || !credentials) return;
-    setIsUploading(true);
-    setUploadMessage('');
+  const handleWebSearch = async (message: ChatMessage) => {
+    if (!message.webSearchQuery || !credentials || isTyping) return;
+    setIsTyping(true);
+    setMessages((previous) => previous.map((item) => (
+      item.id === message.id
+        ? { ...item, webSearchOffer: false, webSearchError: undefined }
+        : item
+    )));
     try {
-      const indexed = await analyticsService.uploadCommercialRagDocument(
-        file,
+      const result = await analyticsService.searchCommercialWeb(
+        message.webSearchQuery,
         credentials,
       );
-      setUploadMessage(`${file.name} uploaded and indexed for shared RAG retrieval.`);
       setMessages((previous) => [
         ...previous,
         {
-          id: `upload-${Date.now()}`,
+          id: `web-${Date.now()}`,
           sender: 'assistant',
-          text: `Document indexed successfully: ${indexed.source_id} (${indexed.chunk_count ?? 0} searchable passages).`,
+          text: `Answer from web sources:\n${result.answer}`,
           timestamp: 'Just now',
+          webCitations: result.citations,
         },
       ]);
+      setConversationHistory((previous) => {
+        const nextHistory: CommercialConversationMessage[] = [
+          ...previous,
+          { role: 'assistant', content: result.answer.slice(0, 2000) },
+        ];
+        return nextHistory.slice(-8);
+      });
+    } catch (error) {
+      const messageText = `Web search failed: ${errorMessage(error)}`;
+      setMessages((previous) => previous.map((item) => (
+        item.id === message.id
+          ? {
+            ...item,
+            webSearchOffer: true,
+            webSearchError: messageText,
+          }
+          : item
+      )));
+    } finally {
+      setIsTyping(false);
+    }
+  };
+
+  const handleSkipWebSearch = (messageId: string) => {
+    setMessages((previous) => previous.map((item) => (
+      item.id === messageId
+        ? { ...item, webSearchOffer: false, webSearchError: undefined }
+        : item
+    )));
+  };
+
+  const handleUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.currentTarget.files ?? []);
+    event.currentTarget.value = '';
+    if (files.length === 0 || !credentials) return;
+    setIsUploading(true);
+    setUploadMessage('');
+    setUploadError(false);
+    const failures: string[] = [];
+    let uploadedCount = 0;
+    try {
+      for (const [index, file] of files.entries()) {
+        setUploadMessage(`Uploading and indexing ${index + 1} of ${files.length}: ${file.name}`);
+        try {
+          const indexed = await analyticsService.uploadCommercialRagDocument(
+            file,
+            credentials,
+          );
+          uploadedCount += 1;
+          setMessages((previous) => [
+            ...previous,
+            {
+              id: `upload-${Date.now()}-${index}`,
+              sender: 'assistant',
+              text: `Document indexed successfully: ${file.name} (${indexed.chunk_count ?? 0} searchable passages).`,
+              timestamp: 'Just now',
+            },
+          ]);
+        } catch (error) {
+          failures.push(`${file.name}: ${errorMessage(error)}`);
+        }
+      }
+
+      const uploadSummary = uploadedCount > 0
+        ? `${uploadedCount} document${uploadedCount === 1 ? '' : 's'} uploaded and indexed.`
+        : 'No documents were uploaded.';
+      setUploadMessage(
+        failures.length > 0
+          ? `${uploadSummary} Failed: ${failures.join('; ')}`
+          : uploadSummary,
+      );
+      setUploadError(failures.length > 0);
       try {
         const ragData = await analyticsService.getCommercialRagDocuments(credentials);
         setUploadedDocuments(ragData.documents);
       } catch (error) {
-        setUploadMessage(`Document was indexed, but the list could not be refreshed: ${errorMessage(error)}`);
+        setUploadMessage(
+          `${uploadSummary}${failures.length > 0 ? ` Failed: ${failures.join('; ')}` : ''} The document list could not be refreshed: ${errorMessage(error)}`,
+        );
+        setUploadError(true);
       }
-    } catch (error) {
-      setUploadMessage(errorMessage(error));
     } finally {
       setIsUploading(false);
+    }
+  };
+
+  const handleRemoveDocument = async (document: UploadedRagDocument) => {
+    if (!credentials || deletingDocument) return;
+    setDeletingDocument(document.source_id);
+    setUploadMessage('');
+    setUploadError(false);
+    try {
+      await analyticsService.deleteCommercialRagDocument(
+        document.source_id,
+        credentials,
+      );
+      setUploadedDocuments((previous) => previous.filter(
+        (item) => item.source_id !== document.source_id,
+      ));
+      setUploadMessage(`${uploadedDocumentName(document.source_id)} removed from shared RAG documents.`);
+    } catch (error) {
+      setUploadMessage(`Could not remove ${uploadedDocumentName(document.source_id)}: ${errorMessage(error)}`);
+      setUploadError(true);
+    } finally {
+      setDeletingDocument('');
     }
   };
 
@@ -447,19 +500,29 @@ const CommercialAssistantPage: React.FC = () => {
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '1rem', flexWrap: 'wrap' }}>
               <div>
                 <h3 style={{ margin: '0 0 0.25rem', fontSize: '0.95rem', color: 'var(--gv-text-primary)' }}>Shared RAG documents</h3>
-                <p style={{ margin: 0, fontSize: '0.76rem', color: 'var(--gv-text-muted)' }}>PDF, MD, TXT, DOCX, PPTX, XLSX, HTML, and CSV · max 25 MB per file</p>
+                <p style={{ margin: 0, fontSize: '0.76rem', color: 'var(--gv-text-muted)' }}>Select multiple PDF, MD, TXT, DOCX, PPTX, XLSX, HTML, CSV, PNG, JPG, TIFF, BMP, or WebP files · max 25 MB each. Images are read with local OCR.</p>
               </div>
-              <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.45rem', padding: '0.65rem 0.9rem', borderRadius: 'var(--gv-radius-md)', background: 'var(--gv-color-grid-blue)', color: '#fff', fontWeight: 700, fontSize: '0.82rem', cursor: isUploading ? 'wait' : 'pointer' }}>
-                <Upload size={15} /> {isUploading ? 'Uploading and indexing…' : 'Upload document'}
-                <input type="file" accept=".pdf,.md,.txt,.docx,.pptx,.xlsx,.html,.csv" disabled={isUploading} onChange={handleUpload} style={{ display: 'none' }} />
+              <label style={{ display: 'inline-flex', alignItems: 'center', gap: '0.45rem', padding: '0.65rem 0.9rem', borderRadius: 'var(--gv-radius-md)', background: 'var(--gv-color-grid-blue)', color: '#fff', fontWeight: 700, fontSize: '0.82rem', cursor: isUploading || deletingDocument ? 'wait' : 'pointer' }}>
+                <Upload size={15} /> {isUploading ? 'Uploading and indexing…' : 'Add documents'}
+                <input type="file" accept=".pdf,.md,.txt,.docx,.pptx,.xlsx,.html,.csv,.png,.jpg,.jpeg,.tif,.tiff,.bmp,.webp" multiple disabled={isUploading || deletingDocument !== ''} onChange={handleUpload} style={{ display: 'none' }} />
               </label>
             </div>
-            {uploadMessage && <p role="status" style={{ margin: 0, fontSize: '0.8rem', color: uploadMessage.includes('indexed') ? 'var(--gv-color-smart-teal)' : '#b42318' }}>{uploadMessage}</p>}
+            {uploadMessage && <p role={uploadError ? 'alert' : 'status'} style={{ margin: 0, fontSize: '0.8rem', color: uploadError ? '#b42318' : 'var(--gv-color-smart-teal)' }}>{uploadMessage}</p>}
             {uploadedDocuments.length > 0 ? (
               <ul style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', margin: 0, padding: 0, listStyle: 'none' }}>
                 {uploadedDocuments.map((document) => (
                   <li key={document.source_id} style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', padding: '0.4rem 0.65rem', borderRadius: '999px', background: 'var(--gv-bg-surface-subtle)', color: 'var(--gv-text-secondary)', fontSize: '0.75rem' }}>
-                    <FileText size={13} /> {document.source_id}
+                    <FileText size={13} /> {uploadedDocumentName(document.source_id)}
+                    <button
+                      type="button"
+                      aria-label={`Remove ${uploadedDocumentName(document.source_id)}`}
+                      title={`Remove ${uploadedDocumentName(document.source_id)}`}
+                      disabled={isUploading || deletingDocument !== ''}
+                      onClick={() => void handleRemoveDocument(document)}
+                      style={{ display: 'inline-flex', alignItems: 'center', padding: '0.1rem', border: 0, background: 'transparent', color: '#b42318', cursor: isUploading || deletingDocument ? 'wait' : 'pointer' }}
+                    >
+                      <Trash2 size={13} />
+                    </button>
                   </li>
                 ))}
               </ul>
@@ -487,36 +550,57 @@ const CommercialAssistantPage: React.FC = () => {
                 {message.sender === 'assistant' && <div style={{ width: 30, height: 30, borderRadius: '50%', background: 'var(--gv-color-smart-teal)', display: 'grid', placeItems: 'center', flexShrink: 0 }}><Bot size={17} color="#fff" /></div>}
                 <div style={{ minWidth: 0, background: message.sender === 'user' ? 'var(--gv-color-midnight-navy)' : 'var(--gv-bg-surface-subtle)', color: message.sender === 'user' ? '#fff' : 'var(--gv-text-primary)', padding: '0.8rem 1rem', borderRadius: 'var(--gv-radius-md)', fontSize: '0.83rem', lineHeight: 1.5, border: message.sender === 'user' ? 'none' : '1px solid var(--gv-border-subtle)', whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>
                   <p style={{ margin: 0 }}>{message.text}</p>
+                  {message.webCitations && message.webCitations.length > 0 && (
+                    <div style={{ marginTop: '0.65rem' }}>
+                      <strong>Web sources</strong>
+                      <ol style={{ margin: '0.35rem 0 0', paddingLeft: '1.2rem' }}>
+                        {message.webCitations.map((citation, index) => (
+                          <li key={`${citation.url}-${index}`}>
+                            <a href={citation.url} target="_blank" rel="noopener noreferrer">
+                              {citation.title}
+                            </a>
+                            {citation.excerpt && (
+                              <blockquote style={{ margin: '0.25rem 0', color: 'var(--gv-text-secondary)' }}>
+                                {citation.excerpt}
+                              </blockquote>
+                            )}
+                          </li>
+                        ))}
+                      </ol>
+                    </div>
+                  )}
                   {message.response && (
                     <div style={{ display: 'grid', gap: '0.7rem', marginTop: '0.75rem' }}>
-                      <strong>Workflow status: {message.response.status}</strong>
-                      <ExecutionTrace events={message.response.execution_trace} />
-                      {message.response.findings.length > 0 && (
-                        <div><strong>Findings</strong><ul>{message.response.findings.map((finding, index) => <li key={`${index}-${finding}`}>{finding}</li>)}</ul></div>
-                      )}
                       {message.response.evidence_refs.length > 0 && (
-                        <div>
-                          <strong>Evidence</strong>
-                          <ul>{message.response.evidence_refs.map((reference, index) => (
-                            <li key={`${reference.source_id}-${index}`}>
-                              {reference.source_id}{reference.locator ? ` (${reference.locator})` : ''}{reference.synthetic ? ' — synthetic demo source' : ''}
-                              {reference.excerpt && <blockquote style={{ margin: '0.25rem 0 0', color: 'var(--gv-text-secondary)' }}>{reference.excerpt}</blockquote>}
-                            </li>
-                          ))}</ul>
-                        </div>
+                        <details>
+                          <summary style={{ cursor: 'pointer', fontWeight: 700 }}>
+                            Sources ({message.response.evidence_refs.length})
+                          </summary>
+                          <ol style={{ paddingLeft: '1.2rem' }}>
+                            {message.response.evidence_refs.map((reference, index) => (
+                              <li key={`${reference.source_id}-${reference.locator}-${index}`}>
+                                <strong>
+                                  [{index + 1}] {uploadedDocumentName(reference.source_id)}
+                                  {reference.locator ? ` (${reference.locator})` : ''}
+                                </strong>
+                                {reference.synthetic && <span> — synthetic demo source</span>}
+                                {reference.excerpt && (
+                                  <blockquote style={{ margin: '0.25rem 0 0', color: 'var(--gv-text-secondary)' }}>
+                                    {reference.excerpt}
+                                  </blockquote>
+                                )}
+                              </li>
+                            ))}
+                          </ol>
+                        </details>
                       )}
                       {message.response.assumptions.length > 0 && <div><strong>Assumptions</strong><ul>{message.response.assumptions.map((item, index) => <li key={`${index}-${item}`}>{item}</li>)}</ul></div>}
                       {message.response.conflicts.length > 0 && <div><strong>Conflicts</strong><ul>{message.response.conflicts.map((item, index) => <li key={`${index}-${item}`}>{item}</li>)}</ul></div>}
-                      {message.response.validation.issues.length > 0 && <div><strong>Validation notes</strong><ul>{message.response.validation.issues.map((item, index) => <li key={`${index}-${item}`}>{item}</li>)}</ul></div>}
-                      {message.response.errors.length > 0 && <div><strong>Workflow errors</strong><ul>{message.response.errors.map((item, index) => <li key={`${index}-${item}`}>{item}</li>)}</ul></div>}
-                      {Object.entries(message.response.specialist_results).map(([name, result]) => (
-                        <details key={name}>
-                          <summary>{name.replace(/_/g, ' ')} — {result.status}</summary>
-                          {result.findings.length > 0 && <ul>{result.findings.map((finding, index) => <li key={`${index}-${finding}`}>{finding}</li>)}</ul>}
-                          {Object.keys(result.data).length > 0 && <pre style={{ maxWidth: '100%', overflow: 'auto', fontSize: '0.72rem' }}>{JSON.stringify(result.data, null, 2)}</pre>}
-                          {result.error && <p>{result.error.message}</p>}
-                        </details>
-                      ))}
+                      {message.response.errors.length > 0 && (
+                        <p role="alert" style={{ color: '#b42318', margin: 0 }}>
+                          This answer may be incomplete: {message.response.errors.join('; ')}
+                        </p>
+                      )}
                       {message.response.schedule_proposal && (
                         <div style={{ borderTop: '1px solid var(--gv-border-subtle)', paddingTop: '0.65rem' }}>
                           <strong>Schedule proposal — {message.response.schedule_proposal.status}</strong>
@@ -533,8 +617,30 @@ const CommercialAssistantPage: React.FC = () => {
                       )}
                     </div>
                   )}
-                  {message.executionTrace && (
-                    <ExecutionTrace events={message.executionTrace} />
+                  {message.webSearchOffer && message.webSearchQuery && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.75rem' }}>
+                      <button
+                        type="button"
+                        disabled={isTyping}
+                        onClick={() => void handleWebSearch(message)}
+                        style={{ padding: '0.45rem 0.7rem', border: 0, borderRadius: 'var(--gv-radius-md)', background: 'var(--gv-color-grid-blue)', color: '#fff', fontWeight: 700, cursor: isTyping ? 'wait' : 'pointer' }}
+                      >
+                        Search web sources
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isTyping}
+                        onClick={() => handleSkipWebSearch(message.id)}
+                        style={{ padding: '0.45rem 0.7rem', border: '1px solid var(--gv-border-subtle)', borderRadius: 'var(--gv-radius-md)', background: 'var(--gv-bg-surface)', color: 'var(--gv-text-primary)', cursor: isTyping ? 'wait' : 'pointer' }}
+                      >
+                        No, go back
+                      </button>
+                    </div>
+                  )}
+                  {message.webSearchError && (
+                    <p role="alert" style={{ margin: '0.5rem 0 0', color: '#b42318' }}>
+                      {message.webSearchError}
+                    </p>
                   )}
                   <small style={{ display: 'block', marginTop: '0.35rem', opacity: 0.7 }}>{message.timestamp}</small>
                 </div>

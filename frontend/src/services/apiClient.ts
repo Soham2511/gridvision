@@ -257,6 +257,19 @@ class ApiClient {
     );
   }
 
+  public async deleteAuthenticated<T>(
+    path: string,
+    credentials: ApiCredentials,
+  ): Promise<T> {
+    return this.request<T>(
+      path,
+      { method: 'DELETE' },
+      undefined,
+      15000,
+      credentials,
+    );
+  }
+
   public async uploadAuthenticated<T>(
     path: string,
     file: File,

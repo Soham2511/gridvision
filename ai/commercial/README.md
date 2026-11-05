@@ -10,6 +10,17 @@ commercial data pipeline.
 - A bounded LangGraph supervisor workflow with conditional specialist routing,
   parallel independent specialists, aggregation, optional optimization,
   validation, one bounded rework round, and finalization.
+- Four concise specialist skill documents are loaded into the Groq supervisor
+  prompt so it can select the appropriate specialist(s). These are routing
+  guidance only; application-side tool allowlists remain authoritative.
+- The Commercial chat UI and terminal chat send the last four successful
+  user/assistant turns as bounded short-term context. It remains in process or
+  page memory only and is cleared when the chat session ends; it is not
+  long-term or server-persisted memory.
+- When Operations RAG returns `DATA_NOT_AVAILABLE`, the chat offers an explicit
+  web-search choice. Tavily is not called unless the user selects **Search web
+  sources**; the result uses Tavily's answer and shows citations separately
+  from local document evidence. Choosing **No, go back** dismisses the offer.
 - An injectable tool protocol. The Operations tool uses a persistent, local
   hybrid RAG index over the configured Commercial documents. Peak Prediction uses
   the existing Commercial building forecast API, its Gold dataset and
@@ -60,8 +71,15 @@ and `COMMERCIAL_RAG_ALLOWED_ROOT`; list paths use the platform path separator.
 Ingestion enforces the configured roots, supported document formats, size,
 page/character bounds, conversion timeout, and PDF encryption policy.
 Authenticated demo uploads accept PDF, Markdown, TXT, DOCX, PPTX, XLSX, HTML,
-and CSV up to 25 MB. They are stored under the persistent local RAG data
+CSV, PNG, JPEG, TIFF, BMP, and WebP up to 25 MB. Images are OCRed locally with
+Tesseract and Pillow; searchable text is then chunked and added to the same RAG
+index. They are stored under the persistent local RAG data
 directory, indexed immediately, and searched alongside the fixed demo corpus.
+The Commercial assistant page accepts multiple files in one selection and
+allows each uploaded document to be removed from both local storage and the
+search index. When starting the backend with `python backend/run.py`, files
+from the previous run are cleared from the upload directory and RAG index.
+Set `COMMERCIAL_RAG_CLEAR_UPLOADS_ON_STARTUP=false` in `.env` to preserve them.
 Uploaded text is evidence, not instructions. The UI holds demo credentials in
 memory only and sends them to the loopback API using Basic Auth.
 The local index stores content hashes, extraction method, source/page/section
@@ -104,6 +122,63 @@ document contents. To refresh after replacing a PDF or installing OCR:
 python -m ai.commercial.rag index --force
 ```
 
+## Run the Commercial assistant by itself
+
+The Commercial chat UI and API can run without `automation.py`. In separate
+PowerShell terminals from the repository root, start the API and frontend:
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+python backend\run.py
+```
+
+```powershell
+npm run dev
+```
+
+Open `http://localhost:5173/commercial-assistant`. This standalone page uses
+the Commercial demo credentials configured in `.env`; the Vite development
+server forwards `/api` requests to the local backend. The backend runs the API
+only—it does not run ETL, model training, or Airflow. Forecast tools still need
+the backend API and its configured trained-model data.
+
+To chat directly in a terminal, with workflow logs, execution traces, and
+exception tracebacks written to stderr, run from the repository root:
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+python -m ai.commercial.cli
+```
+
+To test the configured Groq key, endpoint, model, and exact planner request
+without starting the backend, RAG index, or chat loop, run:
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+python -m ai.commercial.cli --check-groq
+```
+
+The check prints the endpoint, model, key-file path (never its contents), and
+either the selected specialist or a sanitized provider error.
+The planner uses the official Groq Python SDK and sends the
+`gridvision-commercial/1.0` User-Agent.
+
+The terminal command loads `.env`, uses Groq by default, and accepts `exit` or
+`quit` to end the session. It reads its API key from
+`key_vault/groq/api.key`; configure `COMMERCIAL_GROQ_API_KEY_FILE` to use a
+different file. The default model is `openai/gpt-oss-20b` (Groq's model ID;
+`openai/oss-20b` is not the documented ID). It invokes the Commercial workflow
+directly; forecast tools that require the API are unavailable unless the
+backend is also running.
+`COMMERCIAL_GROQ_BASE_URL` is the API origin (default `https://api.groq.com`);
+the Groq SDK adds `/openai/v1/chat/completions`. Existing settings ending in
+`/openai/v1` are normalized to the origin automatically.
+The terminal shows each workflow stage and model call while they run. Press
+Ctrl+C to cancel the active request or leave the chat. Groq requests are
+bounded by `COMMERCIAL_GROQ_TIMEOUT_SECONDS` (60 seconds by default). To use
+the chat UI through Compose, the backend mounts that key file read-only at
+`/run/secrets/groq_api_key`.
+
 ## Run the Commercial MCP server
 
 Install the optional MCP SDK together with the Commercial agent, Docling, OCR,
@@ -133,27 +208,12 @@ to protect customer records.
 
 The frontend master agent calls `/commercial/workflow`, `/commercial/session`,
 and the authenticated `/commercial/rag/documents` endpoints; it does not use
-the legacy `/assistant/chat` endpoint. The supervisor uses local Ollama by
-default: `qwen3:8b` classifies requests, with `gemma3:4b` as a fallback if the
-primary request fails. Neither model receives tool permissions; the workflow
-validates specialist assignments and enforces tool allowlists in application
-code. The two models must be pulled into the WSL Ollama installation:
-
-```bash
-ollama pull qwen3:8b
-ollama pull gemma3:4b
-```
-
-In `.env`, set `OLLAMA_HOST_BASE_URL` to the URL reachable from WSL (default
-`http://127.0.0.1:11434`) and `COMMERCIAL_OLLAMA_BASE_URL` to the URL reachable
-from the backend container (default `http://host.docker.internal:11434`).
-If Docker cannot reach the WSL Ollama listener, configure Ollama to listen on
-an interface accessible to Docker and set the latter URL accordingly.
-`COMMERCIAL_OLLAMA_TIMEOUT_SECONDS` bounds each model request. The automation
-preflight verifies Ollama is running and both configured model tags are
-installed before starting the longer ETL/training workflow; it does not
-download model weights automatically. Set `COMMERCIAL_LLM_PROVIDER=mock` only
-to use deterministic routing without Ollama.
+the legacy `/assistant/chat` endpoint. The supervisor uses Groq's
+`openai/gpt-oss-20b` model by default. Its API key is read from the local
+`key_vault/groq/api.key` file and is never logged. The model selects typed
+specialists only; the workflow validates assignments and enforces tool
+allowlists in application code. Set `COMMERCIAL_LLM_PROVIDER=mock` only to use
+deterministic routing in tests; normal Commercial requests use Groq.
 
 The forecast API adapter is loopback-only by default and has a bounded timeout
 and response size. Configure `COMMERCIAL_FORECAST_API_BASE_URL` and
@@ -167,11 +227,14 @@ ID and pass it to `peak_forecast`. The current serving API exposes a bounded
 sample of up to 100 dataset buildings; these IDs are not factory IDs or a
 tenant registry.
 
-Each Commercial assistant response includes a local LangGraph execution trace
-in the chat UI. Expand **LangGraph orchestration** to see completed, warning,
-and failed nodes with elapsed time; node exceptions include the failed step and
-safe error type. This is per-request UI instrumentation and does not use
-LangSmith.
+The Commercial supervisor uses Groq for specialist selection and, after
+successful tool validation, a separate grounded-answer pass. The answer pass
+receives bounded tool results and deduplicated cited passages; it must cite
+provided sources and cannot replace deterministic optimizer or forecast
+values. The chat UI presents the answer and expandable sources rather than
+internal orchestration traces or raw specialist payloads. Workflow traces
+remain available in terminal output and structured API responses for
+diagnostics.
 
 Docling is installed through the `commercial-rag-docling` requirements group
 and is included in the backend Docker image. Scanned-only pages use optional
@@ -213,10 +276,9 @@ python -m pytest tests/commercial
 `build_commercial_graph` injects tools and settings so tests can exercise
 workflow behavior without API keys or external services.
 
-The default provider is local Ollama. Tests can inject deterministic tools and
-select `COMMERCIAL_LLM_PROVIDER=mock`; Ollama failures are reported explicitly
-after the configured Qwen/Gemma attempts and never silently switch to mock
-planning.
+The default provider is Groq. Tests can inject deterministic tools and select
+`COMMERCIAL_LLM_PROVIDER=mock`; provider failures are reported explicitly and
+never silently switch to mock planning.
 
 The renewable tool reads `TAVILY_API_KEY` from the process environment or the
 local `key_vault/tavily/api.key` file. In Docker Compose, that local file is

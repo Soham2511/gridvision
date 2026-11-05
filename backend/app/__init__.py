@@ -300,6 +300,22 @@ def create_app(config_class: type[BaseConfig] | None = None) -> Flask:
         commercial_settings.rag_documents,
         settings=commercial_settings,
     )
+    if not app.testing and os.getenv(
+        "COMMERCIAL_RAG_CLEAR_UPLOADS_ON_STARTUP", ""
+    ).strip().lower() in {"1", "true", "yes", "on"}:
+        removed_uploads = commercial_tools.retriever.clear_uploaded_documents()
+        if removed_uploads:
+            logging.getLogger("gridvision.commercial.rag").info(
+                "commercial_rag_startup_upload_cleanup",
+                extra={
+                    "event": {
+                        "removed_files": removed_uploads,
+                        "upload_root": str(
+                            commercial_tools.retriever.upload_root
+                        ),
+                    }
+                },
+            )
     commercial_workflow = build_commercial_graph(
         tools=commercial_tools,
         settings=commercial_settings,
@@ -353,6 +369,7 @@ def create_app(config_class: type[BaseConfig] | None = None) -> Flask:
     app.extensions["anomaly_prediction_service"] = anomaly_prediction_svc
     app.extensions["commercial_workflow"] = commercial_workflow
     app.extensions["commercial_rag_retriever"] = commercial_tools.retriever
+    app.extensions["commercial_web_search"] = commercial_tools.search_web
     app.extensions["commercial_schedule_approvals"] = (
         commercial_schedule_approvals
     )

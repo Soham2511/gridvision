@@ -13,6 +13,7 @@ from ai.commercial.rag.chunking import chunk_document
 from ai.commercial.rag.embeddings import EmbeddingProvider, create_embedder
 from ai.commercial.rag.ingestion import (
     DocumentIngestionError,
+    IMAGE_EXTENSIONS,
     fingerprint_document,
     ingest_document,
 )
@@ -43,6 +44,16 @@ MACHINE_STATUS_RECORD = re.compile(
     re.IGNORECASE,
 )
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
+UPLOAD_DOCUMENT_EXTENSIONS = {
+    ".pdf",
+    ".md",
+    ".txt",
+    ".docx",
+    ".pptx",
+    ".xlsx",
+    ".html",
+    ".csv",
+} | set(IMAGE_EXTENSIONS)
 
 
 @dataclass(frozen=True)
@@ -222,8 +233,7 @@ class PDFDocumentRetriever:
                 path
                 for path in self.upload_root.iterdir()
                 if path.is_file()
-                and path.suffix.casefold()
-                in {".pdf", ".md", ".txt", ".docx", ".pptx", ".xlsx", ".html"}
+                and path.suffix.casefold() in UPLOAD_DOCUMENT_EXTENSIONS
             )
         for path in paths:
             source_id = path.name
@@ -381,6 +391,68 @@ class PDFDocumentRetriever:
             "index_counts": self.index.index_counts(),
         }
 
+    def remove_uploaded_document(self, source_id: str) -> bool:
+        """Remove an indexed upload and all of its local and graph index data."""
+        if self.upload_root is None:
+            return False
+
+        document = next(
+            (
+                item
+                for item in self.index.indexed_documents()
+                if item["source_id"] == source_id
+            ),
+            None,
+        )
+        if document is None:
+            return False
+
+        upload_root = self.upload_root.resolve(strict=True)
+        document_path = Path(str(document["path"])).resolve()
+        try:
+            document_path.relative_to(upload_root)
+        except ValueError as exc:
+            raise ValueError("The indexed document is outside the upload directory.") from exc
+        if document_path.parent != upload_root or document_path.name != source_id:
+            raise ValueError("The indexed upload path does not match its source ID.")
+
+        if self.neo4j_graph is not None:
+            self.neo4j_graph.remove_document(source_id)
+        self.index.remove_document(source_id)
+        self._processed_hashes.pop(source_id, None)
+        self._processed_file_stats.pop(source_id, None)
+        self._neo4j_synced_hashes.pop(source_id, None)
+        document_path.unlink(missing_ok=True)
+        return True
+
+    def clear_uploaded_documents(self) -> int:
+        """Remove all files and index entries contained in the upload directory."""
+        if self.upload_root is None:
+            return 0
+
+        upload_root = self.upload_root.resolve(strict=True)
+        removed_files = 0
+        for document in self.index.indexed_documents():
+            source_id = str(document["source_id"])
+            document_path = Path(str(document["path"])).resolve()
+            if document_path.parent != upload_root or document_path.name != source_id:
+                continue
+            if self.remove_uploaded_document(source_id):
+                removed_files += 1
+
+        for path in upload_root.iterdir():
+            if not path.is_file() and not path.is_symlink():
+                continue
+            if (
+                path.suffix.casefold() not in UPLOAD_DOCUMENT_EXTENSIONS
+                and not path.name.endswith(".upload")
+            ):
+                continue
+            if path.exists() or path.is_symlink():
+                path.unlink()
+                removed_files += 1
+        return removed_files
+
     def _sync_neo4j_document(self, source_id: str) -> None:
         if self.neo4j_graph is None:
             return
@@ -510,7 +582,8 @@ class PDFDocumentRetriever:
                 )
             )
 
-        matches = []
+        eligible_rows = []
+        seen_content: set[tuple[str, int, str | None, str]] = set()
         for chunk_id in ranked_ids:
             row = by_id.get(chunk_id)
             if row is None:
@@ -521,15 +594,53 @@ class PDFDocumentRetriever:
                 and str(row["source_id"]) in configured_source_ids
             ):
                 continue
-            text = str(row["text"])
-            if retrieval_query.anchor_phrases and not any(
-                _matches_anchor(phrase, text)
-                for phrase in retrieval_query.anchor_phrases
-            ):
+            content_key = (
+                str(row["document_sha256"]),
+                int(row["page_number"]),
+                str(row["section"]) if row["section"] is not None else None,
+                str(row["text"]),
+            )
+            if content_key in seen_content:
                 continue
-            matches.append(row)
-            if len(matches) >= self.max_results:
-                break
+            seen_content.add(content_key)
+            eligible_rows.append(row)
+
+        anchor_rows = [
+            row
+            for row in eligible_rows
+            if retrieval_query.anchor_phrases
+            and any(
+                _matches_anchor(phrase, str(row["text"]))
+                for phrase in retrieval_query.anchor_phrases
+            )
+        ]
+        if retrieval_query.anchor_phrases:
+            anchor_sections = {
+                (
+                    str(row["document_sha256"]),
+                    int(row["page_number"]),
+                    str(row["section"]) if row["section"] is not None else None,
+                )
+                for row in anchor_rows
+            }
+            anchor_chunk_ids = {str(row["chunk_id"]) for row in anchor_rows}
+            candidates = [
+                *anchor_rows,
+                *(
+                    row
+                    for row in eligible_rows
+                    if str(row["chunk_id"]) not in anchor_chunk_ids
+                    and (
+                        str(row["document_sha256"]),
+                        int(row["page_number"]),
+                        str(row["section"]) if row["section"] is not None else None,
+                    )
+                    in anchor_sections
+                ),
+            ]
+        else:
+            candidates = eligible_rows
+        matches = candidates[: self.max_results]
 
         if not matches:
             if not self.index.index_counts()["chunks"]:

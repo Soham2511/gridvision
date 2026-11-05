@@ -163,7 +163,7 @@ class RenewableEnergyTools:
         )
 
         try:
-            results = self._search(search_query)
+            _, results = self._search(search_query)
         except TavilySearchError as exc:
             return ToolObservation(
                 status="available",
@@ -218,6 +218,49 @@ class RenewableEnergyTools:
             assumptions=self._assumptions(estimate),
         )
 
+    def search_web(self, query: str) -> ToolObservation:
+        """Return Tavily's answer and cited sources for an explicitly approved query."""
+        try:
+            answer, results = self._search(query, include_answer=True)
+        except TavilySearchError as exc:
+            return ToolObservation(
+                status="failed",
+                findings=(exc.message,),
+                error=AgentError(
+                    code=exc.code,
+                    message=exc.message,
+                    retryable=True,
+                ),
+            )
+
+        evidence_refs = tuple(
+            EvidenceRef(
+                source_id=result["url"],
+                source_type="web_search",
+                locator=result["url"],
+                excerpt=result["content"] or result["title"],
+                extraction_confidence=0.8,
+            )
+            for result in results
+        )
+        if not answer and not results:
+            answer = "Tavily found no relevant web sources for this query."
+        elif not answer:
+            answer = (
+                "Tavily did not provide a synthesized answer. Relevant source "
+                "summaries are included below."
+            )
+
+        return ToolObservation(
+            status="available",
+            findings=(answer,),
+            data={
+                "query": query,
+                "results": results,
+            },
+            evidence_refs=evidence_refs,
+        )
+
     def _read_api_key(self) -> str:
         environment_key = os.getenv("TAVILY_API_KEY", "").strip()
         if environment_key:
@@ -241,14 +284,19 @@ class RenewableEnergyTools:
             )
         return api_key
 
-    def _search(self, query: str) -> list[dict[str, str]]:
+    def _search(
+        self,
+        query: str,
+        *,
+        include_answer: bool = False,
+    ) -> tuple[str | None, list[dict[str, str]]]:
         payload = json.dumps(
             {
                 "api_key": self._read_api_key(),
                 "query": query,
                 "search_depth": "basic",
                 "max_results": MAX_RESULTS,
-                "include_answer": False,
+                "include_answer": include_answer,
             },
             separators=(",", ":"),
         ).encode("utf-8")
@@ -319,7 +367,11 @@ class RenewableEnergyTools:
                     "content": content[:1000] if isinstance(content, str) else "",
                 }
             )
-        return results
+        answer = response_data.get("answer")
+        return (
+            answer.strip()[:4000] if isinstance(answer, str) and answer.strip() else None,
+            results,
+        )
 
     @classmethod
     def _estimate(cls, goal: str) -> dict[str, Any]:
