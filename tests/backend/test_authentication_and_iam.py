@@ -61,6 +61,31 @@ def test_login_via_email(client: FlaskClient):
     assert res.get_json()["data"]["user"]["username"] == "resident"
 
 
+def test_successful_login_generates_snapshots_for_linked_meters(
+    client: FlaskClient, monkeypatch: pytest.MonkeyPatch
+):
+    """Successful login ensures historical snapshots for the user's linked meters."""
+    generated_meter_ids: list[str] = []
+
+    def record_snapshot_request(repository: object, meter_id: str) -> bool:
+        generated_meter_ids.append(meter_id)
+        return True
+
+    monkeypatch.setattr(
+        "app.api.v1.auth.HistoricalSnapshotRepository.generate_snapshot_if_missing",
+        record_snapshot_request,
+    )
+
+    response = client.post(
+        "/api/v1/auth/login",
+        json={"identifier": "resident", "password": "GridVision@2026"},
+    )
+
+    assert response.status_code == 200
+    assert response.get_json()["data"]["user"]["meters"]
+    assert set(generated_meter_ids) == set(response.get_json()["data"]["user"]["meters"])
+
+
 def test_login_case_insensitivity(client: FlaskClient):
     """Verify login username and email matching is case-insensitive."""
     res = client.post(
@@ -274,7 +299,7 @@ def test_assistant_chat_for_unmetered_user(client: FlaskClient):
     res = client.post(
         "/api/v1/assistant/chat",
         headers={"Authorization": f"Bearer {token}"},
-        json={"prompt": "hello", "persona": "household", "entity_id": "2235404", "history": []},
+        json={"prompt": "hello", "persona": "household", "entity_id": BaseConfig.INITIAL_RESIDENTIAL_OBJECTID, "history": []},
     )
     assert res.status_code == 200
     data = res.get_json()["data"]
