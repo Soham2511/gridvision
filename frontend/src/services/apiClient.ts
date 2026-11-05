@@ -79,14 +79,23 @@ class ApiClient {
     credentials?: ApiCredentials,
   ): Promise<T> {
     const fullUrl = this.buildUrl(path, params);
-    const activeHousehold = typeof window !== 'undefined' ? localStorage.getItem('gv_active_entity_household') : null;
-    const defaultDevUser = activeHousehold ? activeHousehold.replace(/METER-/i, '') : '2254213';
+    const activePersona = typeof window !== 'undefined' ? localStorage.getItem('gv_current_persona') : null;
+    const activeEntity = typeof window !== 'undefined'
+      ? (
+          (activePersona ? localStorage.getItem(`gv_active_entity_${activePersona}`) : null) ||
+          localStorage.getItem('gv_active_entity_residential') ||
+          localStorage.getItem('gv_active_entity_commercial') ||
+          localStorage.getItem('gv_active_entity_household')
+        )
+      : null;
+    const defaultDevUser = activeEntity ? activeEntity.replace(/^METER-/i, '') : '2254213';
     const accessToken = typeof window !== 'undefined' ? localStorage.getItem('gv_access_token') : null;
 
     const headers: Record<string, string> = {
       Accept: 'application/json',
       ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
       ...(defaultDevUser ? { 'X-Dev-User-Id': defaultDevUser } : {}),
+      ...(activePersona ? { 'X-Persona': activePersona } : {}),
       ...((options.headers as Record<string, string>) || {}),
     };
     if (!(options.body instanceof FormData) && !headers['Content-Type']) {
@@ -118,7 +127,7 @@ class ApiClient {
 
       clearTimeout(timeoutId);
 
-      let body: any = null;
+      let body: { error?: { message?: string; code?: string; details?: unknown } } | null = null;
       try {
         body = await response.json();
       } catch {

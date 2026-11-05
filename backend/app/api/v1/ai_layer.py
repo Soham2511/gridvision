@@ -85,7 +85,9 @@ def _report_access_context(
     if isinstance(stored_context, str) and stored_context.startswith(f"{base_context}:entity:"):
         requested_context = _entity_context(persona, entity_id, default="household")
         return stored_context if requested_context == stored_context else None
-    if report.get("report_type") != "monthly_consumption":
+    if base_context == "demo:government" and report.get("report_type") in {"anomaly_rectification", "anomaly_report"}:
+        return stored_context
+    if report.get("report_type") not in {"monthly_consumption", "anomaly_rectification", "anomaly_report"}:
         return None
     metadata = report.get("payload", {}).get("metadata", {})
     report_entity = metadata.get("entityId")
@@ -497,3 +499,135 @@ def mark_notification_read(notification_id: str):
         return success_response(updated)
     except ApplicationStoreError as exc:
         raise AppError("Notification storage is unavailable.", code="AI_STORAGE_UNAVAILABLE", status_code=503) from exc
+
+
+@bp.route("/ai/notifications/<notification_id>", methods=["DELETE"])
+def delete_notification(notification_id: str):
+    _require_demo()
+    context = _entity_context(
+        request.args.get("persona"), _request_building_id(), default="household"
+    )
+    try:
+        deleted = _store().delete_notification(context, notification_id)
+        return success_response({"deleted": deleted, "notification_id": notification_id})
+    except ApplicationStoreError as exc:
+        raise AppError("Notification storage is unavailable.", code="AI_STORAGE_UNAVAILABLE", status_code=503) from exc
+
+
+@bp.route("/ai/notifications/clear", methods=["POST", "DELETE"])
+def clear_notifications():
+    _require_demo()
+    context = _entity_context(
+        request.args.get("persona"), _request_building_id(), default="household"
+    )
+    try:
+        count = _store().clear_all_notifications(context)
+        return success_response({"cleared": count})
+    except ApplicationStoreError as exc:
+        raise AppError("Notification storage is unavailable.", code="AI_STORAGE_UNAVAILABLE", status_code=503) from exc
+
+
+@bp.route("/ai/anomaly-workflow/trigger", methods=["POST"])
+def trigger_anomaly_workflow():
+    _require_demo()
+    body = request.get_json(force=True, silent=False) or {}
+    if not isinstance(body, dict):
+        raise AppError("Request body must be a JSON object.", code="INVALID_INPUT", status_code=422)
+
+    run_id = body.get("run_id")
+    event_id = body.get("event_id")
+    event_data = body.get("event")
+    persona = body.get("persona", "household")
+    entity_id = body.get("entity_id") or body.get("customer_id")
+    customer_email = body.get("customer_email")
+
+    if not run_id and not event_data and not event_id:
+        raise AppError("Provide either 'run_id', 'event_id', or full 'event' data.", code="INVALID_INPUT", status_code=422)
+
+    from app.services.anomaly_workflow_service import AnomalyWorkflowService
+    workflow_svc = AnomalyWorkflowService(
+        store=_store(),
+        private_store=_private_store(),
+        config=current_app.config,
+    )
+
+    if event_data:
+        record = workflow_svc.process_event(
+            event=event_data,
+            run={"run_id": run_id} if run_id else None,
+            persona=persona,
+            entity_id=entity_id,
+            customer_email=customer_email,
+        )
+        return success_response(record, status_code=200)
+
+    model_provider = current_app.extensions.get("model_provider")
+    anomaly_svc = None
+    if model_provider and hasattr(model_provider, "get_model"):
+        anomaly_svc = model_provider.get_model("gridvision_anomaly_model")
+
+    events: list[dict[str, Any]] = []
+    if anomaly_svc and run_id:
+        run_file = anomaly_svc.get_run_file(run_id, "events.json")
+        if run_file and run_file.exists():
+            import json
+            try:
+                events = json.loads(run_file.read_text(encoding="utf-8"))
+            except Exception:
+                events = []
+
+    if event_id:
+        target_event = next((e for e in events if str(e.get("event_id") or e.get("id")) == str(event_id)), None)
+        if not target_event:
+            target_event = {
+                "event_id": event_id,
+                "customer_ids": [entity_id] if entity_id else [],
+                "dominant_anomaly_type": "detected_anomaly",
+                "max_anomaly_score": 0.75,
+                "mean_anomaly_score": 0.70,
+                "event_start": "2019-01-01T00:00:00",
+                "event_end": "2019-01-01T02:00:00",
+                "event_duration": 7200.0,
+                "event_scope": "SINGLE_CUSTOMER",
+                "affected_customer_count": 1,
+            }
+        record = workflow_svc.process_event(
+            event=target_event,
+            run={"run_id": run_id or "RUN_TRIGGERED"},
+            persona=persona,
+            entity_id=entity_id,
+            customer_email=customer_email,
+        )
+        return success_response(record, status_code=200)
+
+    if not events:
+        return success_response({"message": "No anomaly events found for run", "run_id": run_id, "results": []}, status_code=200)
+
+    results = workflow_svc.process_run_events(
+        run_id=run_id,
+        events=events,
+        persona=persona,
+        entity_id=entity_id,
+        customer_email=customer_email,
+    )
+    return success_response({"run_id": run_id, "results": results}, status_code=200)
+
+
+@bp.route("/ai/anomaly-workflow/executions", methods=["GET"])
+def list_anomaly_workflow_executions():
+    _require_demo()
+    run_id = request.args.get("run_id")
+    limit = int(request.args.get("limit", 50))
+    _store().initialize()
+    items = _store().list_workflow_executions(run_id=run_id, limit=limit)
+    return success_response({"items": items})
+
+
+@bp.route("/ai/anomaly-workflow/executions/<event_id>", methods=["GET"])
+def get_anomaly_workflow_execution(event_id: str):
+    _require_demo()
+    _store().initialize()
+    item = _store().get_workflow_execution(event_id)
+    if not item:
+        raise ResourceNotFoundError(f"Execution record for event {event_id} was not found.")
+    return success_response(item)

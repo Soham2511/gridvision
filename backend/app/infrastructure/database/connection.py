@@ -11,7 +11,8 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Generator, Optional
 
-from sqlalchemy import Engine, create_engine, event
+from sqlalchemy import create_engine, event
+from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 

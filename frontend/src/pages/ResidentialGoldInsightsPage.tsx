@@ -79,8 +79,10 @@ export const ResidentialGoldInsightsPage: React.FC<{ view?: PageView }> = ({
     let cancelled = false;
     modelService.getCustomerRecords(200, 0).then((page) => {
       if (cancelled) return;
+      const benchmarkIds = ['2254213', '293861', '537421', '679900'];
       const ids = Array.from(
         new Set([
+          ...benchmarkIds,
           ...page.items.map((record) => record.entityId),
           ...verifiedObjectIds.current,
         ])

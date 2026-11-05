@@ -143,14 +143,35 @@ class ComplaintRepository:
     ) -> List[Complaint]:
         """List all complaints belonging to a customer, optionally filtered by status."""
         with get_session() as session:
-            stmt = select(ComplaintModel).where(ComplaintModel.customer_id == customer_id)
+            clean_id = str(customer_id).strip()
+            clean_num = clean_id.replace("METER-", "").replace("usr-", "")
 
-            if status_filter:
+            stmt = select(ComplaintModel).where(
+                (ComplaintModel.customer_id == clean_id)
+                | (ComplaintModel.customer_id == clean_num)
+                | (ComplaintModel.customer_id == f"METER-{clean_num}")
+                | (ComplaintModel.customer_id == f"usr-{clean_num}")
+                | (ComplaintModel.meter_id == clean_id)
+                | (ComplaintModel.meter_id == clean_num)
+                | (ComplaintModel.meter_id == f"METER-{clean_num}")
+            )
+
+            if status_filter and status_filter.strip().upper() != "ALL":
                 sf = status_filter.strip().upper()
-                if sf == "REGISTERED":
-                    stmt = stmt.where(ComplaintModel.status == ComplaintStatus.REGISTERED.value)
-                elif sf == "INVALID":
-                    stmt = stmt.where(ComplaintModel.status == ComplaintStatus.INVALID.value)
+                if sf in ("PENDING", "REGISTERED"):
+                    stmt = stmt.where(ComplaintModel.status.in_([
+                        ComplaintStatus.REGISTERED.value,
+                        ComplaintStatus.SUBMITTED.value,
+                        ComplaintStatus.VALIDATING.value,
+                        ComplaintStatus.SCORING.value,
+                    ]))
+                elif sf in ("RESOLVED",):
+                    stmt = stmt.where(ComplaintModel.status == ComplaintStatus.RESOLVED.value)
+                elif sf in ("REJECTED", "INVALID"):
+                    stmt = stmt.where(ComplaintModel.status.in_([
+                        ComplaintStatus.REJECTED.value,
+                        ComplaintStatus.INVALID.value,
+                    ]))
 
             stmt = stmt.order_by(ComplaintModel.created_at.desc())
             rows = session.scalars(stmt).all()

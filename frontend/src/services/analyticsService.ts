@@ -136,6 +136,18 @@ export interface AssistantChatResponse {
   status: string;
 }
 
+export interface ConversationSession {
+  id: string;
+  title: string;
+  conversation_id?: string;
+  updated_at?: string | null;
+  created_at?: string | null;
+  active_workflow?: string | null;
+  is_archived?: boolean;
+  message_count?: number;
+  [key: string]: unknown;
+}
+
 class AnalyticsService {
   public getApiBaseUrl(): string {
     return apiClient.getBaseUrl();
@@ -487,19 +499,19 @@ class AnalyticsService {
     include_archived?: boolean;
     limit?: number;
     offset?: number;
-  }): Promise<any[]> {
-    return apiClient.get<any[]>('/assistant/conversations', params);
+  }): Promise<ConversationSession[]> {
+    return apiClient.get<ConversationSession[]>('/assistant/conversations', params);
   }
 
   async createConversation(payload?: {
     title?: string;
     meter_id?: string;
-  }): Promise<any> {
-    return apiClient.post<any>('/assistant/conversations', payload || {});
+  }): Promise<ConversationSession> {
+    return apiClient.post<ConversationSession>('/assistant/conversations', payload || {});
   }
 
   async getConversation(conversationId: string): Promise<{
-    session: any;
+    session: ConversationSession;
     messages: Array<{
       id: string;
       role: 'user' | 'assistant' | 'system';
@@ -508,14 +520,23 @@ class AnalyticsService {
       created_at?: string;
     }>;
   }> {
-    return apiClient.get<any>(`/assistant/conversations/${encodeURIComponent(conversationId)}`);
+    return apiClient.get<{
+      session: ConversationSession;
+      messages: Array<{
+        id: string;
+        role: 'user' | 'assistant' | 'system';
+        content: string;
+        mode?: string;
+        created_at?: string;
+      }>;
+    }>(`/assistant/conversations/${encodeURIComponent(conversationId)}`);
   }
 
   async updateConversation(
     conversationId: string,
     payload: { title?: string; is_archived?: boolean }
-  ): Promise<any> {
-    return apiClient.patch<any>(
+  ): Promise<ConversationSession> {
+    return apiClient.patch<ConversationSession>(
       `/assistant/conversations/${encodeURIComponent(conversationId)}`,
       payload
     );
@@ -532,19 +553,25 @@ class AnalyticsService {
     return apiClient.get<QuestionnaireSchema>(`/residential/questionnaires/${encodeURIComponent(featureId)}`);
   }
 
-  async planHouseEnergy(payload: any): Promise<HouseEnergyPlanningResult> {
-    const res = await apiClient.post<any>('/residential/plan-house-energy', payload);
-    return ((res && res.results) ? res.results : res) as HouseEnergyPlanningResult;
+  async planHouseEnergy(payload: Record<string, unknown>): Promise<HouseEnergyPlanningResult> {
+    const res = await apiClient.post<Record<string, unknown>>('/residential/plan-house-energy', payload);
+    return ((res && (res as { results?: HouseEnergyPlanningResult }).results)
+      ? (res as { results: HouseEnergyPlanningResult }).results
+      : res) as HouseEnergyPlanningResult;
   }
 
-  async analyzeApplianceScenario(payload: any): Promise<ApplianceScenarioResult> {
-    const res = await apiClient.post<any>('/residential/analyze-appliance', payload);
-    return ((res && res.results) ? res.results : res) as ApplianceScenarioResult;
+  async analyzeApplianceScenario(payload: Record<string, unknown>): Promise<ApplianceScenarioResult> {
+    const res = await apiClient.post<Record<string, unknown>>('/residential/analyze-appliance', payload);
+    return ((res && (res as { results?: ApplianceScenarioResult }).results)
+      ? (res as { results: ApplianceScenarioResult }).results
+      : res) as ApplianceScenarioResult;
   }
 
-  async manageEnergyCost(payload: any): Promise<CostManagementResult> {
-    const res = await apiClient.post<any>('/residential/manage-cost', payload);
-    return ((res && res.results) ? res.results : res) as CostManagementResult;
+  async manageEnergyCost(payload: Record<string, unknown>): Promise<CostManagementResult> {
+    const res = await apiClient.post<Record<string, unknown>>('/residential/manage-cost', payload);
+    return ((res && (res as { results?: CostManagementResult }).results)
+      ? (res as { results: CostManagementResult }).results
+      : res) as CostManagementResult;
   }
 
   async createResidentialSession(
@@ -559,7 +586,7 @@ class AnalyticsService {
 
   async updateResidentialSession(
     sessionId: string,
-    payload: any
+    payload: Record<string, unknown>
   ): Promise<{ session_id: string; status: string }> {
     return apiClient.put<{ session_id: string; status: string }>(
       `/residential/sessions/${encodeURIComponent(sessionId)}`,

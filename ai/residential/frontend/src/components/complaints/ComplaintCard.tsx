@@ -20,6 +20,8 @@ import { Complaint, SeverityLevel, ComplaintStatus } from '../../types/complaint
 interface ComplaintCardProps {
   complaint: Complaint;
   onClick: (complaint: Complaint) => void;
+  isGovernment?: boolean;
+  onStatusUpdate?: (complaintId: string, newStatus: string, note?: string) => Promise<void>;
 }
 
 export const getCategoryIcon = (iconName?: string, categoryId?: string, size = 18) => {
@@ -50,6 +52,46 @@ export const getCategoryIcon = (iconName?: string, categoryId?: string, size = 1
 
 const getStatusBadge = (status: ComplaintStatus) => {
   switch (status) {
+    case 'RESOLVED':
+      return (
+        <span
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '0.3rem',
+            padding: '2px 8px',
+            borderRadius: '999px',
+            fontSize: '0.72rem',
+            fontWeight: 700,
+            background: '#DCFCE7',
+            color: '#15803D',
+            border: '1px solid #86EFAC',
+          }}
+        >
+          <CheckCircle size={12} color="#15803D" />
+          Resolved
+        </span>
+      );
+    case 'REJECTED':
+      return (
+        <span
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '0.3rem',
+            padding: '2px 8px',
+            borderRadius: '999px',
+            fontSize: '0.72rem',
+            fontWeight: 700,
+            background: '#F1F5F9',
+            color: '#475569',
+            border: '1px solid #CBD5E1',
+          }}
+        >
+          <XCircle size={12} color="#475569" />
+          Rejected
+        </span>
+      );
     case 'REGISTERED':
       return (
         <span
@@ -261,7 +303,12 @@ const getSeverityBadge = (level?: SeverityLevel, score?: number) => {
   }
 };
 
-export const ComplaintCard: React.FC<ComplaintCardProps> = ({ complaint, onClick }) => {
+export const ComplaintCard: React.FC<ComplaintCardProps> = ({
+  complaint,
+  onClick,
+  isGovernment = false,
+  onStatusUpdate,
+}) => {
   const formattedDate = new Date(complaint.created_at).toLocaleString(undefined, {
     year: 'numeric',
     month: 'short',
@@ -271,6 +318,8 @@ export const ComplaintCard: React.FC<ComplaintCardProps> = ({ complaint, onClick
   });
 
   const isInvalid = complaint.status === 'INVALID';
+  const isRejected = complaint.status === 'REJECTED';
+  const isResolved = complaint.status === 'RESOLVED';
   const isRegistered = complaint.status === 'REGISTERED';
 
   return (
@@ -285,8 +334,10 @@ export const ComplaintCard: React.FC<ComplaintCardProps> = ({ complaint, onClick
         borderRadius: '12px',
         padding: '1.25rem',
         border: '1px solid var(--gv-border-subtle)',
-        borderLeft: isInvalid
+        borderLeft: isInvalid || isRejected
           ? '4px solid #EF4444'
+          : isResolved
+          ? '4px solid #16A34A'
           : isRegistered
           ? '4px solid #00B8A9'
           : '4px solid #CBD5E1',
@@ -350,6 +401,39 @@ export const ComplaintCard: React.FC<ComplaintCardProps> = ({ complaint, onClick
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+            {complaint.customer_segment && (
+              <span
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  padding: '2px 7px',
+                  borderRadius: '6px',
+                  fontSize: '0.68rem',
+                  fontWeight: 700,
+                  textTransform: 'uppercase',
+                  background:
+                    complaint.customer_segment === 'GOVERNMENT'
+                      ? '#E0F2FE'
+                      : complaint.customer_segment === 'COMMERCIAL'
+                      ? '#FEF3C7'
+                      : '#F1F5F9',
+                  color:
+                    complaint.customer_segment === 'GOVERNMENT'
+                      ? '#0369A1'
+                      : complaint.customer_segment === 'COMMERCIAL'
+                      ? '#B45309'
+                      : '#475569',
+                  border:
+                    complaint.customer_segment === 'GOVERNMENT'
+                      ? '1px solid #BAE6FD'
+                      : complaint.customer_segment === 'COMMERCIAL'
+                      ? '1px solid #FDE68A'
+                      : '1px solid #E2E8F0',
+                }}
+              >
+                {complaint.customer_segment}
+              </span>
+            )}
             {complaint.severity_result && (
               getSeverityBadge(
                 complaint.severity_result.severity_level,
@@ -449,31 +533,135 @@ export const ComplaintCard: React.FC<ComplaintCardProps> = ({ complaint, onClick
       </div>
 
       {/* Footer: Date and Action */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          paddingTop: '0.75rem',
-          borderTop: '1px solid var(--gv-border-subtle)',
-          fontSize: '0.72rem',
-          color: 'var(--gv-text-muted)',
-        }}
-      >
-        <span>Submitted {formattedDate}</span>
+      {isGovernment && onStatusUpdate ? (
         <div
           style={{
-            display: 'inline-flex',
+            display: 'flex',
             alignItems: 'center',
-            gap: '0.25rem',
-            fontWeight: 700,
-            color: 'var(--gv-color-smart-teal)',
+            justifyContent: 'space-between',
+            gap: '0.5rem',
+            paddingTop: '0.75rem',
+            borderTop: '1px solid var(--gv-border-subtle)',
+            flexWrap: 'wrap',
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <span style={{ fontSize: '0.72rem', color: 'var(--gv-text-muted)' }}>
+            Submitted {formattedDate}
+          </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+            {complaint.status !== 'RESOLVED' && (
+              <button
+                type="button"
+                onClick={() => onStatusUpdate(complaint.id, 'RESOLVED', 'Issue investigated and resolved on site.')}
+                title="Resolve complaint and notify user"
+                style={{
+                  padding: '3px 8px',
+                  borderRadius: '6px',
+                  background: '#16A34A',
+                  color: '#FFFFFF',
+                  fontSize: '0.7rem',
+                  fontWeight: 700,
+                  border: 'none',
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '2px',
+                }}
+              >
+                <CheckCircle size={11} /> Resolve
+              </button>
+            )}
+            {complaint.status !== 'REJECTED' && complaint.status !== 'INVALID' && (
+              <button
+                type="button"
+                onClick={() => onStatusUpdate(complaint.id, 'REJECTED', 'Claim reviewed against smart telemetry: contradicted or invalid.')}
+                title="Reject complaint and notify user"
+                style={{
+                  padding: '3px 8px',
+                  borderRadius: '6px',
+                  background: '#DC2626',
+                  color: '#FFFFFF',
+                  fontSize: '0.7rem',
+                  fontWeight: 700,
+                  border: 'none',
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '2px',
+                }}
+              >
+                <XCircle size={11} /> Reject
+              </button>
+            )}
+            {complaint.status !== 'REGISTERED' && (
+              <button
+                type="button"
+                onClick={() => onStatusUpdate(complaint.id, 'REGISTERED', 'Ticket reopened for technical evaluation.')}
+                title="Set to Pending review"
+                style={{
+                  padding: '3px 8px',
+                  borderRadius: '6px',
+                  background: '#D97706',
+                  color: '#FFFFFF',
+                  fontSize: '0.7rem',
+                  fontWeight: 700,
+                  border: 'none',
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '2px',
+                }}
+              >
+                <Clock size={11} /> Pending
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => onClick(complaint)}
+              title="Inspect dossier & audit trail"
+              style={{
+                padding: '3px 8px',
+                borderRadius: '6px',
+                background: '#0F172A',
+                color: '#FFFFFF',
+                fontSize: '0.7rem',
+                fontWeight: 700,
+                border: 'none',
+                cursor: 'pointer',
+              }}
+            >
+              Inspect
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            paddingTop: '0.75rem',
+            borderTop: '1px solid var(--gv-border-subtle)',
+            fontSize: '0.72rem',
+            color: 'var(--gv-text-muted)',
           }}
         >
-          <span>View Details</span>
-          <ChevronRight size={14} />
+          <span>Submitted {formattedDate}</span>
+          <div
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '0.25rem',
+              fontWeight: 700,
+              color: 'var(--gv-color-smart-teal)',
+            }}
+          >
+            <span>View Details</span>
+            <ChevronRight size={14} />
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 };
