@@ -16,6 +16,7 @@ import {
   Building2,
   Map,
   PieChart,
+  ShieldAlert,
   FileText,
   Bell,
   LifeBuoy,
@@ -58,6 +59,11 @@ export const Sidebar: React.FC = () => {
     },
     ...(currentPersona === 'government'
       ? [
+          {
+            path: '/app/anomalies',
+            label: 'Anomaly Monitoring',
+            icon: <ShieldAlert size={18} />,
+          },
           {
             path: '/app/customers',
             label: 'Customer Segmentation',
